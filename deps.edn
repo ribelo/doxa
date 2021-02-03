@@ -1,0 +1,4 @@
+{:paths ["src" "resources"]
+ :deps  {meander/epsilon       {:mvn/version "0.0.588"}
+         com.taoensso/encore   {:mvn/version "3.10.1"}
+         juji/editscript       {:mvn/version "0.5.4"}}}
