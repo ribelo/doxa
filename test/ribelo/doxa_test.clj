@@ -1,10 +1,67 @@
 (ns ribelo.doxa-test
   (:require
    [ribelo.doxa :as dx]
+   [datascript.core :as d]
    [clojure.test :as t]
    [meander.epsilon :as m]))
 
 ;; datascript
+
+(def ^:private test-schema
+  {:aka    { :db/cardinality :db.cardinality/many }
+   :child  { :db/cardinality :db.cardinality/many
+             :db/valueType :db.type/ref }
+   :friend { :db/cardinality :db.cardinality/many
+             :db/valueType :db.type/ref }
+   :enemy  { :db/cardinality :db.cardinality/many
+             :db/valueType :db.type/ref }
+   :father { :db/valueType :db.type/ref }
+
+   :part   { :db/valueType :db.type/ref
+             :db/isComponent true
+             :db/cardinality :db.cardinality/many }
+   :spec   { :db/valueType :db.type/ref
+             :db/isComponent true
+             :db/cardinality :db.cardinality/one }})
+
+(def test-datoms
+  (->>
+    [[1 :name  "Petr"]
+     [1 :aka   "Devil"]
+     [1 :aka   "Tupen"]
+     [2 :name  "David"]
+     [3 :name  "Thomas"]
+     [4 :name  "Lucy"]
+     [5 :name  "Elizabeth"]
+     [6 :name  "Matthew"]
+     [7 :name  "Eunan"]
+     [8 :name  "Kerri"]
+     [9 :name  "Rebecca"]
+     [1 :child 2]
+     [1 :child 3]
+     [2 :father 1]
+     [3 :father 1]
+     [6 :father 3]
+     [10 :name  "Part A"]
+     [11 :name  "Part A.A"]
+     [10 :part 11]
+     [12 :name  "Part A.A.A"]
+     [11 :part 12]
+     [13 :name  "Part A.A.A.A"]
+     [12 :part 13]
+     [14 :name  "Part A.A.A.B"]
+     [12 :part 14]
+     [15 :name  "Part A.B"]
+     [10 :part 15]
+     [16 :name  "Part A.B.A"]
+     [15 :part 16]
+     [17 :name  "Part A.B.A.A"]
+     [16 :part 17]
+     [18 :name  "Part A.B.A.B"]
+     [16 :part 18]]
+   (map #(apply d/datom %))))
+
+(def ^:private d-db (d/init-db test-datoms test-schema))
 
 (def people-docs
   [{:db/id 1, :name "Petr", :aka ["Devil" "Tupen"] :child [2 3]}
@@ -30,6 +87,11 @@
 
 (def test-db
   (dx/transact {} (into [] (map (fn [tx] [:db/add tx])) (into people-docs part-docs))))
+
+(require '[taoensso.encore :as e])
+
+(e/qb 1e3 (d/pull d-db '[:name :aka] 1))
+(e/qb 1e3 (dx/eql test-db [:name :aka] 1))
 
 (t/deftest test-pull-attr-spec
   (t/is (= {:name "Petr" :aka ["Devil" "Tupen"]}
@@ -69,7 +131,7 @@
            (dx/eql test-db [:part-name :part-of] 11)))
   (t/is (= {:part-name "Part A.A", :_part-of [12]}
            (dx/eql test-db [:part-name :_part-of] 11)))
-  (t/is (= {:part-name "Part A.A", :part-of [{:part-name "Part A"}]}
+  (t/is (= {:part-name "Part A.A", :part-of {:part-name "Part A"}}
            (dx/eql test-db [:part-name {:part-of [:part-name]}] 11))))
 
 (t/deftest test-pull-wildcard
@@ -80,79 +142,39 @@
   (t/is (= {:db/id 2 :name "David" :_child [1] :father [1]}
            (dx/eql test-db [:* :_child] 2))))
 
+
+(t/deftest test-pull-map
+  (t/testing "Single attrs yield a map"
+    (t/is (= {:name "Matthew" :father {:name "Thomas"}}
+             (dx/eql test-db [:name {:father [:name]}] 6))))
+
+  (t/testing "Multi attrs yield a collection of maps"
+    (t/is (= {:name "Petr" :child [{:name "David"}
+                                   {:name "Thomas"}]}
+             (dx/eql test-db [:name {:child [:name]}] 1))))
+
+  (t/testing "Missing attrs are dropped"
+    (t/is (= {:name "Petr"}
+             (dx/eql test-db [:name {:father [:name]}] 1))))
+
+  (t/testing "Non matching results are removed from collections"
+    (t/is (= {:name "Petr" :child []}
+             (dx/eql test-db [:name {:child [:foo]}] 1))))
+
+  (t/testing "Map specs can override component expansion"
+    (let [parts {:part-name "Part A", :_part-of [{:part-name "Part A.B"} {:part-name "Part A.A"}]}]
+      (t/is (= parts
+               (dx/eql test-db [:part-name {:_part-of [:part-name]}] 10)))
+
+      (t/is (= parts
+               (dx/eql test-db [:part-name {:part-of 1}] 10))))))
+
 ;; crux
 
 (def bond-db
   (let [data (read-string (slurp "./resources/james-bond.edn"))]
     (dx/transact {} (into [] (map (fn [tx] [:db/add tx])) data))))
 
-(deftest process-test
-  (testing "read"
-    (t/is (= (sut/eql cords [::coords])
-             {::coords
-              [{:x 10 :y 20}
-               {::left 20 ::width 5}]})))
-
-  ;; (testing "reading with *"
-  ;;   (is (= (-> (p.eql/process (-> (pci/register geo/full-registry)
-  ;;                                 (p.ent/with-entity {:left 10}))
-  ;;                             [::geo/x '*]))
-  ;;          {::geo/x    10
-  ;;           ::geo/left 10
-  ;;           :left      10})))
-
-  ;; (testing "nested read"
-  ;;   (is (= (p.eql/process (-> (pci/register geo/full-registry)
-  ;;                             (p.ent/with-entity {:left 10 :top 5}))
-  ;;                         [{::geo/turn-point [:right]}])
-  ;;          {::geo/turn-point {:right 10}}))
-
-  ;;   (is (= (p.eql/process (-> (pci/register geo/full-registry)
-  ;;                             (p.ent/with-entity {:foo        {::geo/x 10}
-  ;;                                                 :bar        {::geo/y 4
-  ;;                                                              :mess   "here"}
-  ;;                                                 ::geo/width 50
-  ;;                                                 :other      "value"}))
-  ;;                         [{:foo [:x]}
-  ;;                          {:bar [:top]}
-  ;;                          :width])
-  ;;          {:foo   {:x 10}
-  ;;           :bar   {:top 4}
-  ;;           :width 50})))
-
-  ;; (testing "process sequence"
-  ;;   (is (= (p.eql/process (-> (pci/register registry)
-  ;;                             (p.ent/with-entity {::coords (list
-  ;;                                                            {:x 10 :y 20}
-  ;;                                                            {::geo/left 20 ::geo/width 5})}))
-  ;;                         [{::coords [:right]}])
-  ;;          {::coords [{} {:right 25}]})))
-
-  ;; (testing "process vector"
-  ;;   (let [res (p.eql/process (-> (pci/register registry)
-  ;;                                (p.ent/with-entity {::coords [{:x 10 :y 20}
-  ;;                                                              {::geo/left 20 ::geo/width 5}]}))
-  ;;                            [{::coords [:right]}])]
-  ;;     (is (= res {::coords [{} {:right 25}]}))
-  ;;     (is (vector? (::coords res)))))
-
-  ;; (testing "process set"
-  ;;   (is (= (p.eql/process (-> (pci/register registry)
-  ;;                             (p.ent/with-entity {::coords #{{:x 10 :y 20}
-  ;;                                                            {::geo/left 20 ::geo/width 5}}}))
-  ;;                         [{::coords [:right]}])
-  ;;          {::coords #{{} {:right 25}}})))
-  )
-
-;; pathom
-
-(def cords
-  {::coords
-   [{:x 10 :y 20}
-    {::left 20 ::width 5}]})
-
 (t/testing "project fn"
   (t/is (= #:film{:name "Spectre", :year "2015"}
-           (sut/eql bond-db [:film/name :film/year] :spectre)))
-  (t/is (= #:film{:name "Spectre", :year "2015"}
-           (crux/project db [:film/name :film/year] :spectre))))
+           (dx/eql bond-db [:film/name :film/year] :spectre))))

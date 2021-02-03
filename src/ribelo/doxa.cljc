@@ -144,14 +144,13 @@
    (m/rewrite {:db       db
                :selector selector}
      ;; get key from db
-     {:db ?db :k (m/pred eid? ?k)}
-     ~(get ?db ?k)
+     {:db {?k ?v} :k (m/pred eid? ?k)}
+     ?v
      ;; single join
-     {:db (m/or (m/pred eid? ?root)
-                [(m/pred eid? ?root)])
+     {:db       (m/or (m/pred eid? ?root) [(m/pred eid? ?root)])
       :selector ?k}
      (m/cata {:db       (m/cata {:db ~db :k ?root})
-               :selector ?k})
+              :selector ?k})
      ;; multi join
      {:db [(m/pred eid? !roots) ...] :selector ?k}
      [(m/cata {:db       (m/cata {:db ~db :k !roots})
@@ -169,9 +168,9 @@
       :selector (m/pred rev-keyword? ?k)}
      {?k ~(reverse-search db (rev->keyword ?k) ?id)}
      ;;
-     {:db       {:as ?db}
+     {:db       {?k ?m :as ?db}
       :selector (m/pred eid? ?k)}
-     {?k ~(get ?db ?k)}
+     {?k ?m}
 
      {:db       [{:as !maps} ...]
       :selector [(m/pred keyword? !ks) ...]}
@@ -183,8 +182,13 @@
                      :selector ~(let [ids (reverse-search db (rev->keyword ?root) ?id)]
                                   (mapv (fn [id] {id ?more}) ids))
                      :flat?    true})}
+     ;; no key
+     {:db       {?root (m/not (m/some ?m)) :as ?db}
+      :selector {?root ?more}
+      :flat?    (m/not true)}
+     nil
 
-     {:db       {?root ?m :as ?db}
+     {:db       {?root (m/some ?m) :as ?db}
       :selector {?root ?more}
       :flat?    (m/not true)}
      {?root (m/cata {:db ?m :selector ?more})}
