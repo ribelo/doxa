@@ -94,12 +94,12 @@
     {:db/id     :petr
      :name      "Petr"
      :last-name "Petrov"
-     :friend    :smith}]
+     :friend    [:smith :ivan]}]
    [:db/add
     {:db/id     :smith
      :name      "Smith"
      :last-name "Smith"
-     :friend    :ivan}]])
+     :friend    [:ivan]}]])
 
 (def conn_ (atom (empty-db)))
 
@@ -113,7 +113,7 @@
   (when (keyword? k)
     (->> (name k) first #{\_} some?)))
 
-(defn cleanup-keyword [k]
+(defn rev->keyword [k]
   (m/match k
     (m/pred qualified-keyword? ?k)
     (let [[ns k] (e/explode-keyword ?k)]
@@ -122,7 +122,6 @@
     (keyword (e/substr (name k) 1))))
 
 (defn reverse-search [db k id]
-  (println :rev k id)
   (m/rewrite db
     {?id {:db/id ?id
           ~k (m/or !pid [!pid ...])}
@@ -130,7 +129,7 @@
      :as ?m}
     [(m/cata [?id !pid]) & (m/cata ?more)]
 
-    [?id (m/scan ~id)] ?id
+    [?id (m/or ~id (m/scan ~id))] ?id
 
     {} []))
 
@@ -142,34 +141,71 @@
      [(m/pred eid? !ids) ...]
      (mapv #(eql db selector %) !ids)))
   ([db selector]
-   (m/rewrite [db selector]
-
-     [(m/pred eid? ?root) ?k]
-     (m/cata [~(get db ?root) ?k])
-
-     [{:db/id ?id :as ?m} [(m/or (m/pred rev-keyword? !rks) (m/pred keyword? !ks)) ...]]
+   (m/rewrite {:db       db
+               :selector selector}
+     ;; get key from db
+     {:db ?db :k (m/pred eid? ?k)}
+     ~(get ?db ?k)
+     ;; single join
+     {:db (m/or (m/pred eid? ?root)
+                [(m/pred eid? ?root)])
+      :selector ?k}
+     (m/cata {:db       (m/cata {:db ~db :k ?root})
+               :selector ?k})
+     ;; multi join
+     {:db [(m/pred eid? !roots) ...] :selector ?k}
+     [(m/cata {:db       (m/cata {:db ~db :k !roots})
+               :selector ?k}) ...]
+     ;; reverse search
+     {:db       {:db/id ?id :as ?m}
+      :selector [(m/or (m/pred rev-keyword? !rks) (m/pred keyword? !ks)) ...]}
      ~(merge
-       (select-keys ?m !ks)
-       (->> !rks
-            (into {}
-                  (map (fn [k]
-                         [k (reverse-search db (cleanup-keyword k) ?id)])))))
-
-
-     [{:as ?db} (m/pred keyword? ?k)]
+       (m/rewrite !ks
+         (m/scan :*) ?m
+         _ ~(select-keys ?m !ks))
+       (->> !rks (into {} (map (fn [k] [k (reverse-search db (rev->keyword k) ?id)])))))
+     ;; reverse search
+     {:db       {:db/id ?id :as ?db}
+      :selector (m/pred rev-keyword? ?k)}
+     {?k ~(reverse-search db (rev->keyword ?k) ?id)}
+     ;;
+     {:db       {:as ?db}
+      :selector (m/pred eid? ?k)}
      {?k ~(get ?db ?k)}
 
-     [[{:as !maps} ...] [(m/pred keyword? !ks) ...]]
+     {:db       [{:as !maps} ...]
+      :selector [(m/pred keyword? !ks) ...]}
      ~(mapv (fn [m] (select-keys m !ks)) !maps)
+     ;; reverse
+     {:db       {:db/id ?id :as ?db}
+      :selector {(m/pred rev-keyword? ?root) ?more}}
+     {?root (m/cata {:db       ~db
+                     :selector ~(let [ids (reverse-search db (rev->keyword ?root) ?id)]
+                                  (mapv (fn [id] {id ?more}) ids))
+                     :flat?    true})}
 
-     [{:as ?db} {?root [!ks ...]}]
-     {& [[?root (m/cata [~(get ?db ?root) [!ks ...]])] ...]}
+     {:db       {?root ?m :as ?db}
+      :selector {?root ?more}
+      :flat?    (m/not true)}
+     {?root (m/cata {:db ?m :selector ?more})}
 
+     {:db       {:as ?db}
+      :selector (m/and {?root ?more}
+                       (m/app #(doto % prn) ?x))
+      :flat?    true}
+     (m/cata {:db ~(get ?db ?root) :selector ?more})
 
-     [{:as ?db} [!ks ...]]
-     {& [(m/cata [?db !ks]) ...]})))
+     {:db       {:as ?db}
+      :selector [!ks ...]
+      :flat?    (m/and ?flat (m/not true))}
+     {& [(m/cata {:db ?db :selector !ks :flat? ?flat}) ...]}
 
+     {:db       {:as ?db}
+      :selector [!ks ...]
+      :flat?    ?flat}
+     [(m/cata {:db ?db :selector !ks :flat? ?flat}) ...])))
 
+(eql @conn_ [:*] :ivan)
 
 (defn datalog->meander [where]
   (loop [[elem & where*] where m {} fns [] vars []]
