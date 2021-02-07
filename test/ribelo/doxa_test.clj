@@ -90,9 +90,6 @@
 
 (require '[taoensso.encore :as e])
 
-(e/qb 1e3 (d/pull d-db '[:name :aka] 1))
-(e/qb 1e3 (dx/eql test-db [:name :aka] 1))
-
 (t/deftest test-pull-attr-spec
   (t/is (= {:name "Petr" :aka ["Devil" "Tupen"]}
            (dx/eql test-db '[:name :aka] 1)))
