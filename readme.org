@@ -6,7 +6,7 @@ biggest mistakes came out poorly. each of the above solutions has its own
 strengths, and is an excellent solution in its own narrow scope, but each lacks
 some of the cool things that the others have.
 
-this is an attempt to create a standardized db based on a simple hashmap, that
+this is an attempt to create a normalized db based on a simple hashmap, that
 allows you to edit data both using =clojure.core= functions and using
 transactions, where pull is incredibly fast, and that allows you to write
 queries using datalog. surprisingly i was able to get most things working and
