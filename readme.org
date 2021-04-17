@@ -34,7 +34,7 @@ queries it matches =datascript=.
 
 ** transactions
 
-#+begin_src clojure :results silent :exports none
+#+begin_src clojure :results silent
 (require '[ribelo.doxa :as dx])
 
 (def data [{:db/id 1 :name "Petr" :aka ["Devil"]}])
@@ -162,7 +162,7 @@ queries it matches =datascript=.
 
 ** pull
 
-#+begin_src clojure :results silent :exports none
+#+begin_src clojure :results silent
 (def people-docs
   [{:db/id 1, :name "Petr", :aka ["Devil" "Tupen"] :child [[:db/id 2] [:db/id 3]]}
    {:db/id 2, :name "David", :father [[:db/id 1]]}
@@ -237,7 +237,7 @@ queries it matches =datascript=.
 
 ** datalog
 
-#+begin_src clojure :results silent :exports none
+#+begin_src clojure :results silent
 (def db (dx/create-dx [{:db/id 1, :name "Ivan" :age 15}
                        {:db/id 2, :name "Petr" :age 37}
                        {:db/id 3, :name "Ivan" :age 37}
@@ -335,7 +335,7 @@ queries it matches =datascript=.
 
 ** benchmark
 
-#+begin_src clojure :results silent :exports none
+#+begin_src clojure :results silent
 (require '[taoensso.encore :as e ])
 (require '[datascript.core :as d ])
 (require '[ribelo.doxa     :as dx])
