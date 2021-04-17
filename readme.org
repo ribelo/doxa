@@ -1,10 +1,10 @@
 #+TITLE: doxa
 
-a simple in-memory database, trying to copy the best solutions from datascript,
-fulcro, autonormal, kechema, shadow-grow etc. it came out mediocre, but it did a
-perfect job at copying all the major flaws of each of them. each of the above
-solutions has its own strengths, and is an excellent solution in its own narrow
-scope, but each lacks some of the cool things that the others have.
+a simple in-memory database, trying to copy the best solutions from =datascript=,
+=crux=, =fulcro=, =autonormal=, =kechema=, =shadow-grow= etc. it came out mediocre, but it
+did a perfect job at copying all the major flaws of each of them. each of the
+above solutions has its own strengths, and is an excellent solution in its own
+narrow scope, but each lacks some of the cool things that the others have.
 
 this is an attempt to create a standardized db based on a simple hasmap, that
 allows you to edit data both using =clojure.core= functions and using
