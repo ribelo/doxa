@@ -1,0 +1,576 @@
+#+TITLE: doxa
+
+a simple in-memory database, trying to copy the best solutions from datascript,
+fulcro, autonormal, kechema, shadow-grow etc. it came out mediocre, but it did a
+perfect job at copying all the major flaws of each of them. each of the above
+solutions has its own strengths, and is an excellent solution in its own narrow
+scope, but each lacks some of the cool things that the others have.
+
+this is an attempt to create a standardized db based on a simple hasmap, that
+allows you to edit data both using =clojure.core= functions and using
+transactions, where pull is incredibly fast, and that allows you to write
+queries using datalog. surprisingly i was able to get most things working and
+usable.
+
+but basically why? primarily out of curiosity and boredom, and because
+datascript completely failed me when writing spas using re-frame & re-posh.
+while datascript has excellent search capabilities using datalog, it is,
+contrary to opinion, a deadly slow, unreliable solution. the db itself is also
+very cumbersome when trying to use tools like re-frame-10x, it also dramatically
+complicates sync data with firebase firestore and realtime db.
+
+so what advantage does doxa have? by using a regular hasmap with structure
+={?table {?eid {?k ?v ...} ...} ...}= allows you to seamlessly synchronize data
+with any document db. it also makes it easy to inspect data, save to disk,
+upload, patch and much more. this desing also allows for lightning-fast searches
+using =pull-syntax/eql=, which is an order of magnitude faster than in =datascript=,
+despite such a simple structure, it managed to create an incomplete and buggy
+way to write queries using =datalog=, which are translated into a query using
+meander thanks to the macro. even more surprising, the meander is so amazing
+that the speed for simple queries is barely slower, while for more complex
+queries it matches =datascript=.
+
+* usage examples
+
+** transactions
+
+#+begin_src clojure :results silent :exports none
+(require '[ribelo.doxa :as dx])
+
+(def data [{:db/id 1 :name "Petr" :aka ["Devil"]}])
+
+(def db (dx/create-dx data)
+  ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
+  )
+
+;; * put
+;; ** add entity
+
+(dx/commit {} [[:dx/put {:db/id 1 :name "David" :aka ["Devil"]}]])
+;; => #:db{:id {1 {:db/id 1, :name "David", :aka ["Devil"]}}}
+
+(dx/commit {} [[:dx/put [:db/id 1] {:name "David" :aka ["Devil"]}]])
+;; => #:db{:id {1 {:name "David", :aka ["Devil"], :db/id 1}}}
+
+;; ** single keyword change
+
+(dx/commit db [[:dx/put [:db/id 1] :name "David"]])
+;; => #:db{:id {1 {:db/id 1, :name "David", :aka ["Devil"]}}}
+
+(dx/commit db [[:dx/put [:db/id 1] :aka ["Tupen"]]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Tupen"]}}}
+
+(dx/commit db [[:dx/put [:db/id :ivan] :age 99]])
+;; =>
+;; #:db{:id {:ivan {:db/id :ivan, :name "Ivan", :last-name "Ivanov", :friend [:db/id :petr], :age 99}, :petr {:db/id :petr, :name "Petr", :last-name "Petrov", :friend [[:db/id :smith] [:db/id :ivan]], :age 15}, :smith {:db/id :smith, :name "Smith", :last-name "Smith", :friend [:db/id :petr], :age 55}}}
+
+;; ** add data with autonormalization
+
+(dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])
+;; =>
+;; #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"], :friend [[:db/id 2] [:db/id 3]]},
+;;           2 {:db/id 2, :name "Ivan"},
+;;           3 {:db/id 3, :name "Lucy"}}}
+
+
+;; * delete
+;; ** delete entity
+
+(dx/commit db [[:dx/delete [:db/id 1]]])
+;; => {}
+
+;; ** delete keyword
+
+(dx/commit db [[:dx/delete [:db/id 1] :aka]])
+
+;; ** remove elem from vector
+
+(dx/commit db [[:dx/delete [:db/id 1] :aka "Devil"]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr"}}}
+
+;; ** remove an invalid key
+
+(dx/commit db [[:dx/delete [:db/id 1] :AKA "Devil"]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
+
+;; * conj
+;; because the database is schemeless, if we want to add something to the vector
+;; we have to use conj
+
+;; ** add elem
+
+(dx/commit db [[:dx/conj [:db/id 1] :aka "Tupen"]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil" "Tupen"]}}}
+
+(dx/commit db [[:dx/conj [:db/id 1] :name "Ivan"]])
+;; => #:db{:id {1 {:db/id 1, :name ["Petr" "Ivan"], :aka ["Devil"]}}}
+
+;; ** with autonormalisation
+
+(dx/commit db [[:dx/conj [:db/id 1] :friend {:db/id 2 :name "Ivan"}]])
+;; =>
+;; #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"], :friend [[:db/id 2]]},
+;;           2 {:db/id 2, :name "Ivan"}}}
+
+(dx/commit db [[:dx/conj [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])
+;; =>
+;; #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"], :friend [[:db/id 2] [:db/id 3]]},
+;;           2 {:db/id 2, :name "Ivan"}, 3
+;;           {:db/id 3, :name "Lucy"}}}
+
+;; * update
+;; map can be updated by any function
+
+(dx/commit db [[:dx/update [:db/id 1] assoc :aka "Tupen"]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka "Tupen"}}}
+
+(dx/commit db [[:dx/update [:db/id 1] :aka conj "Tupen"]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil" "Tupen"]}}}
+
+;; * match
+;; just like in crux, we can use match
+;; if data match, db is returned unchanged, otherwise nil
+
+;; ** match entity
+
+(dx/commit db [[:dx/match [:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
+
+;; ** match keyword
+(dx/commit db [[:dx/match [:db/id 1] :aka ["Devil"]]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
+
+;; ** conditional put
+
+(dx/commit db [[:dx/match [:db/id 1] :aka ["Devil"]]
+               [:dx/put   [:db/id 1] :aka ["Tupen"]]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Tupen"]}}}
+
+;; ** conditional delete
+(dx/commit db [[:dx/match [:db/id 1]  :aka ["Tupen"]]
+               [:dx/delete [:db/id 1] :aka]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
+
+;; transactions are dropped until the next valid match occurs
+
+(dx/commit db [[:dx/match [:db/id 1] :aka ["Tupen"]]
+               [:dx/put [:db/id 1] :age 15]
+               [:dx/match [:db/id 1] :name "Petr"]
+               [:dx/put [:db/id 1] :sex :male]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"], :sex :male}}}
+#+end_src
+
+** pull
+
+#+begin_src clojure :results silent :exports none
+(def people-docs
+  [{:db/id 1, :name "Petr", :aka ["Devil" "Tupen"] :child [[:db/id 2] [:db/id 3]]}
+   {:db/id 2, :name "David", :father [[:db/id 1]]}
+   {:db/id 3, :name "Thomas", :father [[:db/id 1]]}
+   {:db/id 4, :name "Lucy" :friend [[:db/id 5]], :enemy [[:db/id 6]]}
+   {:db/id 5, :name "Elizabeth" :friend [[:db/id 6]], :enemy [[:db/id 7]]}
+   {:db/id 6, :name "Matthew", :father [[:db/id 3]], :friend [[:db/id 7]], :enemy [[:db/id 8]]}
+   {:db/id 7, :name "Eunan", :friend [[:db/id 8]], :enemy [[:db/id 4]]}
+   {:db/id 8, :name "Kerri"}
+   {:db/id 9, :name "Rebecca"}])
+
+(def db (dx/create-dx people-docs))
+
+;; * eql
+(dx/pull db {[:db/id 1] [:name :aka]})
+;; => {:name "Petr", :aka ["Devil"]}
+
+;; * datomic like pull syntax
+
+(dx/pull db [:name :aka] [:db/id 1])
+;; => {:name "Petr", :aka ["Devil"]}
+
+;; ** simple query
+
+(dx/pull db  [:name :father :db/id] [:db/id 6])
+;; => {:name "Matthew", :father [:db/id 3], :db/id 6}
+
+;; ** pull many
+
+(dx/pull db [:name] [[:db/id 1] [:db/id 5] [:db/id 7] [:db/id 9]])
+;; => [{:name "Petr"} {:name "Elizabeth"} {:name "Eunan"} {:name "Rebecca"}]
+
+;; ** reverse search
+(dx/pull db [:name :_child] [:db/id 2])
+;; => {:name "David", :_child [:db/id 1]}
+
+(dx/pull db [:name {:_child [:name]}] [:db/id 2])
+;; => {:name "David", :_child {:name "Petr"}}
+
+;; ** reverse non-component references yield collections
+(dx/pull db '[:name :_father] [:db/id 3])
+;; => {:name "Thomas", :_father [:db/id 6]}
+
+(dx/pull db '[:name :_father] [:db/id 1])
+;; => {:name "Petr", :_father [[:db/id 3] [:db/id 2]]}
+
+(dx/pull db '[:name {:_father [:name]}] [:db/id 3])
+;; => {:name "Thomas", :_father {:name "Matthew"}}
+
+(dx/pull db '[:name {:_father [:name]}] [:db/id 1])
+;; => {:name "Petr", :_father [{:name "Thomas"} {:name "David"}]}
+
+;; ** wildcard
+
+(dx/pull db [:*] [:db/id 1])
+;; =>
+;; {:db/id 1, :name "Petr", :aka ["Devil" "Tupen"], :child [[:db/id 2] [:db/id 3]]}
+
+(dx/pull db [:* :_child] [:db/id 2])
+;; => {:db/id 2, :name "David", :father [:db/id 1], :_child [:db/id 1]}
+
+;; ** missing attrs are dropped
+
+(dx/pull db [:name {:child [:name]}] [:db/id 2])
+;; => {:name "David"}
+
+;; ** non matching results are removed from collections
+
+(dx/pull db [:name {:child [:foo]}] [:db/id 1])
+;; => {:name "Petr", :child []}
+#+end_src
+
+** datalog
+
+#+begin_src clojure :results silent :exports none
+(def db (dx/create-dx [{:db/id 1, :name "Ivan" :age 15}
+                       {:db/id 2, :name "Petr" :age 37}
+                       {:db/id 3, :name "Ivan" :age 37}
+                       {:db/id 4, :age 15}]))
+
+;; * joins
+
+(dx/q [:find ?e
+       :where [?e :name]]
+  db)
+;; => [[1] [2] [3]]
+
+;; unlike everything else, doxa does not return a set, but a vector, which has
+;; far-reaching consequences
+
+(dx/q [:find ?e ?v
+       :where
+       [?e :name "Ivan"]
+       [?e :age ?v]]
+  db)
+;; => [[1 15] [3 37]]
+
+(dx/q [:find ?e1 ?e2
+       :where
+       [?e1 :name ?n]
+       [?e2 :name ?n]] db)
+;; => [[1 3] [3 1]]
+;; each element is checked once, so the result in a normal engine would be [[1 1] [1 3] [3 3]]
+
+(dx/q [:find ?e1 ?e2 ?n
+       :where
+       [?e1 :name "Ivan"]
+       [?e1 :age ?a]
+       [?e2 :age ?a]
+       [?e2 :name ?n]]
+  db)
+;; => [[3 2 "Petr"]]
+
+;; ** many
+;; meander is running underneath, so you can use all the functions available in
+;; the meander, e.g. scan
+
+(def db (dx/create-dx [{:db/id 1
+                        :name  "Ivan"
+                        :aka   ["ivolga" "pi"]}
+                       {:db/id 2
+                        :name  "Petr"
+                        :aka   ["porosenok" "pi"]}]))
+
+(dx/q [:find ?n1 ?n2
+       :where
+       [?e1 :aka (m/scan ?x)]
+       [?e2 :aka (m/scan ?x)]
+       [?e1 :name ?n1]
+       [?e2 :name ?n2]]
+  db)
+;; => [["Ivan" "Petr"] ["Petr" "Ivan"]]
+
+;; ** in
+
+(def db (dx/create-dx [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
+                       {:db/id 2, :name "Petr" :age 37 :email "petr@gmail.com"}
+                       {:db/id 3, :name "Ivan" :age 37 :email "ivan@mail.ru"}]))
+
+(dx/q [:find ?e
+       :in ?attr ?value
+       :where [?e ?attr ?value]]
+  db :name "Ivan")
+;; => [[1] [3]]
+
+(dx/q [:find ?e
+       :in ?attr [?value]
+       :where [?e ?attr ?value]]
+  db :name ["Ivan" "Petr"])
+;; => [[1] [2] [3]]
+
+(dx/q [:find ?e
+       :in ?attr ?value
+       :where [?e ?attr ?value]]
+  db :age 37)
+;; => [[2] [3]]
+
+;; ** relation binding
+
+(dx/q [:find ?e ?email
+       :in [[?n ?email]]
+       :where
+       [?e :name ?n]
+       [?e :email ?email]]
+  db
+  [["Ivan" "ivan@mail.ru"]
+   ["Petr" "petr@gmail.com"]])
+;; => [[1 "ivan@mail.ru"] [2 "petr@gmail.com"] [3 "ivan@mail.ru"]]
+#+end_src
+
+** benchmark
+
+#+begin_src clojure :results silent :exports none
+(require '[taoensso.encore :as e ])
+(require '[datascript.core :as d ])
+(require '[ribelo.doxa     :as dx])
+
+(let [next-eid (volatile! 0)]
+  (defn random-man []
+    {:db/id     (vswap! next-eid inc)
+     :name      (rand-nth ["Ivan" "Petr" "Sergei" "Oleg" "Yuri" "Dmitry" "Fedor" "Denis"])
+     :last-name (rand-nth ["Ivanov" "Petrov" "Sidorov" "Kovalev" "Kuznetsov" "Voronoi"])
+     :alias     (vec
+                 (repeatedly (rand-int 10) #(rand-nth ["A. C. Q. W." "A. J. Finn" "A.A. Fair" "Aapeli" "Aaron Wolfe" "Abigail Van Buren" "Jeanne Phillips" "Abram Tertz" "Abu Nuwas" "Acton Bell" "Adunis"])))
+     :sex       (rand-nth [:male :female])
+     :age       (rand-int 100)
+     :salary    (rand-int 100000)
+     :friend    {:db/ref-id (rand-int 20000)}}))
+
+(def people (repeatedly random-man))
+
+(def people20k (shuffle (take 20000 people)))
+
+(def schema
+  {:friend {:db/valueType   :db.type/ref
+             :db/cardinality :db.cardinality/many}
+   :alias   {:db/cardinality :db.cardinality/many}})
+
+;; * transaction
+;; ** adding data one transaction at a time
+
+(defn datascript-add-1 [data]
+  (enc/qb 1
+    (reduce
+     (fn [db p]
+       (-> db
+           (d/db-with [[:db/add (:db/id p) :name      (:name p)]])
+           (d/db-with [[:db/add (:db/id p) :last-name (:last-name p)]])
+           (d/db-with [[:db/add (:db/id p) :sex       (:sex p)]])
+           (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
+           (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
+     (d/empty-db schema)
+     data)))
+
+(defn doxa-add-1 [data]
+  (enc/qb 1
+    (reduce
+     (fn [db p]
+       (dx/commit db [[:dx/put p]]))
+     {}
+     data)))
+
+;; result in ms
+[(datascript-add-1 people20k) (doxa-add-1 people20k)]
+;; cljs => [1593 183]
+;; clj  => [692.26 47.58]
+
+;; ** add all data in single transaction
+
+(defn datascript-add-all []
+  (enc/qb 1
+    (d/db-with (d/empty-db schema) people20k)))
+
+(defn doxa-add-all []
+  (enc/qb 1
+    (->> (into []
+               (map (fn [p] [:dx/put p]))
+               people20k)
+         (dx/commit {}))))
+
+[(datascript-add-all) (doxa-add-all)]
+;;  => [1483.59 42.56]
+
+;; * query
+
+(def db100k
+  (d/db-with (d/empty-db schema) people20k))
+
+(def dx100k
+  (->> (into []
+             (comp (map (fn [{:keys [friend] :as p}]
+                          (assoc p :friend [:db/id (first (vals friend))])))
+                   (map (fn [p] [:dx/put p])))
+             people20k)
+       (dx/commit {})))
+
+;; * query by one key
+
+(defn datascript-q1 []
+  (enc/qb 1
+    (d/q '[:find ?e
+           :where [?e :name "Ivan"]]
+      db100k)))
+
+(defn dx-q1 []
+  (enc/qb 1
+    (dx/q [:find  ?e
+           :where [?e :name "Ivan"]]
+      dx100k)))
+
+[(datascript-q1) (dx-q1)]
+;; cljs => [9       51]
+;; clj  => [3.56 13.95]
+
+;; ** two conditions
+
+(defn datascript-q2 []
+  (enc/qb 1e1
+    (d/q '[:find ?e ?a
+           :where [?e :name "Ivan"]
+           [?e :age ?a]]
+      db100k)))
+
+(defn dx-q2 []
+  (enc/qb 1e1
+    (dx/q [ :find  [?e ?a]
+             :where [?e :name "Ivan"]
+            [?e :age ?a]]
+      dx100k)))
+
+[(datascript-q2) (dx-q2)]
+;; cljs => [  242    618]
+;; clj  => [65.51 142.94]
+
+;; ** 3
+
+(defn datascript-q3 []
+  (enc/qb 1e1
+    (d/q '[:find ?e ?a
+           :where [?e :name "Ivan"]
+           [?e :age ?a]
+           [?e :sex :male]]
+      db100k)))
+
+(defn dx-q3 []
+  (enc/qb 1e1
+    (dx/q [:find  [?e ?a]
+             :where [?e :name "Ivan"]
+                     [?e :age ?a]
+            [?e :sex :male]]
+      dx100k)))
+
+[(datascript-q3) (dx-q3)]
+;; cljs => [  409    646]
+;; clj  => [94.34 141.06]
+
+;; ** 4
+
+(defn datascript-q4 []
+  (enc/qb 1e1
+    (d/q '[:find ?e ?l ?a
+           :where [?e :name "Ivan"]
+           [?e :last-name ?l]
+           [?e :age ?a]
+           [?e :sex :male]]
+      db100k)))
+
+(defn dx-q4 []
+  (enc/qb 1e1
+    (doall
+     (dx/q [:find [?e ?l ?a]
+            :where [?e :name "Ivan"]
+            [?e :last-name ?l]
+            [?e :age ?a]
+            [?e :sex :male]]
+       dx100k))))
+
+[(datascript-q4) (dx-q4)]
+;; cljs => [  588    681]
+;; clj  => [149.9 142.44]
+
+(defn datascript-qpred1 []
+  (enc/qb 1e1
+    (d/q '[:find ?e ?s
+           :where [?e :salary ?s]
+           [(> ?s 50000)]]
+      db100k)))
+
+(defn dx-qpred1 []
+  (enc/qb 1e1
+    (dx/q [:find ?e ?s
+          :where [?e :salary ?s]
+          [(> ?s 50000)]]
+      dx100k)))
+
+[(datascript-qpred1) (dx-qpred1)]
+;; cljs => [  321    959]
+;; clj  => [93.36 179.29]
+
+(defn mdb-qpred2 []
+  (enc/qb 1e1
+    (doall
+     (m/search dx100k
+       (m/and
+        {_ {_ {:db/id ?e
+               :salary (m/some ?s)}}}
+        (m/guard (> ?s 50000)))
+       [?e ?s]))))
+
+[(datascript-qpred2) (mdb-qpred2)]
+;; cljs => [   320    :err] :(
+;; clj  => [278.17    :err] :(
+
+;; * pull
+
+(defn datascript-pull1 []
+  (enc/qb 1e3
+    (d/pull db100k [:name] (rand-int 20000))))
+
+(defn dx-pull1 []
+  (enc/qb 1e3
+    (dx/pull dx100k [:name] [:db/id (rand-int 20000)])))
+
+[(datascript-pull1) (dx-pull1)]
+;; cljs => [   15    8]
+;; clj  => [12.37 2.23]
+
+(defn datascript-pull2 []
+  (enc/qb 1e3
+    (d/pull db100k ['*] (rand-int 20000))))
+
+(defn dx-pull2 []
+  (enc/qb 1e3
+    (dx/pull dx100k [:*] [:db/id (rand-int 20000)])))
+
+[(datascript-pull2) (dx-pull2)]
+;; cljs => [   43   11]
+;; clj  => [38.52 3.81]
+
+(defn datascript-pull3 []
+  (enc/qb 1e3
+    (d/pull db100k [:name {:friend [:name]}] (rand-int 20000))))
+
+(defn dx-pull3 []
+  (enc/qb 1e3
+    (dx/pull dx100k [:name {:friend [:name]}][:db/id (rand-int 20000)])))
+
+[(datascript-pull3) (dx-pull3)]
+;; cljs => [   42   19]
+;; clj  => [20.63 2.84]
+#+end_src
