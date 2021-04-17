@@ -60,10 +60,6 @@ queries it matches =datascript=.
 (dx/commit db [[:dx/put [:db/id 1] :aka ["Tupen"]]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Tupen"]}}}
 
-(dx/commit db [[:dx/put [:db/id :ivan] :age 99]])
-;; =>
-;; #:db{:id {:ivan {:db/id :ivan, :name "Ivan", :last-name "Ivanov", :friend [:db/id :petr], :age 99}, :petr {:db/id :petr, :name "Petr", :last-name "Petrov", :friend [[:db/id :smith] [:db/id :ivan]], :age 15}, :smith {:db/id :smith, :name "Smith", :last-name "Smith", :friend [:db/id :petr], :age 55}}}
-
 ;; ** add data with autonormalization
 
 (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])
