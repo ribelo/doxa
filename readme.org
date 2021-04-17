@@ -518,20 +518,6 @@ queries it matches =datascript=.
 ;; cljs => [  321    959]
 ;; clj  => [93.36 179.29]
 
-(defn mdb-qpred2 []
-  (enc/qb 1e1
-    (doall
-     (m/search dx100k
-       (m/and
-        {_ {_ {:db/id ?e
-               :salary (m/some ?s)}}}
-        (m/guard (> ?s 50000)))
-       [?e ?s]))))
-
-[(datascript-qpred2) (mdb-qpred2)]
-;; cljs => [   320    :err] :(
-;; clj  => [278.17    :err] :(
-
 ;; * pull
 
 (defn datascript-pull1 []
