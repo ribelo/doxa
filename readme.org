@@ -25,8 +25,8 @@ with any document db. it also makes it easy to inspect data, save to disk,
 upload, patch and much more. this desing also allows for lightning-fast searches
 using =pull-syntax/eql=, which is an order of magnitude faster than in =datascript=,
 despite such a simple structure, it managed to create an incomplete and buggy
-way to write queries using =datalog=, which are translated into a query using
-meander thanks to the macro. even more surprising, the meander is so amazing
+way to write queries using =datalog=, which are translated into a meander =search=, 
+thanks to the macro. even more surprising, the meander is so amazing
 that the speed for simple queries is barely slower, while for more complex
 queries it matches =datascript=.
 
