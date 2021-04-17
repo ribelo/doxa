@@ -1,5 +1,7 @@
 {:paths ["src" "resources"]
- :deps  {meander/epsilon       {:mvn/version "0.0.588"}
-         com.taoensso/encore   {:mvn/version "3.10.1"}
-         juji/editscript       {:mvn/version "0.5.4"}
-         datascript/datascript {:mvn/version "1.0.3"}}}
+ :deps  {meander/epsilon        {:mvn/version "0.0.598"}
+         com.taoensso/encore    {:mvn/version "3.10.1"}
+         com.taoensso/timbre    {:mvn/version "5.1.2"}
+         thheller/shadow-cljs   {:mvn/version "2.11.15"}
+         edn-query-language/eql {:mvn/version "1.0.2"}
+         juji/editscript        {:mvn/version "0.5.7"}}}
