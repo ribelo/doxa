@@ -630,18 +630,17 @@
                     (not elem)
                     m
                     ;;
-                    :let    [[e k v] elem
-                             table (arg-map '?table)
+                    :let    [[table e k v] (case (count elem) (2 3) (into ['_] elem) 4 elem)
                              [?e ?k ?v] [(get arg-map e e) (get arg-map k k) (get arg-map v v)]]
                     ;; [?e ?k nil]
                     (and (not (list? ?e)) ?k (nil? ?v))
-                    (recur more (update-in m [(or table '_) ?e] merge {?k `(m/some)}) fns vars)
+                    (recur more (update-in m [table ?e] merge {?k `(m/some)}) fns vars)
                     ;; [?e ?k ?v]
                     (and (not (list? ?e)) ?k (not (vector? ?v)))
-                    (recur more (update-in m [(or table '_) ?e] merge {?k `(m/and ~v (m/some ~?v))}) fns vars)
+                    (recur more (update-in m [table ?e] merge {?k `(m/and ~v (m/some ~?v))}) fns vars)
                     ;; [?e ?k [!vs ...]]
                     (and (not (list? ?e)) ?k (vector? ?v))
-                    (recur more (update-in m [(or table '_) ?e] merge {?k `(m/or ~@?v)}) fns vars)
+                    (recur more (update-in m [table ?e] merge {?k `(m/or ~@?v)}) fns vars)
                     ;; [(?f)]
                     :let    [?fn   (first ?e)
                              !args (rest ?e)]
@@ -657,7 +656,7 @@
           :else (first r))))))
 (comment
   (-> (parse-query '[:where
-                     [?e1 :name "Ivan"]
+                     [:person/id ?e1 :name "Ivan"]
                      [?e2 :name "Ivan"]
                      [(+ ?e1 ?e2) ?x]])
       (datalog->meander))
@@ -684,7 +683,7 @@
        `~q)))
 
 (defmacro q [q' db & args]
-  (let [{:keys [where find after in pull] :as pq} (parse-query q' args)]
+  (let [{:keys [where find after in pull] :as pq} (apply parse-query q' args)]
     `(let [data# (vec
                   (m/rewrites ~db
                     ~(query pq) ~find))]
