@@ -31,8 +31,6 @@
         (#?(:clj = :cljs identical?) name' "by-id")
         (#?(:clj = :cljs identical?) name' "list"))))
 
-(enc/kw-identical? "a" "a")
-
 (comment
   (enc/qb 1e6 (key-id? :db/id))
   ;; => 73.67
@@ -514,13 +512,15 @@
 
 (defn pull
   ([db query]
-   (pull* db query))
+   (pull db (second (first query)) (ffirst query)))
   ([db query id]
    (enc/cond
      (ident? id)  (pull* db query id)
      (idents? id) (mapv (fn [id'] (pull* db query id')) id))))
 
 (comment
+  (pull @)
+
   (enc/qb 1e5
     (pull @conn_ [:name {:friend [:name {:friend [:name :age]}]}] [:db/id :ivan]))
   ;; => 627.52
