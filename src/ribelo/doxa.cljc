@@ -689,14 +689,14 @@
                     ~(query pq) ~find))]
        (enc/cond
          (seq '~pull)
-         (mapv (fn [elem#]
-                 (mapv (fn [[?q# [?table# ?e#]]]
-                         (let [args-map# (zipmap '~find elem#)
-                               table#    (args-map# ?table#)
-                               e#        (args-map# ?e#)]
-                           (pull ~db ?q# [table# e#])))
-                       '~pull))
-               data#)
+         (vec (mapcat (fn [elem#]
+                    (mapv (fn [[?q# [?table# ?e#]]]
+                            (let [args-map# (zipmap '~find elem#)
+                                  table#    (args-map# ?table#)
+                                  e#        (args-map# ?e#)]
+                              (pull ~db ?q# [table# e#])))
+                          '~pull))
+                      data#))
          :else (vec data#)))))
 (comment
   (enc/qb 1e5
