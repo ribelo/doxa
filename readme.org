@@ -22,7 +22,7 @@ complicates sync data with firebase firestore and realtime db.
 so what advantage does doxa have? by using a regular hasmap with structure
 ={?table {?eid {?k ?v ...} ...} ...}= allows you to seamlessly synchronize data
 with any document db. it also makes it easy to inspect data, save to disk,
-upload, patch and much more. this desing also allows for lightning-fast searches
+upload, patch and much more. this design also allows for lightning-fast searches
 using =pull-syntax/eql=, which is an order of magnitude faster than in =datascript=,
 despite such a simple structure, it managed to create an incomplete and buggy
 way to write queries using =datalog=, which are translated into a meander =search=, 
