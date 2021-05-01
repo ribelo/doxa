@@ -1,10 +1,10 @@
 #+TITLE: doxa
 
 a simple in-memory database, trying to copy the best solutions from =datascript=,
-=crux=, =fulcro=, =autonormal=, =kechema=, =shadow-grow= etc. everything but copying the
-biggest mistakes came out poorly. each of the above solutions has its own
+=crux=, =fulcro=, =autonormal=, =kechema=, =shadow-grow= etc. each of them has its own
 strengths, and is an excellent solution in its own narrow scope, but each lacks
-some of the cool things that the others have.
+some of the cool things that the others have. as usual in my case, everything
+but the copying worst things came out poorly
 
 this is an attempt to create a normalized db based on a simple hashmap, that
 allows you to edit data both using =clojure.core= functions and using
@@ -28,14 +28,18 @@ despite such a simple structure, it managed to create an incomplete and buggy
 way to write queries using =datalog=, which are translated into a meander =search=, 
 thanks to the macro. even more surprising, the meander is so amazing
 that the speed for simple queries is barely slower, while for more complex
-queries it matches =datascript=.
+queries performance matches =datascript=.
 
 * usage examples
+
+#+begin_src clojure :results silent :exports code
+(require '[ribelo.doxa :as dx])
+#+end_src
+
 
 ** transactions
 
 #+begin_src clojure :results silent
-(require '[ribelo.doxa :as dx])
 
 (def data [{:db/id 1 :name "Petr" :aka ["Devil"]}])
 
@@ -43,8 +47,12 @@ queries it matches =datascript=.
   ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
   )
 
-;; * put
-;; ** add entity
+#+end_src
+
+*** put
+**** add entity
+
+#+begin_src clojure :results silent :exports code
 
 (dx/commit {} [[:dx/put {:db/id 1 :name "David" :aka ["Devil"]}]])
 ;; => #:db{:id {1 {:db/id 1, :name "David", :aka ["Devil"]}}}
@@ -52,7 +60,13 @@ queries it matches =datascript=.
 (dx/commit {} [[:dx/put [:db/id 1] {:name "David" :aka ["Devil"]}]])
 ;; => #:db{:id {1 {:name "David", :aka ["Devil"], :db/id 1}}}
 
-;; ** single keyword change
+#+end_src
+
+
+**** single keyword change
+
+
+#+begin_src clojure :results silent :exports code
 
 (dx/commit db [[:dx/put [:db/id 1] :name "David"]])
 ;; => #:db{:id {1 {:db/id 1, :name "David", :aka ["Devil"]}}}
@@ -60,7 +74,12 @@ queries it matches =datascript=.
 (dx/commit db [[:dx/put [:db/id 1] :aka ["Tupen"]]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Tupen"]}}}
 
-;; ** add data with autonormalization
+#+end_src
+
+
+**** add data with autonormalization
+
+#+begin_src clojure :results silent :exports code
 
 (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])
 ;; =>
@@ -68,32 +87,59 @@ queries it matches =datascript=.
 ;;           2 {:db/id 2, :name "Ivan"},
 ;;           3 {:db/id 3, :name "Lucy"}}}
 
+#+end_src
 
-;; * delete
-;; ** delete entity
+
+*** delete
+
+**** delete entity
+
+#+begin_src clojure :results silent :exports code
 
 (dx/commit db [[:dx/delete [:db/id 1]]])
 ;; => {}
 
-;; ** delete keyword
+#+end_src
+
+
+**** delete keyword
+
+#+begin_src clojure :results silent :exports code
 
 (dx/commit db [[:dx/delete [:db/id 1] :aka]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr"}}}
 
-;; ** remove elem from vector
+#+end_src
+
+
+**** remove elem from vector
+
+#+begin_src clojure :results silent :exports code
 
 (dx/commit db [[:dx/delete [:db/id 1] :aka "Devil"]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr"}}}
 
-;; ** remove an invalid key
+#+end_src
 
+
+**** remove an invalid key
+
+#+begin_src clojure :results silent :exports code
 (dx/commit db [[:dx/delete [:db/id 1] :AKA "Devil"]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
 
-;; * conj
-;; because the database is schemeless, if we want to add something to the vector
-;; we have to use conj
+#+end_src
 
-;; ** add elem
+
+*** conj
+because the database is schemeless, if we want to add something to the vector we
+have to use =conj=
+
+
+
+**** add elem
+
+#+begin_src clojure :results silent :exports code
 
 (dx/commit db [[:dx/conj [:db/id 1] :aka "Tupen"]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil" "Tupen"]}}}
@@ -101,7 +147,12 @@ queries it matches =datascript=.
 (dx/commit db [[:dx/conj [:db/id 1] :name "Ivan"]])
 ;; => #:db{:id {1 {:db/id 1, :name ["Petr" "Ivan"], :aka ["Devil"]}}}
 
-;; ** with autonormalisation
+#+end_src
+
+
+**** with autonormalisation
+
+#+begin_src clojure :results silent :exports code
 
 (dx/commit db [[:dx/conj [:db/id 1] :friend {:db/id 2 :name "Ivan"}]])
 ;; =>
@@ -114,8 +165,12 @@ queries it matches =datascript=.
 ;;           2 {:db/id 2, :name "Ivan"}, 3
 ;;           {:db/id 3, :name "Lucy"}}}
 
-;; * update
-;; map can be updated by any function
+#+end_src
+
+
+*** update
+
+#+begin_src clojure :results silent :exports code
 
 (dx/commit db [[:dx/update [:db/id 1] assoc :aka "Tupen"]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka "Tupen"}}}
@@ -123,32 +178,60 @@ queries it matches =datascript=.
 (dx/commit db [[:dx/update [:db/id 1] :aka conj "Tupen"]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil" "Tupen"]}}}
 
-;; * match
-;; just like in crux, we can use match
-;; if data match, db is returned unchanged, otherwise nil
+#+end_src
 
-;; ** match entity
+
+*** match
+just like in =crux=, we can use match
+
+
+if data match, db is returned unchanged, otherwise nil
+
+
+**** match entity
+
+#+begin_src clojure :results silent :exports code
 
 (dx/commit db [[:dx/match [:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
 
-;; ** match keyword
+#+end_src
+
+
+**** match keyword
+
+#+begin_src clojure :results silent :exports code
+
 (dx/commit db [[:dx/match [:db/id 1] :aka ["Devil"]]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
 
-;; ** conditional put
+#+end_src
+
+**** conditional put
+
+
+#+begin_src clojure :results silent :exports code
 
 (dx/commit db [[:dx/match [:db/id 1] :aka ["Devil"]]
                [:dx/put   [:db/id 1] :aka ["Tupen"]]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Tupen"]}}}
 
-;; ** conditional delete
+#+end_src
+
+
+**** conditional delete
+
+#+begin_src clojure :results silent :exports code
+
 (dx/commit db [[:dx/match [:db/id 1]  :aka ["Tupen"]]
                [:dx/delete [:db/id 1] :aka]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
 
-;; transactions are dropped until the next valid match occurs
+#+end_src
 
+transactions are dropped until the next valid match occurs
+
+#+begin_src clojure :results silent :export code
 (dx/commit db [[:dx/match [:db/id 1] :aka ["Tupen"]]
                [:dx/put [:db/id 1] :age 15]
                [:dx/match [:db/id 1] :name "Petr"]
@@ -158,7 +241,8 @@ queries it matches =datascript=.
 
 ** pull
 
-#+begin_src clojure :results silent
+#+begin_src clojure :results silent :exports code
+
 (def people-docs
   [{:db/id 1, :name "Petr", :aka ["Devil" "Tupen"] :child [[:db/id 2] [:db/id 3]]}
    {:db/id 2, :name "David", :father [[:db/id 1]]}
@@ -172,33 +256,67 @@ queries it matches =datascript=.
 
 (def db (dx/create-dx people-docs))
 
-;; * eql
+#+end_src
+
+
+
+*** eql
+
+#+begin_src clojure :results silent :exports code
+
 (dx/pull db {[:db/id 1] [:name :aka]})
 ;; => {:name "Petr", :aka ["Devil"]}
 
-;; * datomic like pull syntax
+#+end_src
+
+
+*** datomic like pull syntax
+
+#+begin_src clojure :results silent :exports code
 
 (dx/pull db [:name :aka] [:db/id 1])
 ;; => {:name "Petr", :aka ["Devil"]}
 
-;; ** simple query
+#+end_src
+
+
+**** simple query
+
+#+begin_src clojure :results silent :exports code
 
 (dx/pull db  [:name :father :db/id] [:db/id 6])
 ;; => {:name "Matthew", :father [:db/id 3], :db/id 6}
 
-;; ** pull many
+#+end_src
+
+**** pull many
+
+
+#+begin_src clojure :results silent :exports code
 
 (dx/pull db [:name] [[:db/id 1] [:db/id 5] [:db/id 7] [:db/id 9]])
 ;; => [{:name "Petr"} {:name "Elizabeth"} {:name "Eunan"} {:name "Rebecca"}]
 
-;; ** reverse search
+#+end_src
+
+**** reverse search
+
+
+#+begin_src clojure :results silent :exports code
+
 (dx/pull db [:name :_child] [:db/id 2])
 ;; => {:name "David", :_child [:db/id 1]}
 
 (dx/pull db [:name {:_child [:name]}] [:db/id 2])
 ;; => {:name "David", :_child {:name "Petr"}}
 
-;; ** reverse non-component references yield collections
+#+end_src
+
+**** reverse non-component references yield collections
+
+
+#+begin_src clojure :results silent :exports code
+
 (dx/pull db '[:name :_father] [:db/id 3])
 ;; => {:name "Thomas", :_father [:db/id 6]}
 
@@ -211,7 +329,12 @@ queries it matches =datascript=.
 (dx/pull db '[:name {:_father [:name]}] [:db/id 1])
 ;; => {:name "Petr", :_father [{:name "Thomas"} {:name "David"}]}
 
-;; ** wildcard
+#+end_src
+
+**** wildcard
+
+
+#+begin_src clojure :results silent :exports code
 
 (dx/pull db [:*] [:db/id 1])
 ;; =>
@@ -220,15 +343,24 @@ queries it matches =datascript=.
 (dx/pull db [:* :_child] [:db/id 2])
 ;; => {:db/id 2, :name "David", :father [:db/id 1], :_child [:db/id 1]}
 
-;; ** missing attrs are dropped
+#+end_src
+
+**** missing attrs are dropped
+
+#+begin_src clojure :results silent :exports code
 
 (dx/pull db [:name {:child [:name]}] [:db/id 2])
 ;; => {:name "David"}
 
-;; ** non matching results are removed from collections
+#+end_src
+
+**** non matching results are removed from collections
+
+#+begin_src clojure :results silent
 
 (dx/pull db [:name {:child [:foo]}] [:db/id 1])
 ;; => {:name "Petr", :child []}
+
 #+end_src
 
 ** datalog
