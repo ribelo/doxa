@@ -122,26 +122,34 @@
          (recur (assoc! m k v) r [k v])
          ;;
          (entity? v)
-         (recur (assoc! m k (entity-id v)) (normalize v false) id)
+         (recur (assoc! m k [(entity-id v)]) (into r (normalize v false)) id)
          ;;
          (entities? v)
          (recur (assoc! m k (mapv entity-id v))
                 (reduce (fn [acc m'] (into acc (normalize m' false))) r v)
                 id)
          ;;
+         (ident? v)
+         (recur (assoc! m k [v]) r id)
+         ;;
          :else
          (recur (assoc! m k v) r id))))))
 
 (comment
-  (enc/qb 1e5 (normalize {:db/id :ivan :name "ivan" :friend [{:db/id :petr :name "petr"}]}))
+  (enc/qb 1e5 (normalize {:db/id :ivan :name "ivan" :friend [:db/id :petr]}))
   ;; => 79.35
   )
 
 (defn submit-commit [db tx]
   (m/find tx
     ;; put [?tid ?eid] ?k ?v
-    [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred not-entities? ?v)]
+    [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)]
+     (m/pred keyword? ?k) (m/pred (complement (some-fn entity? entities? ident?)) ?v)]
     (assoc-in db [?tid ?eid ?k] ?v)
+    ;; put [?tid ?eid] ?k ?ident
+    [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)]
+     (m/pred keyword? ?k) (m/pred ident? ?v)]
+    (update-in db [?tid ?eid ?k] conjv ?v)
     ;; put [?tid ?eid] ?k ?m
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred entity? ?v)]
     (let [xs (normalize ?v)
@@ -174,6 +182,22 @@
           :if-not (.hasNext it) acc
           :let    [[ks m] (.next it)]
           (recur (assoc-in acc ks m)))))
+    ;; put [m ...]
+    [:dx/put (m/pred entities? ?vs)]
+    (let [it1 (-iter ?vs)]
+      (loop [acc db]
+        (enc/cond
+          :if-not (.hasNext it1) acc
+          :let    [?m  (.next it1)
+                   xs  (normalize ?m)
+                   it2 (-iter xs)]
+          :else
+          (recur
+           (loop [acc' acc]
+             (enc/cond
+               :if-not (.hasNext it2) acc'
+               :let    [[ks m] (.next it2)]
+               (recur (assoc-in acc' ks m))))))))
     ;; put [?tid ?eid] m
     [:dx/put [(m/pred key-id? ?tid) (m/pred eid? ?eid)] ?m]
     (let [xs (normalize (assoc ?m ?tid ?eid))
@@ -268,17 +292,24 @@
   )
 
 (defn listen!
-  ([conn_ cb] (listen! conn_ (enc/uuid-str) cb))
-  ([conn_ k cb]
-   (if (meta conn_)
-     (swap! ((meta conn_) :listeners) assoc k cb)
-     (with-meta conn_ (atom {k cb})))
+  ([db cb] (listen! db (enc/uuid-str) cb))
+  ([db k cb]
+   (if (meta db)
+     (swap! (get (meta db) :listeners (atom {})) assoc k cb)
+     (with-meta db (atom {k cb})))
    k))
 
+(comment
+  (def tmp (create-dx))
+  (listen! tmp #(println :sex))
+  (commit tmp [:dx/put [:db/id :ivan] :age 1])
+  (es/patch tmp (es/edits->script [[[:db/id] :+ {:ivan {:age 2}}]]))
+  )
+
 (defn unlisten!
-  ([conn_ k]
-   (when (meta conn_)
-     (swap! ((meta conn_) :listeners) dissoc k))))
+  ([db k]
+   (when (meta db)
+     (swap! ((meta db) :listeners) dissoc k))))
 
 (defn commit*
   ([db txs] (commit* db txs nil))
@@ -318,7 +349,7 @@
   ([db txs tx-meta]
    (let [db' (commit* db txs tx-meta)]
      (when-let [it (some-> (meta db) :listeners deref -iter)]
-       (while (.hasNext it)
+       (while #?(:clj (.hasNext it) :cljs ^cljs (.hasNext it))
          (let [[_k cb] (.next it)]
            (cb db'))))
      db')))
@@ -332,9 +363,14 @@
   ([db edits]
    (patch db edits (enc/now-udt)))
   ([db edits time]
-   (vary-meta (es/patch db (es/edits->script edits)) assoc
-              :t  time
-              :tx edits)))
+   (let [db' (es/patch db (es/edits->script edits))]
+     (when-let [it (some-> (meta db') :listeners deref -iter)]
+       (while #?(:clj (.hasNext it) :cljs ^cljs (.hasNext it))
+         (let [[_k cb] (.next it)]
+           (cb db'))))
+     (vary-meta db' assoc
+                :t  time
+                :tx edits))))
 
 (defn patch!
   ([db_ edits]
@@ -353,7 +389,15 @@
   ([data]
    (create-dx data {:with-diff? false}))
   ([data {:keys [with-diff?] :as opts}]
-   (with-meta (db-with data) (merge opts {:listeners (atom {}) :t nil :tx nil}))))
+   (with-meta
+     (if (not-empty data) (db-with data) {})
+     (merge opts {:listeners (atom {}) :t nil :tx nil}))))
+
+(comment
+  (commit* {} [:dx/put {}])
+  (commit {} txs)
+
+  )
 
 
 
@@ -371,14 +415,25 @@
       :last-name "Petrov"
       :friend    [[:db/id :smith] [:db/id :ivan]]
       :age       15}
-     {:db/id     [:smith "Smith"]
+     {:db/id     :smith
       :name      "Smith"
       :last-name "Smith"
       :friend    [:db/id :petr]
       :age       55}])
 
-  (def conn_ (atom (create-dx txs)))
+  (def conn_ (atom (db-with txs)))
   )
+
+(comment
+  (enc/qb 1e5
+    (commit! conn_ [[:dx/put [:db/id :ivan] :age (rand-int 100)]])
+    (commit! conn2_ [[:dx/put [:db/id :ivan] :name (rand-int 100)]]))
+  (def diff (:tx (meta @conn2_)))
+  (let [tx (repeat 1000 [:dx/put [:db/id :ivan] :age 8])
+        diff (es/edits->script (vec (repeat 1000 (first diff))))]
+    (enc/qb 1e3
+      (commit @conn_ tx)
+      (es/patch @conn2_ diff))))
 
 (defn- -rev-keyword? [k]
   (enc/str-starts-with? (name k) "_"))
@@ -407,73 +462,77 @@
   ([db query]
    (pull* db query nil))
   ([db query parent]
-   (let [it (-iter query)]
-     (loop [r {} id parent]
-       (enc/cond
-         (not (.hasNext it))
-         r
-         ;;
-         :let  [elem (.next it)]
-         (and (map? elem) (ident? (ffirst elem)))
-         (recur (pull* db (second (first elem)) (ffirst elem)) id)
-         ;; prop
-         (and (some? id) (#{:*} elem))
-         (recur
-          (let [m  (get-in db id)
-                it (-iter m)]
-            (loop [acc (transient {})]
-              (enc/cond
-                (not (.hasNext it))
-                (persistent! acc)
-                ;;
-                :let [elem (.next it)
-                      k    (nth elem 0)
-                      v    (nth elem 1)]
-                ;;
-                (and (idents? v) (= 1 (count v)))
-                (recur (assoc! acc k (nth v 0)))
-                ;;
-                :else
-                (recur (assoc! acc k v)))))
-          id)
-         ;;
-         (and (some? id) (keyword? elem) (not (-rev-keyword? elem)))
-         (recur
-          (enc/assoc-some r elem (enc/cond
-                                   :let  [v (get-in db (conj id elem))]
-                                   (and (idents? v) (= (count v) 1))
-                                   (nth v 0)
-                                   :else v))
-          id)
-         (and (some? id) (keyword? elem) (-rev-keyword? elem))
-         (let [k (-rev->keyword elem)]
+   (enc/cond
+     (= [:*] query)
+     (get-in db parent)
+     :else
+     (let [it (-iter query)]
+       (loop [r {} id parent]
+         (enc/cond
+           (not (.hasNext it))
+           r
+           ;;
+           :let  [elem (.next it)]
+           (and (map? elem) (ident? (ffirst elem)))
+           (recur (pull* db (second (first elem)) (ffirst elem)) id)
+           ;; prop
+           (and (some? id) (#{:*} elem))
+           (recur
+            (let [m  (get-in db id)
+                  it (-iter m)]
+              (loop [acc (transient {})]
+                (enc/cond
+                  (not (.hasNext it))
+                  (persistent! acc)
+                  ;;
+                  :let [elem (.next it)
+                        k    (nth elem 0)
+                        v    (nth elem 1)]
+                  ;;
+                  (and (idents? v) (= 1 (count v)))
+                  (recur (assoc! acc k (nth v 0)))
+                  ;;
+                  :else
+                  (recur (assoc! acc k v)))))
+            id)
+           ;;
+           (and (some? id) (keyword? elem) (not (-rev-keyword? elem)))
            (recur
             (enc/assoc-some r elem (enc/cond
-                                     :let  [v (reverse-search db k id)]
+                                     :let  [v (get-in db (conj id elem))]
                                      (and (idents? v) (= (count v) 1))
                                      (nth v 0)
                                      :else v))
-            id))
-         ;; join
-         :when (and (some? id) (map? elem)) ;; {:friend [:name]}
-         :let  [k    (ffirst elem)
-                rev? (-rev-keyword? k)
-                ref' (if-not rev?
-                       (get-in db (conj parent k))
-                       (reverse-search db (-rev->keyword k) id))]
-         ;;
-         (and (some? id) (ident? ref'))
-         (recur (enc/assoc-some r k (pull* db (second (first elem)) ref')) id)
-         ;;
-         (and (some? id) (idents? ref'))
-         (recur (enc/assoc-some r (ffirst elem) (enc/cond
-                                                  :let             [xs (mapv (partial pull* db (second (first elem))) ref')]
-                                                  ;;
-                                                  (> (count xs) 1) (into [] (comp (map not-empty) (remove nil?)) xs)
-                                                  (= (count xs) 1) (not-empty (first xs)))) id)
-         ;;
-         (some? id)
-         (recur r id))))))
+            id)
+           (and (some? id) (keyword? elem) (-rev-keyword? elem))
+           (let [k (-rev->keyword elem)]
+             (recur
+              (enc/assoc-some r elem (enc/cond
+                                       :let  [v (reverse-search db k id)]
+                                       (and (idents? v) (= (count v) 1))
+                                       (nth v 0)
+                                       :else v))
+              id))
+           ;; join
+           :when (and (some? id) (map? elem)) ;; {:friend [:name]}
+           :let  [k    (ffirst elem)
+                  rev? (-rev-keyword? k)
+                  ref' (if-not rev?
+                         (get-in db (conj parent k))
+                         (reverse-search db (-rev->keyword k) id))]
+           ;;
+           (and (some? id) (ident? ref'))
+           (recur (enc/assoc-some r k (pull* db (second (first elem)) ref')) id)
+           ;;
+           (and (some? id) (idents? ref'))
+           (recur (enc/assoc-some r (ffirst elem) (enc/cond
+                                                    :let             [xs (mapv (partial pull* db (second (first elem))) ref')]
+                                                    ;;
+                                                    (> (count xs) 1) (into [] (comp (map not-empty) (remove nil?)) xs)
+                                                    (= (count xs) 1) (not-empty (first xs)))) id)
+           ;;
+           (some? id)
+           (recur r id)))))))
 
 (defn pull
   ([db query]
@@ -483,12 +542,25 @@
      (ident? id)  (pull* db query id)
      (idents? id) (mapv (fn [id'] (pull* db query id')) id))))
 
+(defn pull-value
+  ([db query]
+   (-> (pull db (second (first query)) (ffirst query)) vals first))
+  ([db query id]
+   (-> (pull* db query id) vals first)))
+
 (comment
-  (pull @)
 
   (enc/qb 1e5
     (pull @conn_ [:name {:friend [:name {:friend [:name :age]}]}] [:db/id :ivan]))
   ;; => 627.52
+
+  (enc/qb 1e5
+    (m/search @conn_
+      {_ {:ivan {:name ?name   :friend (m/scan [_ ?f])}
+          ?f    {:name ?fname  :friend (m/scan [_ ?ff])}
+          ?ff   {:name ?ffname :age ?ffage}}}
+      {:name ?name :friend {:name ?fname :friend {:name ?ffname :age ?ffage}}}))
+  ;; => 620.35
 
   (enc/qb 1e5
     (pull @conn_ [:name {:friend [:name]}] [:db/id :ivan]))
@@ -502,25 +574,14 @@
     (pull @conn_ [:name :age :sex] [:db/id :ivan]))
   ;; => 150.18
   )
+;; => nil
+;; => nil
 
 (comment
   [?name] ["Ivan" "Petr"]                  -> {?name ["Ivan" "Petr"]}
   [[?name ?age]] [["Ivan" 30] ["Petr" 18]] -> {?name ["Ivan" "Petr"]})
 
 ;; * datalog
-
-(defn build-args-map [in args]
-  (m/rewrite [in args]
-    [[!ins ..?n] [!args ..?n]]
-    {& [(m/cata [!ins !args]) ...]}
-    ;;
-    [[!ins ..1] [!args ...]]
-    [!ins [!args ...]]
-    ;;
-    [(m/some ?in) (m/some ?arg)]
-    [?in ?arg]
-    ;;
-    [nil nil] {}))
 
 (defn parse-query [q & args]
   (loop [[elem & more] q k nil r {:args (vec args)}]
@@ -531,17 +592,47 @@
       (keyword? elem)
       (recur more elem r)
       ;;
-      (and (= :find k) (= '. elem))
-      (recur more k (update r :after conjv first))
-      ;;
       (and (= :find k) (list? elem) (= 'pull (first elem)))
       (let [[_ ?q [?table ?e]] elem]
         (recur more k (-> (update   r k conjv ?table)
                           (update     k conjv ?e)
                           (update :pull conjv [?q [?table ?e]]))))
+      (and (= :find k) (vector? elem) (list? (first elem)) (= 'pull (ffirst elem)) (= '... (last elem)))
+      (let [[_ ?q [?table ?e]] (first elem)]
+        (recur more k (-> (update   r k conjv ?table)
+                          (update     k conjv ?e)
+                          (assoc  :unpack? true)
+                          (update :pull conjv [?q [?table ?e]]))))
+      ;;
+      (and (= :find k) (= '. elem))
+      (recur more k (assoc r :first? true))
+      ;;
+      (and (= :find k) (vector? elem) (= '... (last elem)))
+      (recur more k (-> (assoc r :unpack? true)
+                        (update k (partial enc/into-all []) (butlast elem))))
+      ;;
+      ;; (and (= :find k) (list? elem))
+      ;; (let [[?fn & ?args] elem]
+      ;;   (recur more k (-> (update r k (partial enc/into-all []) ?args)
+      ;;                     (update :fns conjv [?fn ?args]))))
       ;;
       :else
       (recur more k (update r k conjv elem)))))
+
+(comment
+
+  (parse-query '[:find [[?e ?name] ...]])
+  (parse-query '[:find [?e ...]])
+  (q [:find [(pull [:*] [:db/id ?e]) ...]
+      :where
+      [?e :name]]
+    @conn_)
+
+  (q [:find ?e .
+      :where
+      [?e :document/id 1]]
+    {:document/id {1 {:document/id 1}}})
+  )
 
 (defn build-args-map [{:keys [in args] :as q}]
   (m/match q
@@ -577,48 +668,92 @@
   (-> (parse-query '[:in [[?name ?age]]] [["ivan" 20] ["petr" 30]])
       (build-args-map))
   (-> (parse-query '[:find ?e
-                    :in ?attr [?value]
-                    :where [?e ?attr ?value]]
+                     :in ?attr [?value]
+                     :where [?e ?attr ?value]]
+                   :name ["Ivan" "Petr"])
+      (build-args-map))
+  (-> (parse-query '[:find (count ?e)
+                     :in ?attr [?value]
+                     :where [?e ?attr ?value]]
                    :name ["Ivan" "Petr"])
       (build-args-map)))
+
+(defn qsymbol? [x]
+  (and (symbol? x) (enc/str-starts-with? (name x) "?")))
+
+(defn- some-value
+  ([] `(m/some))
+  ([?v]
+   (enc/cond
+     (not (symbol? ?v))
+     ?v
+     ;;
+     (and (symbol? ?v) (qsymbol? ?v))
+     `(m/some ~?v)
+     ;;
+     (symbol? ?v)
+     `(m/some (unquote ~?v))))
+  ([?s ?v]
+   (enc/cond
+     (not (symbol? ?v))
+     `(m/and ~?s ~?v))))
 
 (defn datalog->meander [{:keys [where in args] :as q}]
   (let [args-map (build-args-map q)]
     (loop [[arg-map & more] args-map r []]
       (if arg-map
-        (let [x (loop [[elem & more] where m {} fns [] vars []]
+        (let [x (loop [[elem & more] where m {} fns [] vars [] q 0]
                   (enc/cond
-                    (and (not elem) (or (pos? (count fns)) (pos? (count vars))))
-                    `(m/and ~m ~@fns ~@vars)
+                    (and (not elem) (or (pos? (count fns)) (pos? (count vars)) (pos? q)))
+                    `(m/and ~@(map (fn [[_ m']] m') m) ~@fns ~@vars)
                     ;;
-                    (not elem)
-                    m
+                    (and (not elem))
+                    `~(m 0)
                     ;;
-                    :let    [[table e k v] (case (count elem) (2 3) (into ['_] elem) 4 elem)
-                             [?e ?k ?v] [(get arg-map e e) (get arg-map k k) (get arg-map v v)]]
+                    :let [[table e k v] (case (count elem) (1 2 3) (into ['_] elem) 4 elem)
+                          [?e ?k ?v]    [(get arg-map e e) (get arg-map k k) (get arg-map v v)]]
                     ;; [?e ?k nil]
                     (and (not (list? ?e)) ?k (nil? ?v))
-                    (recur more (update-in m [table ?e] merge {?k `(m/some)}) fns vars)
+                    (recur more (update-in m [q table ?e] merge {?k (some-value)}) fns vars q)
                     ;; [?e ?k ?v]
-                    (and (not (list? ?e)) ?k (not (vector? ?v)))
-                    (recur more (update-in m [table ?e] merge {?k `(m/and ~v (m/some ~?v))}) fns vars)
+                    (and (not (list? ?e)) ?k (not (vector? ?v)) (not (qsymbol? ?v)))
+                    (recur more (update-in m [q table ?e] merge {?k (some-value v ?v)}) fns vars q)
+                    ;;
+                    (and (not (list? ?e)) ?k (not (vector? ?v)) (qsymbol? ?v))
+                    (recur more (update-in m [q table ?e] merge {?k (some-value ?v)}) fns vars q)
+                    ;; [?e ?k [?t ?ref]]
+                    (and (not (list? ?e)) ?k (vector? ?v) (= 2 (count ?v)) (enc/rsome qsymbol? ?v))
+                    (recur more (update-in m [q table ?e] merge {?k `(m/scan ~?v)}) fns vars (inc q))
                     ;; [?e ?k [!vs ...]]
-                    (and (not (list? ?e)) ?k (vector? ?v))
-                    (recur more (update-in m [table ?e] merge {?k `(m/or ~@?v)}) fns vars)
+                    (and (not (list? ?e)) ?k (vector? ?v) (not (enc/rsome qsymbol? ?v)))
+                    (recur more (update-in m [q table ?e] merge {?k `(m/or ~@?v)}) fns vars q)
                     ;; [(?f)]
-                    :let    [?fn   (first ?e)
-                             !args (rest ?e)]
+                    :let [?fn   (first ?e)
+                          !args (rest ?e)]
+                    ;;
                     (and (list? ?e) (nil? ?k))
-                    (recur more m (conj fns `(m/guard (~?fn ~@!args))) vars)
+                    (recur more m (conj fns `(m/guard (~?fn ~@!args))) vars q)
                     ;; [(?f) ?x]
                     (and (list? ?e) (symbol? ?k))
-                    (recur more m fns (conj vars `(m/let [~?k (~?fn ~@!args)])))))]
+                    (recur more m fns (conj vars `(m/let [~?k (~?fn ~@!args)])) q)))]
           (recur more (conj r x)))
         (enc/cond
           (> (count r) 1)
           `(m/or ~@r)
           :else (first r))))))
+
 (comment
+  (enc/qb 1e5
+        (m/search @conn_
+          {_ {?e {:name "Ivan" :friend (m/scan [?t ?f])}
+              ?f {:name ?name}}}
+          ?name)
+        (m/search @conn_
+          (m/and {_ {?e {:name "Ivan" :friend (m/scan [?t ?f])}}}
+                 {_ {?f {:name ?name}}})
+          ?name))
+
+
   (-> (parse-query '[:where
                      [:person/id ?e1 :name "Ivan"]
                      [?e2 :name "Ivan"]
@@ -651,21 +786,48 @@
        `~q)))
 
 (defmacro q [q' db & args]
-  (let [{:keys [where find after in pull] :as pq} (apply parse-query q' args)]
-    `(let [data# (vec
-                  (m/rewrites ~db
-                    ~(query pq) ~find))]
-       (enc/cond
+  (let [{:keys [find first? unpack? pull] :as pq} (apply parse-query q' args)]
+    `(let [data# (m/rewrites ~db
+                   ~(query pq) ~find)]
+       (cond->> data#
          (seq '~pull)
-         (vec (mapcat (fn [elem#]
-                    (mapv (fn [[?q# [?table# ?e#]]]
-                            (let [args-map# (zipmap '~find elem#)
-                                  table#    (args-map# ?table#)
-                                  e#        (args-map# ?e#)]
-                              (pull ~db ?q# [table# e#])))
-                          '~pull))
-                      data#))
-         :else (vec data#)))))
+         (map (fn [elem#]
+                   (mapv (fn [[?q# [?table# ?e#]]]
+                           (let [args-map# (zipmap '~find elem#)
+                                 table#    (args-map# ?table#)
+                                 e#        (args-map# ?e#)]
+                             (pull ~db ?q# [table# e#])))
+                         '~pull)))
+         ;;
+         '~first?
+         first
+         ;;
+         '~unpack?
+         (mapcat identity)
+         :else vec))))
+
+(comment
+
+  (q [:find ?id
+      :where
+      [?table ?e :db/id [?table ?id]]]
+    @conn_)
+
+  (q [:find [(pull [:*] [?table ?e]) ...]
+      :where
+      [?table ?e :name ?name]]
+    @conn_)
+  (q [:find ?e
+      :where
+      [?e :name "Ivan"]]
+    @conn_)
+
+  (parse-query '[:find ?e
+                 :in ?name
+                 :where
+                 [?e :name ?name]]
+               "Ivan"))
+
 (comment
   (enc/qb 1e5
     (doall
@@ -677,51 +839,6 @@
        {_ {_ {:name ?name}}}
        ?name))))
 
-(defn match-diff? [where diff db]
-  (m/match {:where where
-            :diff  diff
-            :db    db}
-    ;; match [_ ?attr ?val]
-    {:where [_ ?attr ?val]
-     :diff  [[?id & _] & _]
-     :db    {?id {?attr ?val}}}
-    true
-    ;;match id and attr
-    {:where [?id ?k]
-     :diff  [[?id ?k] & _]}
-    true
-    ;;
-    ;;match id
-    {:where [?id nil]
-     :diff  [[?id & _] & _]}
-    true
-    ;; match attr
-    {:where [nil ?k]
-     :diff  [[_ ?k] & _]}
-    true
-    ;;
-    ;; retract id
-    {:where [nil ?k]
-     :diff  [[?id] :-]}
-    (-> db (get ?id) keys set (contains? ?k))
-    ;; add id
-    {:where [nil ?k]
-     :diff  [[?id] :+(m/pred map? ?m)]}
-    (-> ?m keys set (contains? ?k))
-    _ false))
-
-(comment
-  (match-diff? '[?e :name "Ivan"] [[:ivan] :+{:name "Ivan"}] {}))
-
-
-(comment
-  (listen!
-   @conn_ :sex
-   (fn [{:keys [diff]}]
-     (doseq [elem diff]
-       (when (match-diff? [:ivan nil] elem)))))
-
-  (commit! conn_ [[::put :petr :age 32]]))
 
 ;; * re-frame
 
@@ -735,6 +852,13 @@
 #?(:clj
    (defmacro with-dx
      {:style/indent 1}
-     [[db store] & body]
-     `(let [~db (@dxs_ ~store)]
+     [bindings & body]
+     {:pre [(even? (count bindings))]}
+     `(let [~@(mapcat (fn [[v k]] [v `(@dxs_ ~k)]) (partition 2 bindings))]
         ~@body)))
+
+;; (defmacro with-dx2
+;;      {:style/indent 1}
+;;      [[db store] & body]
+;;      `(let [~db (@dxs_ ~store)]
+;;         ~@body))
