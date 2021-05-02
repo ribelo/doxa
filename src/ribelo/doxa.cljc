@@ -695,6 +695,9 @@
      `(m/some (unquote ~?v))))
   ([?s ?v]
    (enc/cond
+     (list? ?v)
+     ?v
+     ;;
      (not (symbol? ?v))
      `(m/and ~?s ~?v))))
 
