@@ -34,7 +34,7 @@
                                    [(> ?age 18) ?adult]])
                  (dx/datalog->meander)))))
   (t/testing "in & args"
-    (t/is (= `{~'_ {~'?e {:name "Ivan"}}}
+    (t/is (= `{~'_ {~'?e {:name (m/and ~'?name "Ivan")}}}
              (-> (dx/parse-query '[:where [?e :name ?name]
                                    :in ?name]
                                  "Ivan")
@@ -52,8 +52,10 @@
                                  ["Ivan" "Petr"]
                                  [20 30])
                  (dx/datalog->meander))))
-    (t/is (= `(m/or {~'_ {~'?e {:name "Ivan" :age 20}}}
-                    {~'_ {~'?e {:name "Petr" :age 30}}})
+    (t/is (= `(m/or {~'_ {~'?e {:name (m/and ~'?name "Ivan")
+                                :age  (m/and ~'?age 20)}}}
+                    {~'_ {~'?e {:name (m/and ~'?name "Petr")
+                                :age  (m/and ~'?age 30)}}})
              (-> (dx/parse-query '[:where
                                    [?e :name ?name]
                                    [?e :age ?age]
@@ -266,13 +268,13 @@
 ;; * query
 
 (comment
-  (def db (dx/db-with [{:db/id 1, :name "Ivan", :age 15 :friend [:db/id 2]}
-                       {:db/id 2, :name "Petr", :age 37 :friend [:db/id 3]}
-                       {:db/id 3, :name "Ivan", :age 37}
-                       {:db/id 4, :age 15}])))
+  (def db (dx/db-with [{:db/id 1, :name "Ivan", :age 15 :friend [[:db/id 2] [:db/id 3]]}
+                        {:db/id 2, :name "Petr", :age 37 :friend [:db/id 3]}
+                        {:db/id 3, :name "Ivan", :age 37}
+                        {:db/id 4, :age 15}])))
 
 (t/deftest test-joins
-  (let [db (dx/db-with [{:db/id 1, :name "Ivan", :age 15 :friend [:db/id 2]}
+  (let [db (dx/db-with [{:db/id 1, :name "Ivan", :age 15 :friend [[:db/id 2] [:db/id 3]]}
                         {:db/id 2, :name "Petr", :age 37 :friend [:db/id 3]}
                         {:db/id 3, :name "Ivan", :age 37}
                         {:db/id 4, :age 15}])]
@@ -318,7 +320,7 @@
                         :age  ?a}}}
                [?e1 ?e2 ?n])))
 
-    (t/is (= [[2 "Petr"]]
+    (t/is (= [[2 "Petr"] [3 "Ivan"]]
              (dx/q [:find ?f ?fname
                     :where
                     [?e :name    "Ivan"]
