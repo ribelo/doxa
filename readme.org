@@ -57,7 +57,7 @@ better than =:person.id/ivan=, is easier to create and easier to use.
 
 but wouldn't operations on a flat map be faster? in normal use, the speed
 difference is negligible, while a nested map can be faster than =datascript= due
-to the possibility of limiting the iterated elements, see [[id:bca02df4-1b99-4b3e-a00b-c5c7c8b3a406][benchmark]]
+to the possibility of limiting the iterated elements, see [[file:./readme.org::*can we be faster than datascript? yes!][benchmark]]
 
 * usage examples
 
