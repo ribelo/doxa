@@ -798,32 +798,6 @@ categories
 ;; clj => [182.98 685.15 71.05]
 #+end_src
 
-#+begin_src clojure :results silent :exports code
-
-(def datascript-query
-  (enc/qb 1
-    (d/q '[:find ?e
-           :where
-           [?e :name "Avocado"]]
-      db100k)))
-
-(def dx-query
-  (enc/qb 1
-    (d/q '[:find ?e
-           :where
-           [?e :name "Avocado"]]
-      dx100k)))
-
-(def dx-query-with-explict-table
-  (enc/qb 1
-    (d/q '[:find ?e
-           :where
-           [:fruid/id ?e :name "Avocado"]]
-      dx100k)))
-
-#+end_src
-
-
 **** query by one condition
 
 
