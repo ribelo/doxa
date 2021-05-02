@@ -30,11 +30,35 @@ thanks to the macro. even more surprising, the meander is so amazing
 that the speed for simple queries is barely slower, while for more complex
 queries performance matches =datascript=.
 
-* usage examples
+#+begin_src clojure :results silent :exports code
+
+(require '[ribelo.doxa :as dx])
+
+#+end_src
+
+* db structure
+
+db is a simple map with three levels of nesting
 
 #+begin_src clojure :results silent :exports code
-(require '[ribelo.doxa :as dx])
+
+{?table {?eid {:db/id ?eid
+               ?k     ?v}}
+ ...    {...  {:db/id ...}}}
+
 #+end_src
+
+why not flat map? because this design allows for greater flexibility when it
+comes to the operation of references and naming entity identifications.
+=[person/id :ivan]= looks better than =:person.id/ivan=, easier to create and easier
+to use.
+
+but wouldn't operations on a flat map be faster? in normal use, the speed
+difference is negligible, while a nested map can be faster than =datascript= due
+to the possibility of limiting the iterated elements
+
+* usage examples
+
 
 
 ** transactions
@@ -365,21 +389,26 @@ transactions are dropped until the next valid match occurs
 
 ** datalog
 
-#+begin_src clojure :results silent
+#+begin_src clojure :results silent :exports code
+
 (def db (dx/create-dx [{:db/id 1, :name "Ivan" :age 15}
                        {:db/id 2, :name "Petr" :age 37}
                        {:db/id 3, :name "Ivan" :age 37}
                        {:db/id 4, :age 15}]))
 
-;; * joins
+#+end_src
+
+*** joins
+
+unlike everything else, doxa does not return a set, but a vector, which has
+far-reaching consequences
+
+#+begin_src clojure :results silent :exports code
 
 (dx/q [:find ?e
        :where [?e :name]]
   db)
 ;; => [[1] [2] [3]]
-
-;; unlike everything else, doxa does not return a set, but a vector, which has
-;; far-reaching consequences
 
 (dx/q [:find ?e ?v
        :where
@@ -388,12 +417,18 @@ transactions are dropped until the next valid match occurs
   db)
 ;; => [[1 15] [3 37]]
 
+#+end_src
+
+each element is checked once, so the result in a normal engine would be [[1 1]
+[1 3] [3 3]]
+
+#+begin_src clojure :results silent :exports code
+
 (dx/q [:find ?e1 ?e2
        :where
        [?e1 :name ?n]
        [?e2 :name ?n]] db)
 ;; => [[1 3] [3 1]]
-;; each element is checked once, so the result in a normal engine would be [[1 1] [1 3] [3 3]]
 
 (dx/q [:find ?e1 ?e2 ?n
        :where
@@ -404,9 +439,14 @@ transactions are dropped until the next valid match occurs
   db)
 ;; => [[3 2 "Petr"]]
 
-;; ** many
-;; meander is running underneath, so you can use all the functions available in
-;; the meander, e.g. scan
+#+end_src
+
+**** many
+
+meander is running underneath, so you can use all the functions available in the
+meander, e.g. scan
+
+#+begin_src clojure :results silent :exports code
 
 (def db (dx/create-dx [{:db/id 1
                         :name  "Ivan"
@@ -424,7 +464,12 @@ transactions are dropped until the next valid match occurs
   db)
 ;; => [["Ivan" "Petr"] ["Petr" "Ivan"]]
 
-;; ** in
+#+end_src
+
+**** in
+
+
+#+begin_src clojure :results silent :exports code
 
 (def db (dx/create-dx [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
                        {:db/id 2, :name "Petr" :age 37 :email "petr@gmail.com"}
@@ -448,7 +493,12 @@ transactions are dropped until the next valid match occurs
   db :age 37)
 ;; => [[2] [3]]
 
-;; ** relation binding
+#+end_src
+
+**** relation binding
+
+
+#+begin_src clojure :results silent
 
 (dx/q [:find ?e ?email
        :in [[?n ?email]]
@@ -459,38 +509,194 @@ transactions are dropped until the next valid match occurs
   [["Ivan" "ivan@mail.ru"]
    ["Petr" "petr@gmail.com"]])
 ;; => [[1 "ivan@mail.ru"] [2 "petr@gmail.com"] [3 "ivan@mail.ru"]]
+
 #+end_src
+
+**** joins with idents
+
+unfortunately, but using links in the form of [?table ?id] also entails
+disadvantages and difficulties.
+
+#+begin_src clojure :results silent :exports code
+
+(def db (dx/create-dx [{:db/id 1
+                        :name  "Ivan"
+                        :friend   [{:db/id 2
+                                    :name "Petr"}
+                                   {:db/id 3
+                                    :name "Oleg"}]}]))
+
+db
+;; {:db/id {2 {:db/id 2, :name "Petr"}
+;;          3 {:db/id 3, :name "Oleg"}
+;;          1 {:db/id 1,
+;;             :name "Ivan",
+;;             :friend [[:db/id 2] [:db/id 3]]}}}
+
+#+end_src
+
+references are always vector and must be treated as such
+
+#+begin_src clojure :results silent :exports code
+
+(dx/q [:find [?friends ...]
+       :where
+       [?e :name "Ivan"]
+       [?e :friend ?friends]]
+  db)
+;; => [[[:db/id 2] [:db/id 3]]]
+
+#+end_src
+
+if we try to do a simple join we get nothing :(
+
+#+begin_src clojure :results silent :exports code
+
+(dx/q [:find ?fname .
+       :where
+       [?e :name "Ivan"]
+       [?e :friend ?friends]
+       [?friends :name ?fname]]
+  db)
+;; => []
+
+#+end_src
+
+but knowing what a reference looks like, we can get around this
+
+#+begin_src clojure :results silent :exports code
+
+(dx/q [:find [?fname ...]
+       :where
+       [?e :name "Ivan"]
+       [?e :friend [_ ?friend]]
+       [?friend :name ?fname]]
+  db)
+;; => ["Petr" "Oleg"]
+
+#+end_src
+
+at the moment my knowledge of meader internals is too limited to make it nicer
 
 ** benchmark
 
-#+begin_src clojure :results silent
-(require '[taoensso.encore :as e ])
-(require '[datascript.core :as d ])
-(require '[ribelo.doxa     :as dx])
+#+begin_src clojure :results silent :exports code
+
+(require '[taoensso.encore :as enc])
+(require '[datascript.core :as   d])
+(require '[ribelo.doxa     :as  dx])
+
+#+end_src
+
+It is rare for a spa database to contain things that cannot be divided into
+tables or assigned categories. so let's create 100k maps for 10 different
+categories
+
+#+begin_src clojure :results silent :exports code
 
 (let [next-eid (volatile! 0)]
+
   (defn random-man []
     {:db/id     (vswap! next-eid inc)
      :name      (rand-nth ["Ivan" "Petr" "Sergei" "Oleg" "Yuri" "Dmitry" "Fedor" "Denis"])
      :last-name (rand-nth ["Ivanov" "Petrov" "Sidorov" "Kovalev" "Kuznetsov" "Voronoi"])
      :alias     (vec
                  (repeatedly (rand-int 10) #(rand-nth ["A. C. Q. W." "A. J. Finn" "A.A. Fair" "Aapeli" "Aaron Wolfe" "Abigail Van Buren" "Jeanne Phillips" "Abram Tertz" "Abu Nuwas" "Acton Bell" "Adunis"])))
-     :sex       (rand-nth [:male :female])
      :age       (rand-int 100)
      :salary    (rand-int 100000)
-     :friend    {:db/ref-id (rand-int 20000)}}))
+     :friend    {:db/ref-id (rand-int 20000)}})
 
-(def people (repeatedly random-man))
+  (defn random-fruit []
+    {:fruit/id     (vswap! next-eid inc)
+     :name      (rand-nth ["Avocado" "Grape" "Plum" "Apple" "Orange"])
+     :price     (rand-int 100)})
 
-(def people20k (shuffle (take 20000 people)))
+  (defn random-vegetable []
+    {:vegetable/id     (vswap! next-eid inc)
+     :name      (rand-nth ["Onion" "Cabbage" "Pea" "Tomatto" "Lettuce"])
+     :price     (rand-int 100)})
+
+  (defn random-car []
+    {:car/id     (vswap! next-eid inc)
+     :name      (rand-nth ["Audi" "Mercedes" "BMW" "Ford" "Honda" "Toyota"])
+     :price     (rand-int 100)})
+
+  (defn random-animal []
+    {:animal/id     (vswap! next-eid inc)
+     :name      (rand-nth ["Otter" "Dog" "Panda" "Lynx" "Cat" "Lion"])
+     :price     (rand-int 100)})
+
+  (defn random-cat []
+    {:cat/id     (vswap! next-eid inc)
+     :name      (rand-nth ["Traditional Persian" "Ocicat" "Munchkin cat" "Persian cat" "Burmese cat"])
+     :price     (rand-int 100)})
+
+  (defn random-dog []
+    {:dog/id     (vswap! next-eid inc)
+     :name      (rand-nth ["Croatian Shepherd" "Deutch Langhaar" "Miniature Pincher" "Italian Sighthound" "Jack Russell Terrier"])
+     :price     (rand-int 100)})
+
+  (defn random-country []
+    {:country/id     (vswap! next-eid inc)
+     :name      (rand-nth ["Seychelles" "Greenland" "Iceland" "Bahrain" "Bhutan"])
+     :price     (rand-int 100)})
+
+  (defn random-language []
+    {:language/id     (vswap! next-eid inc)
+     :name      (rand-nth ["Malagasy" "Kashmiri" "Amharic" "Inuktitut" "Esperanto"])
+     :price     (rand-int 100)})
+
+  (defn random-marijuana-strain []
+    {:marijuana/id     (vswap! next-eid inc)
+     :name      (rand-nth ["Lemonder" "Black-Mamba" "Blueberry-Space-Cake" "Strawberry-Amnesia"])
+     :price     (rand-int 100)})
+
+  (defn random-planet []
+    {:planet/id     (vswap! next-eid inc)
+     :name      (rand-nth ["Pluto" "Saturn" "Venus" "Mars" "Jupyter"])
+     :price     (rand-int 100)}))
+
+(def people           (repeatedly random-man))
+(def fruit            (repeatedly random-fruit))
+(def vegetable        (repeatedly random-vegetable))
+(def car              (repeatedly random-car))
+(def animal           (repeatedly random-animal))
+(def cat              (repeatedly random-cat))
+(def dog              (repeatedly random-dog))
+(def country          (repeatedly random-country))
+(def language         (repeatedly random-language))
+(def marijuana-strain (repeatedly random-marijuana-strain))
+(def planet           (repeatedly random-planet))
+
+(def people50k           (shuffle (take 50000 people)))
+
+(def fruit10k            (shuffle (take 10000 fruit)))
+(def vegetable10k        (shuffle (take 10000 vegetable)))
+(def car10k              (shuffle (take 10000 car)))
+(def animal10k           (shuffle (take 10000 animal)))
+(def cat10k              (shuffle (take 10000 cat)))
+(def dog10k              (shuffle (take 10000 dog)))
+(def country10k          (shuffle (take 10000 country)))
+(def language10k         (shuffle (take 10000 language)))
+(def marijuana-strain10k (shuffle (take 10000 marijuana-strain)))
+(def planet10k           (shuffle (take 10000 planet)))
+
+(def data100k (enc/into-all []
+                            fruit10k vegetable10k car10k animal10k cat10k dog10k
+                            country10k language10k marijuana-strain10k planet10k))
 
 (def schema
   {:friend {:db/valueType   :db.type/ref
-             :db/cardinality :db.cardinality/many}
+            :db/cardinality :db.cardinality/many}
    :alias   {:db/cardinality :db.cardinality/many}})
+#+end_src
 
-;; * transaction
-;; ** adding data one transaction at a time
+*** transaction
+
+**** adding data one transaction at a time
+
+
+#+begin_src clojure :results silent :exports code
 
 (defn datascript-add-1 [data]
   (enc/qb 1
@@ -499,7 +705,6 @@ transactions are dropped until the next valid match occurs
        (-> db
            (d/db-with [[:db/add (:db/id p) :name      (:name p)]])
            (d/db-with [[:db/add (:db/id p) :last-name (:last-name p)]])
-           (d/db-with [[:db/add (:db/id p) :sex       (:sex p)]])
            (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
            (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
      (d/empty-db schema)
@@ -514,40 +719,115 @@ transactions are dropped until the next valid match occurs
      data)))
 
 ;; result in ms
-[(datascript-add-1 people20k) (doxa-add-1 people20k)]
-;; cljs => [1593 183]
-;; clj  => [692.26 47.58]
+[(datascript-add-1 people50k) (doxa-add-1 people50k)]
+;; clj => [1520.5 166.99]
 
-;; ** add all data in single transaction
+#+end_src
+
+**** add all data in single transaction
+
+
+#+begin_src clojure :results silent :exports code
 
 (defn datascript-add-all []
   (enc/qb 1
-    (d/db-with (d/empty-db schema) people20k)))
+    (d/db-with (d/empty-db schema) people50k)))
 
 (defn doxa-add-all []
   (enc/qb 1
     (->> (into []
                (map (fn [p] [:dx/put p]))
-               people20k)
+               people50k)
          (dx/commit {}))))
 
 [(datascript-add-all) (doxa-add-all)]
-;;  => [1483.59 42.56]
+;; clj => [1483.59 42.56]
 
-;; * query
+#+end_src
+
+*** query
+
+**** can we be faster than datascript? yes!
+
+#+begin_src clojure :results silent :exports code
 
 (def db100k
-  (d/db-with (d/empty-db schema) people20k))
+  (d/db-with (d/empty-db)
+             (mapv
+              (fn [m]
+                (reduce-kv
+                 (fn [acc k v]
+                   (if (= :id (name k))
+                     (assoc acc :db/id v)
+                     (assoc acc k v)))
+                 {}
+                 m))
+              data100k)))
 
-(def dx100k
-  (->> (into []
-             (comp (map (fn [{:keys [friend] :as p}]
-                          (assoc p :friend [:db/id (first (vals friend))])))
-                   (map (fn [p] [:dx/put p])))
-             people20k)
-       (dx/commit {})))
+(def dx100k (dx/create-dx data100k))
 
-;; * query by one key
+(defn datascript-query []
+  (enc/qb 1e1
+    (d/q '[:find ?e
+           :where
+           [?e :name "Avocado"]
+           [?e :price ?price]
+           [(< ?price 50)]]
+      db100k)))
+
+(defn dx-query []
+  (enc/qb 1e1
+    (dx/q [:find ?e
+           :where
+           [?e :name "Avocado"]
+           [?e :price ?price]
+           [(< ?price 50)]]
+      dx100k)))
+
+(defn fast-dx-query []
+  (enc/qb 1e1
+    (dx/q [:find ?e
+           :in ?table
+           :where
+           [?table ?e :name "Avocado"]
+           [?table ?e :price ?price]
+           [(< ?price 50)]]
+      dx100k :fruit/id)))
+
+[(datascript-query) (dx-query) (fast-dx-query)]
+;; clj => [182.98 685.15 71.05]
+#+end_src
+
+#+begin_src clojure :results silent :exports code
+
+(def datascript-query
+  (enc/qb 1
+    (d/q '[:find ?e
+           :where
+           [?e :name "Avocado"]]
+      db100k)))
+
+(def dx-query
+  (enc/qb 1
+    (d/q '[:find ?e
+           :where
+           [?e :name "Avocado"]]
+      dx100k)))
+
+(def dx-query-with-explict-table
+  (enc/qb 1
+    (d/q '[:find ?e
+           :where
+           [:fruid/id ?e :name "Avocado"]]
+      dx100k)))
+
+#+end_src
+
+
+**** query by one condition
+
+
+#+begin_src clojure :results silent :exports code
 
 (defn datascript-q1 []
   (enc/qb 1
@@ -562,10 +842,15 @@ transactions are dropped until the next valid match occurs
       dx100k)))
 
 [(datascript-q1) (dx-q1)]
-;; cljs => [9       51]
+;; cljs => [   9    51]
 ;; clj  => [3.56 13.95]
 
-;; ** two conditions
+#+end_src
+
+**** two conditions
+
+
+#+begin_src clojure :results silent :exports code
 
 (defn datascript-q2 []
   (enc/qb 1e1
@@ -585,7 +870,11 @@ transactions are dropped until the next valid match occurs
 ;; cljs => [  242    618]
 ;; clj  => [65.51 142.94]
 
-;; ** 3
+#+end_src
+
+**** 3
+
+#+begin_src clojure :results silent :exports code
 
 (defn datascript-q3 []
   (enc/qb 1e1
@@ -607,7 +896,11 @@ transactions are dropped until the next valid match occurs
 ;; cljs => [  409    646]
 ;; clj  => [94.34 141.06]
 
-;; ** 4
+#+end_src
+
+**** 4
+
+#+begin_src clojure :results silent :exports code
 
 (defn datascript-q4 []
   (enc/qb 1e1
@@ -632,6 +925,12 @@ transactions are dropped until the next valid match occurs
 ;; cljs => [  588    681]
 ;; clj  => [149.9 142.44]
 
+#+end_src
+
+**** one pred
+
+#+begin_src clojure :results silent :exports code
+
 (defn datascript-qpred1 []
   (enc/qb 1e1
     (d/q '[:find ?e ?s
@@ -650,7 +949,13 @@ transactions are dropped until the next valid match occurs
 ;; cljs => [  321    959]
 ;; clj  => [93.36 179.29]
 
-;; * pull
+#+end_src
+
+*** pull
+
+**** one key
+
+#+begin_src clojure :results silent :exports code
 
 (defn datascript-pull1 []
   (enc/qb 1e3
@@ -664,6 +969,12 @@ transactions are dropped until the next valid match occurs
 ;; cljs => [   15    8]
 ;; clj  => [12.37 2.23]
 
+#+end_src
+
+**** entire map
+
+#+begin_src clojure :results silent :exports code
+
 (defn datascript-pull2 []
   (enc/qb 1e3
     (d/pull db100k ['*] (rand-int 20000))))
@@ -676,13 +987,19 @@ transactions are dropped until the next valid match occurs
 ;; cljs => [   43   11]
 ;; clj  => [38.52 3.81]
 
+#+end_src
+
+**** joins
+
+#+begin_src clojure :results silent
+
 (defn datascript-pull3 []
   (enc/qb 1e3
     (d/pull db100k [:name {:friend [:name]}] (rand-int 20000))))
 
 (defn dx-pull3 []
   (enc/qb 1e3
-    (dx/pull dx100k [:name {:friend [:name]}][:db/id (rand-int 20000)])))
+    (dx/pull dx100k [:name {:friend [:name]}] [:db/id (rand-int 20000)])))
 
 [(datascript-pull3) (dx-pull3)]
 ;; cljs => [   42   19]
