@@ -37,6 +37,9 @@ queries performance matches =datascript=.
 #+end_src
 
 * db structure
+:PROPERTIES:
+:ID:       b281c1be-a657-4a21-a828-99e929558302
+:END:
 
 db is a simple map with three levels of nesting
 
@@ -49,13 +52,12 @@ db is a simple map with three levels of nesting
 #+end_src
 
 why not flat map? because this design allows for greater flexibility when it
-comes to the operation of references and naming entity identifications.
-=[person/id :ivan]= looks better than =:person.id/ivan=, easier to create and easier
-to use.
+comes to the operation of references and naming entity. =[person/id :ivan]= looks
+better than =:person.id/ivan=, is easier to create and easier to use.
 
 but wouldn't operations on a flat map be faster? in normal use, the speed
 difference is negligible, while a nested map can be faster than =datascript= due
-to the possibility of limiting the iterated elements
+to the possibility of limiting the iterated elements, see [[can we be faster than datascript? yes!][benchmark]]
 
 * usage examples
 
