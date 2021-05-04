@@ -695,11 +695,10 @@
      `(m/some (unquote ~?v))))
   ([?s ?v]
    (enc/cond
-     (list? ?v)
-     ?v
      ;;
-     (not (symbol? ?v))
-     `(m/and ~?s ~?v))))
+     (and (symbol? ?s) (not (symbol? ?v)))
+     `(m/and ~?s ~?v)
+     :else ?v)))
 
 (defn datalog->meander [{:keys [where in args] :as q}]
   (let [args-map (build-args-map q)]
@@ -714,22 +713,25 @@
                     `~(m 0)
                     ;;
                     :let [[table e k v] (case (count elem) (1 2 3) (into ['_] elem) 4 elem)
-                          [?e ?k ?v]    [(get arg-map e e) (get arg-map k k) (get arg-map v v)]]
+                          [?table ?e ?k ?v]    [(get arg-map table table)
+                                                (get arg-map e e)
+                                                (get arg-map k k)
+                                                (get arg-map v v)]]
                     ;; [?e ?k nil]
                     (and (not (list? ?e)) ?k (nil? ?v))
-                    (recur more (update-in m [q table ?e] merge {?k (some-value)}) fns vars q)
+                    (recur more (update-in m [q ?table ?e] merge {?k (some-value)}) fns vars q)
                     ;; [?e ?k ?v]
                     (and (not (list? ?e)) ?k (not (vector? ?v)) (not (qsymbol? ?v)))
-                    (recur more (update-in m [q table ?e] merge {?k (some-value v ?v)}) fns vars q)
+                    (recur more (update-in m [q ?table ?e] merge {?k (some-value v ?v)}) fns vars q)
                     ;;
                     (and (not (list? ?e)) ?k (not (vector? ?v)) (qsymbol? ?v))
-                    (recur more (update-in m [q table ?e] merge {?k (some-value ?v)}) fns vars q)
+                    (recur more (update-in m [q ?table ?e] merge {?k (some-value ?v)}) fns vars q)
                     ;; [?e ?k [?t ?ref]]
                     (and (not (list? ?e)) ?k (vector? ?v) (= 2 (count ?v)) (enc/rsome qsymbol? ?v))
-                    (recur more (update-in m [q table ?e] merge {?k `(m/scan ~?v)}) fns vars (inc q))
+                    (recur more (update-in m [q ?table ?e] merge {?k `(m/scan ~?v)}) fns vars (inc q))
                     ;; [?e ?k [!vs ...]]
                     (and (not (list? ?e)) ?k (vector? ?v) (not (enc/rsome qsymbol? ?v)))
-                    (recur more (update-in m [q table ?e] merge {?k `(m/or ~@?v)}) fns vars q)
+                    (recur more (update-in m [q ?table ?e] merge {?k `(m/or ~@?v)}) fns vars q)
                     ;; [(?f)]
                     :let [?fn   (first ?e)
                           !args (rest ?e)]
