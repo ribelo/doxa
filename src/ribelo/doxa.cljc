@@ -109,36 +109,80 @@
      `(m/app #(doto % prn) ~pattern)))
 
 (defn normalize
-  ([data] (normalize data true))
-  ([data persistent?]
-   (let [it (-iter data)]
-     (loop [m (transient {}) r [] id nil]
-       (enc/cond
-         (and (not (.hasNext it)) (some? id))
-         (conj r [id (persistent! m)])
-         ;;
-         :let [[k v] (.next it)]
-         (key-id? k)
-         (recur (assoc! m k v) r [k v])
-         ;;
-         (entity? v)
-         (recur (assoc! m k [(entity-id v)]) (into r (normalize v false)) id)
-         ;;
-         (entities? v)
-         (recur (assoc! m k (mapv entity-id v))
-                (reduce (fn [acc m'] (into acc (normalize m' false))) r v)
-                id)
-         ;;
-         (ident? v)
-         (recur (assoc! m k [v]) r id)
-         ;;
-         :else
-         (recur (assoc! m k v) r id))))))
+  [data]
+  (let [it (-iter data)]
+    (loop [m (transient {}) r [] id nil]
+      (enc/cond
+        (and (not (.hasNext it)) (some? id))
+        (conj r [id (persistent! m)])
+        ;;
+        :let [[k v] (.next it)]
+        (key-id? k)
+        (recur (assoc! m k v) r [k v])
+        ;;
+        (entity? v)
+        (recur (assoc! m k [(entity-id v)]) (enc/into! r (normalize v)) id)
+        ;;
+        (entities? v)
+        (recur (assoc! m k (mapv entity-id v))
+               (reduce (fn [acc m'] (into acc (normalize m'))) r v)
+               id)
+        ;;
+        (ident? v)
+        (recur (assoc! m k [v]) r id)
+        ;;
+        :else
+        (recur (assoc! m k v) r id)))))
 
 (comment
   (enc/qb 1e5 (normalize {:db/id :ivan :name "ivan" :friend [:db/id :petr]}))
   ;; => 79.35
   )
+
+;; {:table {:key/id {k v}}}
+
+(defn denormalize
+  ([data]           (denormalize data data 10        0))
+  ([data max-level] (denormalize data data max-level 0))
+  ([db data max-level level]
+   (let [it (-iter data)]
+     (loop [m {}]
+       (enc/cond
+         (> level max-level)
+         (timbre/warnf "maximum nesting level %s for %s has been exceeded" max-level (entity-id data))
+         (and (not (.hasNext it)))
+         m
+         ;;
+         :let [[k v] (.next it)]
+         (map? v)
+         (recur (assoc m k (denormalize db v max-level (inc level))))
+         ;;
+         (idents? v)
+         (recur (assoc m k (enc/cond
+                             :let [xs (mapv (fn [ident] (or (get-in m ident)
+                                                           (denormalize db (get-in db ident) max-level (inc level)))) v)
+                                   n  (count xs)]
+                             (> n 1) xs
+                             (= n 1) (nth xs 0))))
+         ;;
+         :else
+         (recur (assoc m k v)))))))
+
+(comment
+  (let [data (commit {} [:dx/put {:db/id :ivan :name "ivan" :friend [{:db/id 1 :name "petr" :friend [[:db/id :ivan]]}
+                                                                     {:db/id 2 :name "petr"}
+                                                                     {:db/id 3 :name "petr"}
+                                                                     {:db/id 4 :name "petr"}
+                                                                     {:db/id 5 :name "petr"}
+                                                                     {:db/id 6 :name "petr"}
+                                                                     {:db/id 7 :name "petr"}
+                                                                     {:db/id 8 :name "petr"}
+                                                                     {:db/id 9 :name "petr"}
+                                                                     {:db/id 10 :name "petr"}]}])]
+    (denormalize data))[k v] (.next it)
+  ;; => 1362.47
+  )
+
 
 (defn submit-commit [db tx]
   (m/find tx
@@ -342,7 +386,7 @@
                   :h  (hash db'))
        ;;
        tx-meta
-       (vary-meta assoc :meta tx-meta)))))
+       (vary-meta assoc :tx-meta tx-meta)))))
 
 (defn commit
   ([db txs] (commit db txs nil))
@@ -526,10 +570,14 @@
            ;;
            (and (some? id) (idents? ref'))
            (recur (enc/assoc-some r (ffirst elem) (enc/cond
-                                                    :let             [xs (mapv (partial pull* db (second (first elem))) ref')]
+                                                    :let [xs (mapv (partial pull* db (second (first elem))) ref')
+                                                          n  (count xs)]
                                                     ;;
-                                                    (> (count xs) 1) (into [] (comp (map not-empty) (remove nil?)) xs)
-                                                    (= (count xs) 1) (not-empty (first xs)))) id)
+                                                    (> n 1)
+                                                    (into [] (comp (map not-empty) (remove nil?)) xs)
+                                                    ;;
+                                                    (= n 1)
+                                                    (not-empty (first xs)))) id)
            ;;
            (some? id)
            (recur r id)))))))
@@ -574,8 +622,17 @@
     (pull @conn_ [:name :age :sex] [:db/id :ivan]))
   ;; => 150.18
   )
-;; => nil
-;; => nil
+
+(defn haul
+  ([db]   (denormalize db   12))
+  ([db x] (haul        db x 12))
+  ([db x max-level]
+   (enc/cond
+     (keyword? x)
+     (denormalize (db x) max-level)
+     ;;
+     (vector? x)
+     (denormalize (get-in db x) max-level))))
 
 (comment
   [?name] ["Ivan" "Petr"]                  -> {?name ["Ivan" "Petr"]}
