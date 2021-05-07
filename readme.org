@@ -61,8 +61,6 @@ to the possibility of limiting the iterated elements, see [[#can-we-be-faster-th
 
 * usage examples
 
-
-
 ** transactions
 
 #+begin_src clojure :results silent

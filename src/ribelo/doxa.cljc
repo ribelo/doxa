@@ -12,16 +12,22 @@
 
 (declare reverse-search)
 
-(defmacro ^:private -iter [xs]
+(defmacro ^:private -iter
+  "returns an iterator for both clj and cljs.
+  while there is an iter function in cljs, there isn't and there won't be one in
+  clj, which is a pity because iterator is much faster than reduce."
+  [xs]
   `(enc/if-clj (clojure.lang.RT/iter ~xs) (cljs.core/iter ~xs)))
 
-(def conjv (fnil conj []))
+(def
+  ^{:doc "returns a vector even if the argument is nil"}
+  conjv (fnil conj []))
 
 (def ^:private simple-eid?    (some-fn keyword? nat-int? string?))
 (def ^:private compound-eid? #(and (vector? %) (enc/revery? simple-eid? %)))
 (def ^:private eid?           (some-fn simple-eid? compound-eid?))
 
-(defn key-id? [k]
+(defn- key-id? [k]
   (enc/cond
     :when (keyword? k)
     :if-not [ns'   (namespace k)
@@ -36,11 +42,10 @@
   ;; => 73.67
   )
 
-(defn #?(:clj ident? :cljs ^boolean ident?) [x]
+(defn- #?(:clj ident? :cljs ^boolean ident?) [x]
   (and (vector? x) (key-id? (nth x 0)) (eid? (nth x 1))))
 
-(defn #?(:clj idents? :cljs ^boolean idents?)
-  [xs]
+(defn- #?(:clj idents? :cljs ^boolean idents?) [xs]
   (when (vector? xs)
     (let [it (-iter xs)]
       (loop []
@@ -48,12 +53,7 @@
           :if-not (.hasNext it) true
           (ident? (.next it)) (recur))))))
 
-(defn db? [db] (map? db))
-
-(defn conn? [conn] (enc/derefable? conn))
-
-(defn #?(:clj entity? :cljs ^boolean entity?)
-  [m]
+(defn- #?(:clj entity? :cljs ^boolean entity?) [m]
   (when (map? m)
     (let [it (-iter m)]
       (loop []
@@ -70,8 +70,7 @@
   ;; => 58.38
   )
 
-(defn #?(:clj entities? :cljs ^boolean entities?)
-  [xs]
+(defn- #?(:clj entities? :cljs ^boolean entities?) [xs]
   (when (vector? xs)
     (let [it (-iter xs)]
       (loop []
@@ -87,9 +86,9 @@
   ;; => 18.79
   )
 
-(def not-entities? (complement (some-fn entity? entities?)))
+(def ^:private not-entities? (complement (some-fn entity? entities?)))
 
-(defn entity-id [m]
+(defn- entity-id [m]
   (let [it (-iter m)]
     (loop []
       (enc/cond
@@ -109,6 +108,8 @@
      `(m/app #(doto % prn) ~pattern)))
 
 (defn normalize
+  "turns a nested map into a flat map with references. references, even single
+  ones, are always a collection, for convenience"
   [data]
   (let [it (-iter data)]
     (loop [m (transient {}) r [] id nil]
@@ -141,9 +142,7 @@
 
 ;; {:table {:key/id {k v}}}
 
-(defn denormalize
-  ([data]           (denormalize data data 10        0))
-  ([data max-level] (denormalize data data max-level 0))
+(defn- -denormalize
   ([db data max-level level]
    (let [it (-iter data)]
      (loop [m {}]
@@ -155,18 +154,24 @@
          ;;
          :let [[k v] (.next it)]
          (map? v)
-         (recur (assoc m k (denormalize db v max-level (inc level))))
+         (recur (assoc m k (-denormalize db v max-level (inc level))))
          ;;
          (idents? v)
          (recur (assoc m k (enc/cond
                              :let [xs (mapv (fn [ident] (or (get-in m ident)
-                                                           (denormalize db (get-in db ident) max-level (inc level)))) v)
+                                                           (-denormalize db (get-in db ident) max-level (inc level)))) v)
                                    n  (count xs)]
                              (> n 1) xs
                              (= n 1) (nth xs 0))))
          ;;
          :else
          (recur (assoc m k v)))))))
+
+(defn denormalize
+  "turns a flat map into a nested one. to avoid stackoverflow and infinite loop,
+  it takes a maximum nesting level as an additional argument"
+  ([data]           (-denormalize data data 10        0))
+  ([data max-level] (-denormalize data data max-level 0)))
 
 (comment
   (let [data (commit {} [:dx/put {:db/id :ivan :name "ivan" :friend [{:db/id 1 :name "petr" :friend [[:db/id :ivan]]}
@@ -184,7 +189,9 @@
   )
 
 
-(defn submit-commit [db tx]
+(defn -submit-commit
+  "apply transactions to db."
+  [db tx]
   (m/find tx
     ;; put [?tid ?eid] ?k ?v
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)]
@@ -265,13 +272,13 @@
         (enc/cond
           :if-not (.hasNext it) acc
           :let    [[tid eid k] (.next it)]
-          (recur (submit-commit acc [:dx/delete [tid eid] k ?ident])))))
+          (recur (-submit-commit acc [:dx/delete [tid eid] k ?ident])))))
     ;; delete [?tid ?eid] ?k
     [:dx/delete [(m/pred key-id? ?tid) (m/pred eid? ?eid)] ?k]
     (enc/dissoc-in db [?tid ?eid] ?k)
     ;; delete {}
     [:dx/delete {(m/pred key-id? ?tid) (m/pred eid? ?eid)}]
-    (submit-commit db [:dx/delete [?tid ?eid]])
+    (-submit-commit db [:dx/delete [?tid ?eid]])
     ;; delete [?tid ?eid] ?k ?v
     [:dx/delete [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred some? ?v)]
     (enc/cond
@@ -291,7 +298,7 @@
     ;; conj [?tid ?eid] ?k ?m
     [:dx/conj [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred entity? ?v)]
     (-> (update-in db [?tid ?eid ?k] conjv (entity-id ?v))
-        (submit-commit     [:dx/put ?v]))
+        (-submit-commit     [:dx/put ?v]))
     ;; conj [?tid ?eid] ?k [?m ...]
     [:dx/conj [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) [(m/pred entity? !vs) ...]]
     (let [it (-iter !vs)]
@@ -300,12 +307,12 @@
           :if-not (.hasNext it) acc
           :let    [v    (.next it)
                    acc' (-> (update-in acc [?tid ?eid ?k] conjv (entity-id v))
-                            (submit-commit      [:dx/put v]))]
+                            (-submit-commit      [:dx/put v]))]
           :else   (recur acc'))))
-    ;; update m
+    ;; update [?tid ?eid] ?f
     [:dx/update [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred fn? ?f) & ?args]
     (update-in db [?tid ?eid] (partial apply ?f) ?args)
-    ;; update k
+    ;; update [?tid ?eid] ?k ?f
     [:dx/update [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred fn? ?f) & ?args]
     (update-in db [?tid ?eid ?k] (partial apply ?f) ?args)
     ;; match [?tid ?eid] ?m
@@ -325,17 +332,22 @@
 
 (comment
   (enc/qb 1e5
-    (submit-commit {:db/id {:ivan {:db/id :ivan :name "ivan"}}}
+    (-submit-commit {:db/id {:ivan {:db/id :ivan :name "ivan"}}}
                    [:dx/put [:db/id :ivan] :friend {:db/id :petr :name "petr"}]))
   ;; => 177.95
   (enc/qb 1e5
-    (submit-commit {:db/id {:ivan {:db/id :ivan :name "ivan"}}}
+    (-submit-commit {:db/id {:ivan {:db/id :ivan :name "ivan"}}}
                    [:dx/put [:db/id :ivan] :friend [{:db/id :petr :name "petr"}
                                                     {:db/id :smith :name "smith"}]]))
   ;; => 402.66
   )
 
 (defn listen!
+  "listens for changes in the db. each time changes are made via commit, the
+  callback is called with the db. the transaction report is written to the db
+  metadata, and may include, depending on the configuration, the transaction
+  time, the difference between the old and new db, the db hash. calling listen
+  twice with the same k overwrites the previous callback."
   ([db cb] (listen! db (enc/uuid-str) cb))
   ([db k cb]
    (if (meta db)
@@ -351,12 +363,13 @@
   )
 
 (defn unlisten!
+  "remove registered listener"
   ([db k]
    (when (meta db)
      (swap! ((meta db) :listeners) dissoc k))))
 
-(defn commit*
-  ([db txs] (commit* db txs nil))
+(defn- -commit
+  ([db txs] (-commit db txs nil))
   ([db txs tx-meta]
    (let [db'   (enc/cond
                  (vector? (first txs))
@@ -368,16 +381,16 @@
                        :let [tx (.next it)
                              kind (first tx)]
                        (enc/kw-identical? kind :dx/match)
-                       (recur acc (submit-commit acc tx))
+                       (recur acc (-submit-commit acc tx))
                        ;;
                        match?
-                       (recur (submit-commit acc tx) match?)
+                       (recur (-submit-commit acc tx) match?)
                        ;;
                        (not match?)
                        (recur acc match?))))
                  ;;
                  (keyword? (first txs))
-                 (submit-commit db txs))
+                 (-submit-commit db txs))
          meta' (meta db')]
      (cond-> (vary-meta db' assoc :t (enc/now-udt))
        (:with-diff? meta')
@@ -389,9 +402,78 @@
        (vary-meta assoc :tx-meta tx-meta)))))
 
 (defn commit
+  "apply transactions to db. txs can be either a single transaction or a vector of
+  transactions. returns a modified db. transaction report is stored in the
+  db metadata.
+
+  usage:
+  [:dx/|put|delete|conj|update|match [table eid] ?m | (?k ?v)]
+
+  put:
+      entire map|s with entity id
+      [:dx/put {:person/id :ivan :name \"ivan\" :age 30}]
+      [:dx/put [{:person/id :ivan :name \"ivan\" :age 30} ...]]
+
+      entire map, without entity id
+      [:dx/put [:person/id :ivan] {:name \"ivan\" :age 30}]
+
+      ident|s
+      [:dx/put [:person/id :ivan] :friend [:person/id :petr]]
+      [:dx/put [:person/id :ivan] :friend [[:person/id :petr] ...]]
+
+      reference map|s
+      [:dx/put [:person/id :ivan] :friend {:person/id :petr :name \"petr\"}]
+      [:dx/put [:person/id :ivan] :friend [{:person/id :petr :name \"petr\"} ...]]
+
+      key value
+      [:dx/put [:person/id :ivan] :age 12]
+
+  delete:
+      ident
+      [:dx/delete [:person/id :ivan]]
+
+      entity|s
+      [:dx/delete {:person/id :ivan ...}]
+      [:dx/delete [{:person/id :ivan ...} ...]]
+
+      key
+      [:dx/delete [:person/id :ivan] :age]
+
+      value - like disj
+      [:dx/delete [:person/id :ivan] :aka \"tupen\"]
+
+  conj:
+      value
+      [:dx/conj [:person/id :ivan] :aka \"tupen\"]
+
+      ident|s
+      [:dx/conj [:person/id :ivan] :friend [:person/id :petr]]
+      [:dx/conj [:person/id :ivan] :friend [[:person/id :petr] ...]]
+
+      entity|s
+      [:dx/conj [:person/id :ivan] :friend {:person/id :petr ...}]
+      [:dx/conj [:person/id :ivan] :friend [{:person/id :petr ...} ...]]
+
+  update:
+      entity
+      [:dx/update [:person/id :ivan] (fn [entity] (f entity)]
+
+      key
+      [:dx/update [:person/id :ivan] :age inc]
+
+  match:
+      entity
+      [:dx/match [:person/id :ivan] {:person/id :ivan ...}]
+
+      key value
+      [:dx/match [:person/id :ivan] :age 30]
+
+      key fn
+      [:dx/match [:person/id :ivan] :salary #(> % 10000)]
+  "
   ([db txs] (commit db txs nil))
   ([db txs tx-meta]
-   (let [db' (commit* db txs tx-meta)]
+   (let [db' (-commit db txs tx-meta)]
      (when-let [it (some-> (meta db) :listeners deref -iter)]
        (while #?(:clj (.hasNext it) :cljs ^cljs (.hasNext it))
          (let [[_k cb] (.next it)]
@@ -399,11 +481,13 @@
      db')))
 
 (defn commit!
+  "accepts an atom with db, see `commit`"
   ([db_ txs] (commit! db_ txs nil))
   ([db_ txs tx-meta]
    (swap! db_ (fn [db] (commit db txs tx-meta)))))
 
 (defn patch
+  "patch db using ediscript edits"
   ([db edits]
    (patch db edits (enc/now-udt)))
   ([db edits time]
@@ -417,6 +501,7 @@
                 :tx edits))))
 
 (defn patch!
+  "patch db inside atom, see `patch`"
   ([db_ edits]
    (patch! db_ edits (enc/now-udt)))
   ([db_ edits time]
@@ -425,9 +510,10 @@
 (defn db-with
   ([data] (db-with {} data))
   ([db data]
-   (commit* db (mapv (fn [m] [:dx/put m]) data))))
+   (-commit db (mapv (fn [m] [:dx/put m]) data))))
 
 (defn create-dx
+  "creates a db, can take a map, which is written to the metadata"
   ([]
    (create-dx [] {:with-diff? false}))
   ([data]
@@ -438,7 +524,7 @@
      (merge opts {:listeners (atom {}) :t nil :tx nil}))))
 
 (comment
-  (commit* {} [:dx/put {}])
+  (-commit {} [:dx/put {}])
   (commit {} txs)
 
   )
