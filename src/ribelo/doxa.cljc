@@ -122,7 +122,7 @@
         (recur (assoc! m k v) r [k v])
         ;;
         (entity? v)
-        (recur (assoc! m k [(entity-id v)]) (enc/into! r (normalize v)) id)
+        (recur (assoc! m k [(entity-id v)]) (into r (normalize v)) id)
         ;;
         (entities? v)
         (recur (assoc! m k (mapv entity-id v))
