@@ -683,7 +683,9 @@
   ([db query]
    (-> (pull db (second (first query)) (ffirst query)) vals first))
   ([db query id]
-   (-> (pull* db query id) vals first)))
+   (enc/cond
+     (ident?  id)                (-> (pull* db query id)  vals first)
+     (idents? id) (mapv (fn [id'] (-> (pull* db query id') vals first)) id))))
 
 (comment
 
