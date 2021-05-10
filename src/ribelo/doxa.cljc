@@ -723,7 +723,11 @@
      (denormalize (db x) max-level)
      ;;
      (vector? x)
-     (denormalize (get-in db x) max-level))))
+     (denormalize (get-in db x) max-level)
+     ;;
+     (map? x)
+     (denormalize db x max-level)
+     )))
 
 (comment
   [?name] ["Ivan" "Petr"]                  -> {?name ["Ivan" "Petr"]}
