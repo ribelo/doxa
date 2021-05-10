@@ -676,7 +676,7 @@
    (pull db (second (first query)) (ffirst query)))
   ([db query id]
    (enc/cond
-     (ident? id)  (pull* db query id)
+     (ident?  id)                (pull* db query id )
      (idents? id) (mapv (fn [id'] (pull* db query id')) id))))
 
 (defn pull-value
