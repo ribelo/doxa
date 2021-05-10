@@ -170,8 +170,9 @@
 (defn denormalize
   "turns a flat map into a nested one. to avoid stackoverflow and infinite loop,
   it takes a maximum nesting level as an additional argument"
-  ([data]           (-denormalize data data 10        0))
-  ([data max-level] (-denormalize data data max-level 0)))
+  ([   data          ] (-denormalize data data 10        0))
+  ([db data          ] (-denormalize db   data 12        0))
+  ([db data max-level] (-denormalize db   data max-level 0)))
 
 (comment
   (let [data (commit {} [:dx/put {:db/id :ivan :name "ivan" :friend [{:db/id 1 :name "petr" :friend [[:db/id :ivan]]}
