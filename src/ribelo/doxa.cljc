@@ -43,7 +43,7 @@
   )
 
 (defn- #?(:clj ident? :cljs ^boolean ident?) [x]
-  (and (vector? x) (key-id? (nth x 0)) (eid? (nth x 1))))
+  (and (vector? x) (key-id? (get x 0)) (eid? (get x 1))))
 
 (defn- #?(:clj idents? :cljs ^boolean idents?) [xs]
   (when (vector? xs)
