@@ -566,7 +566,9 @@
       (es/patch @conn2_ diff))))
 
 (defn- -rev-keyword? [k]
-  (enc/str-starts-with? (name k) "_"))
+  (let [name' (name k)]
+    (and (enc/str-starts-with? name' "_")
+         (not (enc/str-starts-with? name' "__")))))
 
 (def ^:private -forward-keyword?
   (complement -rev-keyword?))
