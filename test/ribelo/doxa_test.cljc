@@ -449,3 +449,14 @@
                            :vehicle/model ?model}}}
                     {:vehicle/brand ?brand
                      :vehicle/model ?model})))))))
+
+(t/deftest gh-7
+  ;; https://github.com/ribelo/doxa/issues/7
+  (let [entity-id  "6037b7a5-5a77-48a3-a294-8dba786d8e9d"
+        gql-entity {:__typename "release"
+                    :id         entity-id
+                    :created    "2021-05-10T09:39:28"
+                    :release/id entity-id}
+        db         (dx/commit (dx/create-dx) [[:dx/put gql-entity]])]
+    (t/is (= {:__typename "release", :created "2021-05-10T09:39:28"}
+             (dx/pull db [:__typename :created] [:release/id entity-id])))))
