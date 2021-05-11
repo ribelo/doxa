@@ -850,7 +850,21 @@
      ;;
      (and (symbol? ?s) (not (symbol? ?v)))
      `(m/and ~?s ~?v)
+     ;;
      :else ?v)))
+
+(defn parse-query-elem [elem args-map]
+  (m/rewrite elem
+    (m/pred qsymbol? ?x)
+    ~(get args-map ?x ?x)
+    ;;
+    (m/map-of (m/cata !ks) (m/cata !vs))
+    {& [[!ks !vs] ...]}
+    ;;
+    (?f . (m/cata !xs) ...)
+    ~(apply list ?f !xs)
+    ;; else
+    ?x ?x))
 
 (defn datalog->meander [{:keys [where in args] :as q}]
   (let [args-map (build-args-map q)]
@@ -865,10 +879,10 @@
                     `~(m 0)
                     ;;
                     :let [[table e k v] (case (count elem) (1 2 3) (into ['_] elem) 4 elem)
-                          [?table ?e ?k ?v]    [(get arg-map table table)
-                                                (get arg-map e e)
-                                                (get arg-map k k)
-                                                (get arg-map v v)]]
+                          [?table ?e ?k ?v]    [(parse-query-elem table arg-map)
+                                                (parse-query-elem e     arg-map)
+                                                (parse-query-elem k     arg-map)
+                                                (parse-query-elem v     arg-map)]]
                     ;; [?e ?k nil]
                     (and (not (list? ?e)) ?k (nil? ?v))
                     (recur more (update-in m [q ?table ?e] merge {?k (some-value)}) fns vars q)
