@@ -460,3 +460,24 @@
         db         (dx/commit (dx/create-dx) [[:dx/put gql-entity]])]
     (t/is (= {:__typename "release", :created "2021-05-10T09:39:28"}
              (dx/pull db [:__typename :created] [:release/id entity-id])))))
+
+(t/deftest gh-8
+  ;; https://github.com/ribelo/doxa/issues/8
+  (let [person1 {:person/id 1
+                 :gender    "MALE"
+                 :name      "Bob"
+                 :face      {:eyes "BLUE"}}
+        person2 {:person/id 2
+                 :gender    "FEMALE"
+                 :name      "Joanne"
+                 :face      {:eyes "GREEN"}}
+        db (dx/commit (dx/create-dx) [[:dx/put person1]
+                                      [:dx/put person2]])]
+    (t/is (= [[1 "Bob" "BLUE"]]
+             (dx/q [:find ?person ?name ?eye-color
+                    :in ?table ?color
+                    :where
+                    [?table ?person :name ?name]
+                    [?table ?person :face {:eyes ?eye-color}]
+                    [(= ?color ?eye-color)]]
+               db :person/id "BLUE")))))
