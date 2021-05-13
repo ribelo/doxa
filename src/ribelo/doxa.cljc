@@ -114,7 +114,9 @@
   (let [it (-iter data)]
     (loop [m (transient {}) r [] id nil]
       (enc/cond
-        (and (not (.hasNext it)) (some? id))
+        (not (.hasNext it) (nil? id))
+        nil
+        (and (not (.hasNext it)) (enc/some? id))
         (conj r [id (persistent! m)])
         ;;
         :let [[k v] (.next it)]
