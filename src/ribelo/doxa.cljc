@@ -114,8 +114,9 @@
   (let [it (-iter data)]
     (loop [m (transient {}) r [] id nil]
       (enc/cond
-        (not (.hasNext it) (nil? id))
+        (and (not (.hasNext it)) (nil? id))
         nil
+        ;; 
         (and (not (.hasNext it)) (enc/some? id))
         (conj r [id (persistent! m)])
         ;;
@@ -142,7 +143,6 @@
   ;; => 79.35
   )
 
-;; {:table {:key/id {k v}}}
 
 (defn- -denormalize
   ([db data max-level level]
@@ -172,7 +172,7 @@
 (defn denormalize
   "turns a flat map into a nested one. to avoid stackoverflow and infinite loop,
   it takes a maximum nesting level as an additional argument"
-  ([   data          ] (-denormalize data data 10        0))
+  ([   data          ] (-denormalize data data 12        0))
   ([db data          ] (-denormalize db   data 12        0))
   ([db data max-level] (-denormalize db   data max-level 0)))
 
@@ -336,12 +336,12 @@
 (comment
   (enc/qb 1e5
     (-submit-commit {:db/id {:ivan {:db/id :ivan :name "ivan"}}}
-                   [:dx/put [:db/id :ivan] :friend {:db/id :petr :name "petr"}]))
+                    [:dx/put [:db/id :ivan] :friend {:db/id :petr :name "petr"}]))
   ;; => 177.95
   (enc/qb 1e5
     (-submit-commit {:db/id {:ivan {:db/id :ivan :name "ivan"}}}
-                   [:dx/put [:db/id :ivan] :friend [{:db/id :petr :name "petr"}
-                                                    {:db/id :smith :name "smith"}]]))
+                    [:dx/put [:db/id :ivan] :friend [{:db/id :petr :name "petr"}
+                                                     {:db/id :smith :name "smith"}]]))
   ;; => 402.66
   )
 
@@ -525,6 +525,7 @@
    (with-meta
      (if (not-empty data) (db-with data) {})
      (merge opts {:listeners (atom {}) :t nil :tx nil}))))
+
 
 (comment
   (-commit {} [:dx/put {}])
