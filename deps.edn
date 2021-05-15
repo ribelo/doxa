@@ -6,5 +6,12 @@
          edn-query-language/eql {:mvn/version "1.0.2"}
          juji/editscript        {:mvn/version "0.5.7"}}
  :aliases
- {:cljs  {:extra-deps {thheller/shadow-cljs {:mvn/version "2.11.15"}}}
+ {:test  {:extra-paths ["test"]}
+  :run-tests
+  {:extra-deps {com.cognitect/test-runner {:git/url "https://github.com/cognitect-labs/test-runner.git"
+                                           :sha     "dd2944817379e02f89e9e516c855dbcbb8afb4bf"}}
+   :main-opts  ["-m" "cognitect.test-runner" "-d" "test"]}
+
+
+  :cljs  {:extra-deps {thheller/shadow-cljs {:mvn/version "2.11.15"}}}
   :bench {:extra-deps {datascript/datascript {:mvn/version "1.0.7"}}}}}
