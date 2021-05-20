@@ -23,7 +23,7 @@
   ^{:doc "returns a vector even if the argument is nil"}
   conjv (fnil conj []))
 
-(def ^:private simple-eid?    (some-fn keyword? nat-int? string?))
+(def ^:private simple-eid?    (some-fn keyword? int? string?))
 (def ^:private compound-eid? #(and (vector? %) (enc/revery? simple-eid? %)))
 (def ^:private eid?           (some-fn simple-eid? compound-eid?))
 
