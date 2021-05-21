@@ -481,3 +481,15 @@
                     [?table ?person :face {:eyes ?eye-color}]
                     [(= ?color ?eye-color)]]
                db :person/id "BLUE")))))
+
+(t/deftest gh-14
+  (let [db (dx/create-dx [{:db/id 1, :name "Ivan" :age 15}
+                          {:db/id 2, :name "Petr" :age 37}])
+        age 15]
+    (t/is (= [["Ivan"]]
+           (dx/q [:find ?name
+                  :in ?age
+                  :where
+                  [?e :name ?name]
+                  [?e :age ?age]]
+             db age)))))

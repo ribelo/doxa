@@ -853,6 +853,8 @@
      ;;
      (and (symbol? ?s) (not (symbol? ?v)))
      `(m/and ~?s ~?v)
+     (and (symbol? ?s) (symbol? ?v))
+     `(m/some (unquote ~?v))
      ;;
      :else ?v)))
 
