@@ -142,11 +142,11 @@
 
 (def people-docs
   [{:db/id 1, :name "Petr", :aka ["Devil" "Tupen"] :child [[:db/id 2] [:db/id 3]]}
-   {:db/id 2, :name "David", :father [[:db/id 1]]}
-   {:db/id 3, :name "Thomas", :father [[:db/id 1]]}
+   {:db/id 2, :name "David", :father [:db/id 1]}
+   {:db/id 3, :name "Thomas", :father [:db/id 1]}
    {:db/id 4, :name "Lucy" :friend [[:db/id 5]], :enemy [[:db/id 6]]}
    {:db/id 5, :name "Elizabeth" :friend [[:db/id 6]], :enemy [[:db/id 7]]}
-   {:db/id 6, :name "Matthew", :father [[:db/id 3]], :friend [[:db/id 7]], :enemy [[:db/id 8]]}
+   {:db/id 6, :name "Matthew", :father [:db/id 3], :friend [[:db/id 7]], :enemy [[:db/id 8]]}
    {:db/id 7, :name "Eunan", :friend [[:db/id 8]], :enemy [[:db/id 4]]}
    {:db/id 8, :name "Kerri"}
    {:db/id 9, :name "Rebecca"}])
@@ -161,9 +161,6 @@
    {:db/id 16, :part-name "Part A.B.A", :part-of [:db/id 15]}
    {:db/id 17, :part-name "Part A.B.A.A", :part-of [:db/id 16]}
    {:db/id 18, :part-name "Part A.B.A.B", :part-of [:db/id 16]}])
-
-(def test-db
-  (dx/commit {} (into [] (map (fn [tx] [:dx/put tx])) (into people-docs part-docs))))
 
 ;; * datascript
 ;; ** pull
@@ -183,13 +180,13 @@
       (t/is (= {:name "Matthew" :father [:db/id 3] :db/id 6}
                (dx/pull db [:name :father :db/id] [:db/id 6])
                (m/find db
-                 {:db/id {6 {:name ?name :father [?father]}}}
+                 {:db/id {6 {:name ?name :father ?father}}}
                  {:name ?name :father ?father :db/id 6})))
 
       (t/is (= {:name "Matthew" :father {:name "Thomas"} :db/id 6}
                (dx/pull db '[:name :db/id {:father [:name]}] [:db/id 6])
                (m/match db
-                 (m/and {:db/id {6 {:name ?name :father [[?table ?id]]}}}
+                 (m/and {:db/id {6 {:name ?name :father [?table ?id]}}}
                         {?table {?id {:name ?father-name}}})
                  {:name ?name :father {:name ?father-name} :db/id 6})))
 
@@ -493,3 +490,14 @@
                   [?e :name ?name]
                   [?e :age ?age]]
              db age)))))
+
+(t/deftest gh-16
+  ;; https://github.com/ribelo/doxa/issues/16
+  (let [db (dx/create-dx [{:db/id 1 :name "ivan" :cars [{:db/id 10 :name "tesla"}
+                                                        {:db/id 11 :name "ferrari"}]}
+                          {:db/id 2 :name "petr" :cars [{:db/id 10 :name "peugot"}]}
+                          {:db/id 3 :name "mike" :cars []}])]
+    (t/is (vector? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 1])))
+          "pull returns vector when N entities in join")
+    (t/is (vector? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 2])))
+          "pull returns vector when 1 entity in join")))

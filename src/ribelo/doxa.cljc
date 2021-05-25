@@ -133,7 +133,7 @@
                id)
         ;;
         (ident? v)
-        (recur (assoc! m k [v]) r id)
+        (recur (assoc! m k v) r id)
         ;;
         :else
         (recur (assoc! m k v) r id)))))
@@ -633,13 +633,7 @@
             id)
            ;;
            (and (some? id) (keyword? elem) (not (-rev-keyword? elem)))
-           (recur
-            (enc/assoc-some r elem (enc/cond
-                                     :let  [v (get-in db (conj id elem))]
-                                     (and (idents? v) (= (count v) 1))
-                                     (nth v 0)
-                                     :else v))
-            id)
+           (recur (enc/assoc-some r elem (get-in db (conj id elem))) id)
            (and (some? id) (keyword? elem) (-rev-keyword? elem))
            (let [k (-rev->keyword elem)]
              (recur
@@ -660,16 +654,22 @@
            (and (some? id) (ident? ref'))
            (recur (enc/assoc-some r k (pull* db (second (first elem)) ref')) id)
            ;;
-           (and (some? id) (idents? ref'))
-           (recur (enc/assoc-some r (ffirst elem) (enc/cond
-                                                    :let [xs (mapv (partial pull* db (second (first elem))) ref')
-                                                          n  (count xs)]
-                                                    ;;
-                                                    (> n 1)
-                                                    (into [] (comp (map not-empty) (remove nil?)) xs)
-                                                    ;;
-                                                    (= n 1)
-                                                    (not-empty (first xs)))) id)
+           (and (some? id) (idents? ref') (not rev?))
+           (recur (enc/assoc-some r (ffirst elem)
+                                  (into [] (comp (map (partial pull* db (second (first elem)))) (remove empty?)) ref'))
+                  id)
+           (and (some? id) (idents? ref') rev?)
+           (recur (enc/assoc-some r (ffirst elem)
+                                  (enc/cond
+                                    :let [xs (mapv (partial pull* db (second (first elem))) ref')
+                                          n  (count xs)]
+                                    ;;
+                                    (> n 1)
+                                    (into [] (comp (map not-empty) (remove nil?)) xs)
+                                    ;;
+                                    (= n 1)
+                                    (not-empty (first xs))))
+                  id)
            ;;
            (some? id)
            (recur r id)))))))
