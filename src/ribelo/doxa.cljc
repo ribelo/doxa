@@ -340,18 +340,27 @@
   metadata, and may include, depending on the configuration, the transaction
   time, the difference between the old and new db, the db hash. calling listen
   twice with the same k overwrites the previous callback."
-  ([db cb] (listen! db (enc/uuid-str) cb))
-  ([db k cb]
-   (if (meta db)
-     (swap! (get (meta db) :listeners (atom {})) assoc k cb)
-     (with-meta db (atom {k cb})))
+  ([db_ cb] (listen! db_ (enc/uuid-str) cb))
+  ([db_ k cb]
+   (if (meta db_)
+     (swap! (get (meta db_) :listeners (atom {})) assoc k cb)
+     (alter-meta! db_ assoc :listeners (atom {k cb})))
    k))
+
+(comment
+  (let [db_ (atom (create-dx))]
+    (alter-meta! db_ assoc :a 1)
+    ;; (listen! db_ #(println :sex))
+    ;; (commit! db_ [[:dx/put [:db/id :ivan] :a 1]])
+    )
+
+  )
 
 (defn unlisten!
   "remove registered listener"
-  ([db k]
-   (when (meta db)
-     (swap! ((meta db) :listeners) dissoc k))))
+  ([db_ k]
+   (when (meta db_)
+     (swap! ((meta db_) :listeners) dissoc k))))
 
 (defn- -commit
   ([db txs] (-commit db txs nil))
@@ -456,20 +465,18 @@
       key fn
       [:dx/match [:person/id :ivan] :salary #(> % 10000)]
   "
-  ([db txs] (commit db txs nil))
-  ([db txs tx-meta]
-   (let [db' (-commit db txs tx-meta)]
-     (when-let [it (some-> (meta db) :listeners deref -iter)]
-       (while (.hasNext it)
-         (let [[_k cb] (.next it)]
-           (cb db'))))
-     db')))
+  ([db txs]         (commit  db txs nil))
+  ([db txs tx-meta] (-commit db txs tx-meta)))
 
 (defn commit!
   "accepts an atom with db, see `commit`"
   ([db_ txs] (commit! db_ txs nil))
   ([db_ txs tx-meta]
-   (swap! db_ (fn [db] (commit db txs tx-meta)))))
+   (swap! db_ (fn [db] (commit db txs tx-meta)))
+   (when-let [it (some-> (meta db_) :listeners deref -iter)]
+       (while #?(:clj (.hasNext it) :cljs ^cljs (.hasNext it))
+         (let [[_k cb] (.next it)]
+           (cb @db_))))))
 
 (defn patch
   "patch db using ediscript edits"
@@ -477,10 +484,6 @@
    (patch db edits (enc/now-udt)))
   ([db edits time]
    (let [db' (es/patch db (es/edits->script edits))]
-     (when-let [it (some-> (meta db') :listeners deref -iter)]
-       (while (.hasNext it)
-         (let [[_k cb] (.next it)]
-           (cb db'))))
      (vary-meta db' assoc
                 :t  time
                 :tx edits))))
@@ -490,7 +493,11 @@
   ([db_ edits]
    (patch! db_ edits (enc/now-udt)))
   ([db_ edits time]
-   (swap! db_ (fn [db] (patch db edits time)))))
+   (swap! db_ (fn [db] (patch db edits time)))
+   (when-let [it (some-> (meta @db_) :listeners deref -iter)]
+       (while #?(:clj (.hasNext it) :cljs ^cljs (.hasNext it))
+         (let [[_k cb] (.next it)]
+           (cb @db_))))))
 
 (defn db-with
   ([data] (db-with {} data))
@@ -506,7 +513,7 @@
   ([data {:keys [with-diff?] :as opts}]
    (with-meta
      (if (not-empty data) (db-with data) {})
-     (merge opts {:listeners (atom {}) :t nil :tx nil}))))
+     (merge opts {:t (enc/now-udt) :tx nil}))))
 
 ;; pull
 
@@ -887,14 +894,14 @@
 
 (comment
   (enc/qb 1e5
-        (m/search @conn_
-          {_ {?e {:name "Ivan" :friend (m/scan [?t ?f])}
-              ?f {:name ?name}}}
-          ?name)
-        (m/search @conn_
-          (m/and {_ {?e {:name "Ivan" :friend (m/scan [?t ?f])}}}
-                 {_ {?f {:name ?name}}})
-          ?name))
+    (m/search @conn_
+      {_ {?e {:name "Ivan" :friend (m/scan [?t ?f])}
+          ?f {:name ?name}}}
+      ?name)
+    (m/search @conn_
+      (m/and {_ {?e {:name "Ivan" :friend (m/scan [?t ?f])}}}
+             {_ {?f {:name ?name}}})
+      ?name))
 
 
   (-> (parse-query '[:where
@@ -1000,8 +1007,4 @@
      `(let [~@(mapcat (fn [[v k]] [v `(@dxs_ ~k)]) (partition 2 bindings))]
         ~@body)))
 
-;; (defmacro with-dx2
-;;      {:style/indent 1}
-;;      [[db store] & body]
-;;      `(let [~db (@dxs_ ~store)]
-;;         ~@body))
+;;
