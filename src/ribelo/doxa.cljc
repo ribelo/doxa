@@ -102,8 +102,7 @@
      `(m/app #(doto % prn) ~pattern)))
 
 (defn normalize
-  "turns a nested map into a flat map with references. references, even single
-  ones, are always a collection, for convenience"
+  "turns a nested map into a flat collection with references."
   [data]
   (let [it (-iter data)]
     (loop [m (transient {}) r [] id nil]
@@ -194,10 +193,6 @@
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)]
      (m/pred keyword? ?k) (m/pred (complement (some-fn entity? entities? ident?)) ?v)]
     (assoc-in db [?tid ?eid ?k] ?v)
-    ;; put [?tid ?eid] ?k ?ident
-    [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)]
-     (m/pred keyword? ?k) (m/pred ident? ?v)]
-    (update-in db [?tid ?eid ?k] conjv ?v)
     ;; put [?tid ?eid] ?k ?m
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred entity? ?v)]
     (let [xs (normalize ?v)
@@ -520,7 +515,7 @@
     [{:db/id     :ivan
       :name      "Ivan"
       :last-name "Ivanov"
-      :friend    [:db/id :petr]
+      :friend    [[:db/id :petr]]
       :age       30}
      {:db/id     :petr
       :name      "Petr"
@@ -530,7 +525,7 @@
      {:db/id     :smith
       :name      "Smith"
       :last-name "Smith"
-      :friend    [:db/id :petr]
+      :friend    [[:db/id :petr]]
       :age       55}])
 
   (def conn_ (atom (db-with txs)))
