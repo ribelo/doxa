@@ -97,12 +97,6 @@
         (key-id? k) [k v]
         :else       (recur)))))
 
-(comment
-  (entity-id data)
-  (enc/qb 1e6 (entity-id {:db/id 1}))
-  ;; => 108.46
-  )
-
 #?(:clj
    (m/defsyntax dbg [pattern]
      `(m/app #(doto % prn) ~pattern)))
@@ -238,20 +232,20 @@
           (recur (assoc-in acc ks m)))))
     ;; put [m ...]
     [:dx/put (m/pred entities? ?vs)]
-    (let [it1 (-iter ?vs)]
+    (let [itx (-iter ?vs)]
       (loop [acc db]
         (enc/cond
-          :if-not (.hasNext it1) acc
-          :let    [?m  (.next it1)
+          :if-not (.hasNext itx) acc
+          :let    [?m  (.next itx)
                    xs  (normalize ?m)
-                   it2 (-iter xs)]
+                   ity (-iter xs)]
           :else
           (recur
            (loop [acc' acc]
              (enc/cond
-               :if-not (.hasNext it2) acc'
-               :let    [[ks m] (.next it2)]
-               (recur (assoc-in acc' ks m))))))))
+               :if-not (.hasNext ity) acc'
+               :let    [[ks m] (.next ity)]
+               (recur  (assoc-in acc' ks m))))))))
     ;; put [?tid ?eid] m
     [:dx/put [(m/pred key-id? ?tid) (m/pred eid? ?eid)] ?m]
     (let [xs (normalize (assoc ?m ?tid ?eid))
@@ -260,7 +254,7 @@
         (enc/cond
           :if-not (.hasNext it) acc
           :let    [[ks m] (.next it)]
-          (recur (assoc-in acc ks m)))))
+          (recur  (assoc-in acc ks m)))))
     ;; delete [?tid ?eid]
     [:dx/delete [(m/pred key-id? ?tid) (m/pred eid? ?eid) :as ?ident]]
     (enc/cond
@@ -275,7 +269,7 @@
         (enc/cond
           :if-not (.hasNext it) acc
           :let    [[tid eid k] (.next it)]
-          (recur (-submit-commit acc [:dx/delete [tid eid] k ?ident])))))
+          (recur  (-submit-commit acc [:dx/delete [tid eid] k ?ident])))))
     ;; delete [?tid ?eid] ?k
     [:dx/delete [(m/pred key-id? ?tid) (m/pred eid? ?eid)] ?k]
     (enc/dissoc-in db [?tid ?eid] ?k)
@@ -301,7 +295,7 @@
     ;; conj [?tid ?eid] ?k ?m
     [:dx/conj [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred entity? ?v)]
     (-> (update-in db [?tid ?eid ?k] conjv (entity-id ?v))
-        (-submit-commit     [:dx/put ?v]))
+        (-submit-commit [:dx/put ?v]))
     ;; conj [?tid ?eid] ?k [?m ...]
     [:dx/conj [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) [(m/pred entity? !vs) ...]]
     (let [it (-iter !vs)]
@@ -310,7 +304,7 @@
           :if-not (.hasNext it) acc
           :let    [v    (.next it)
                    acc' (-> (update-in acc [?tid ?eid ?k] conjv (entity-id v))
-                            (-submit-commit      [:dx/put v]))]
+                            (-submit-commit [:dx/put v]))]
           :else   (recur acc'))))
     ;; update [?tid ?eid] ?f
     [:dx/update [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred fn? ?f) & ?args]
@@ -358,13 +352,6 @@
      (with-meta db (atom {k cb})))
    k))
 
-(comment
-  (def tmp (create-dx))
-  (listen! tmp #(println :sex))
-  (commit tmp [:dx/put [:db/id :ivan] :age 1])
-  (es/patch tmp (es/edits->script [[[:db/id] :+ {:ivan {:age 2}}]]))
-  )
-
 (defn unlisten!
   "remove registered listener"
   ([db k]
@@ -381,7 +368,7 @@
                      (enc/cond
                        :if-not (.hasNext it)
                        acc
-                       :let [tx (.next it)
+                       :let [tx   (.next it)
                              kind (first tx)]
                        (enc/kw-identical? kind :dx/match)
                        (recur acc (-submit-commit acc tx))
@@ -478,7 +465,7 @@
   ([db txs tx-meta]
    (let [db' (-commit db txs tx-meta)]
      (when-let [it (some-> (meta db) :listeners deref -iter)]
-       (while #?(:clj (.hasNext it) :cljs ^cljs (.hasNext it))
+       (while (.hasNext it)
          (let [[_k cb] (.next it)]
            (cb db'))))
      db')))
@@ -496,7 +483,7 @@
   ([db edits time]
    (let [db' (es/patch db (es/edits->script edits))]
      (when-let [it (some-> (meta db') :listeners deref -iter)]
-       (while #?(:clj (.hasNext it) :cljs ^cljs (.hasNext it))
+       (while (.hasNext it)
          (let [[_k cb] (.next it)]
            (cb db'))))
      (vary-meta db' assoc
@@ -525,15 +512,6 @@
    (with-meta
      (if (not-empty data) (db-with data) {})
      (merge opts {:listeners (atom {}) :t nil :tx nil}))))
-
-
-(comment
-  (-commit {} [:dx/put {}])
-  (commit {} txs)
-
-  )
-
-
 
 ;; pull
 
@@ -588,11 +566,9 @@
 
 (defn reverse-search
   ([db id]
-   (vec (m/search db
-          {?pid {?eid {?k (m/or ~id (m/scan ~id))}}} [?pid ?eid ?k])))
+   (vec (m/search db {?pid {?eid {?k (m/or ~id (m/scan ~id))}}} [?pid ?eid ?k])))
   ([db k id]
-   (vec (m/search db
-          {?pid {?eid {~k (m/or ~id (m/scan ~id))}}} [?pid ?eid]))))
+   (vec (m/search db {?pid {?eid {~k (m/or ~id (m/scan ~id))}}} [?pid ?eid]))))
 
 (defn pull*
   ([db query]
@@ -731,10 +707,6 @@
      (map? x)
      (denormalize db x max-level)
      )))
-
-(comment
-  [?name] ["Ivan" "Petr"]                  -> {?name ["Ivan" "Petr"]}
-  [[?name ?age]] [["Ivan" 30] ["Petr" 18]] -> {?name ["Ivan" "Petr"]})
 
 ;; * datalog
 
