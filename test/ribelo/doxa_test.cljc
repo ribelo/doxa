@@ -501,3 +501,8 @@
           "pull returns vector when N entities in join")
     (t/is (vector? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 2])))
           "pull returns vector when 1 entity in join")))
+
+(t/deftest gh-17
+  ;; https://github.com/ribelo/doxa/issues/17
+  (let [db (dx/create-dx [{:db/id 1 :name "ivan" :car {:db/id 10 :name "tesla"}}])]
+    (t/is (map? (:car (dx/pull db [:name {:car [:name]}] [:db/id 1]))))))
