@@ -151,13 +151,14 @@
          (map? v)
          (recur (assoc m k (-denormalize db v max-level (inc level))))
          ;;
+         (ident? v)
+         (recur (assoc m k (let [m (or (get-in m v)
+                                       (-denormalize db (get-in db v) max-level (inc level)))]
+                             m)))
          (idents? v)
-         (recur (assoc m k (enc/cond
-                             :let [xs (mapv (fn [ident] (or (get-in m ident)
-                                                           (-denormalize db (get-in db ident) max-level (inc level)))) v)
-                                   n  (count xs)]
-                             (> n 1) xs
-                             (= n 1) (nth xs 0))))
+         (recur (assoc m k (let [xs (mapv (fn [ident] (or (get-in m ident)
+                                                         (-denormalize db (get-in db ident) max-level (inc level)))) v)]
+                             xs)))
          ;;
          :else
          (recur (assoc m k v)))))))
