@@ -701,10 +701,10 @@
   ([db x max-level]
    (enc/cond
      (keyword? x)
-     (denormalize (db x) max-level)
+     (denormalize db (db x) max-level)
      ;;
      (vector? x)
-     (denormalize (get-in db x) max-level)
+     (denormalize db (get-in db x) max-level)
      ;;
      (map? x)
      (denormalize db x max-level)
