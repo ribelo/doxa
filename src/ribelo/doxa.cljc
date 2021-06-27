@@ -12,6 +12,9 @@
 
 (declare reverse-search)
 
+(def ^:dynamic *empty-map* (hash-map))
+(def ^:dynamic *atom-fn* atom)
+
 (defmacro ^:private -iter
   "returns an iterator for both clj and cljs.
   while there is an iter function in cljs, there isn't and there won't be one in
@@ -194,15 +197,16 @@
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)]
      (m/pred keyword? ?k) (m/pred (complement (some-fn entity? entities? ident?)) ?v)]
     (assoc-in db [?tid ?eid ?k] ?v)
-    ;; put [?tid ?eid] ?k ?m
+    ;; put [?tid ?eid] ?k ?entity
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred entity? ?v)]
     (let [xs (normalize ?v)
           it (-iter xs)]
       (loop [db' (assoc-in db [?tid ?eid ?k] (entity-id ?v))]
         (enc/cond
           :if-not (.hasNext it) db'
-          (recur (assoc-in db [?tid ?eid ?k] (entity-id (.next it)))))))
-    ;; put [?tid ?eid] ?k [?m ...]
+          :let [[ks m] (.next it)]
+          (recur (assoc-in db' ks m)))))
+    ;; put [?tid ?eid] ?k [?entity ...]
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) [(m/pred entity? !vs) ...]]
     (let [itx (-iter !vs)]
       (loop [acc db]
@@ -217,7 +221,7 @@
                (not (.hasNext ity)) acc
                :let                 [[ks m] (.next ity)]
                (recur (assoc-in acc ks m))))))))
-    ;; put m
+    ;; put ?entity
     [:dx/put (m/pred entity? ?m)]
     (let [xs (normalize ?m)
           it (-iter xs)]
@@ -501,7 +505,7 @@
            (cb @db_))))))
 
 (defn db-with
-  ([data] (db-with {} data))
+  ([data] (db-with *empty-map* data))
   ([db data]
    (-commit db (mapv (fn [m] [:dx/put m]) data))))
 
@@ -513,7 +517,7 @@
    (create-dx data {:with-diff? false}))
   ([data {:keys [with-diff?] :as opts}]
    (with-meta
-     (if (not-empty data) (db-with data) {})
+     (if (not-empty data) (db-with data) *empty-map*)
      (merge opts {:t (enc/now-udt) :tx nil}))))
 
 ;; pull
