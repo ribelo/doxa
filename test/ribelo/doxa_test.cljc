@@ -89,7 +89,14 @@
       (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend [[:db/id 2] [:db/id 3]]}
                          2 {:db/id 2, :name "Ivan"}
                          3 {:db/id 3, :name "Lucy"}}}
-               (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]]))))
+               (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
+      (t/is (= #:db{:id {1 {:a {:b 1, :c 2}}}}
+               (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2}]])))
+      (t/is (= #:db{:id {1 {:a [:db/id 2]}, 2 {:b 1, :c 2, :db/id 2}}}
+               (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2 :db/id 2}]])))
+      (t/is (= #:db{:id {1 {:a [[:db/id 2] [:db/id 3]]}, 2 {:b 1, :c 2, :db/id 2}, 3 {:b 3, :c 4, :db/id 3}}}
+               (dx/commit {} [[:dx/put [:db/id 1] :a [{:b 1 :c 2 :db/id 2}
+                                                      {:b 3 :c 4 :db/id 3}]]]))))
 
     (t/testing "testing delete"
       (t/is (= {}
