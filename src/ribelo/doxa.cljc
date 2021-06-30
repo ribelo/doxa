@@ -254,7 +254,7 @@
         (enc/cond
           :if-not (.hasNext it) acc
           :let    [[ks m] (.next it)]
-          (recur  (assoc-in acc ks m)))))
+          (recur  (update-in acc ks enc/merge m)))))
     ;; delete [?tid ?eid]
     [:dx/delete [(m/pred key-id? ?tid) (m/pred eid? ?eid) :as ?ident]]
     (enc/cond
