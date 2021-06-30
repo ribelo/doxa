@@ -316,13 +316,13 @@
     [:dx/match [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred entity? ?m)]
     (= ?m (get-in db [?tid ?eid]))
     ;; match [?tid ?eid] ?f
-    [:dx/match [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred ifn? ?f)]
+    [:dx/match [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred fn? ?f)]
     (?f (get-in db [?tid ?eid]))
     ;; match [?tid ?eid] ?k ?v
     [:dx/match [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred (complement fn?) ?v)]
     (= ?v (get-in db [?tid ?eid ?k]))
     ;; match [?tid ?eid] ?k ?f
-    [:dx/match [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred ifn? ?f)]
+    [:dx/match [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred fn? ?f)]
     (?f (get-in db [?tid ?eid ?k]))
     ;; _
     _ (timbre/errorf "invalid commit %s" tx)))
