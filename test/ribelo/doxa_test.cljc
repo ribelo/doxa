@@ -3,8 +3,7 @@
    [ribelo.doxa :as dx]
    [clojure.test :as t]
    [taoensso.encore :as enc]
-   [meander.epsilon :as m]
-   [meander.interpreter.epsilon :as mi]))
+   [meander.epsilon :as m]))
 
 ;; * datalog->meander
 
@@ -70,6 +69,8 @@
                                    [?f :name ?name]])
                  (dx/datalog->meander))))))
 
+;; * normalization
+
 ;; * apply tx
 
 (comment
@@ -80,6 +81,8 @@
     (t/testing "testing put"
       (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
                (dx/commit {} [[:dx/put {:db/id 1 :name "David" :aka ["Devil"]}]])))
+      (t/is (= #:db{:id {1 {:db/id 1 :name "David"}}}
+               (dx/commit {} [[:dx/put [:db/id 1] :name "David"]])))
       (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
                (dx/commit {} [[:dx/put [:db/id 1] {:name "David" :aka ["Devil"]}]])))
       (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
@@ -90,13 +93,15 @@
                          2 {:db/id 2, :name "Ivan"}
                          3 {:db/id 3, :name "Lucy"}}}
                (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
-      (t/is (= #:db{:id {1 {:a {:b 1, :c 2}}}}
+      (t/is (= #:db{:id {1 {:db/id 1 :a {:b 1, :c 2}}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2}]])))
       (t/is (= #:db{:id {1 {:a [:db/id 2]}, 2 {:b 1, :c 2, :db/id 2}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2 :db/id 2}]])))
       (t/is (= #:db{:id {1 {:a [[:db/id 2] [:db/id 3]]}, 2 {:b 1, :c 2, :db/id 2}, 3 {:b 3, :c 4, :db/id 3}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a [{:b 1 :c 2 :db/id 2}
-                                                      {:b 3 :c 4 :db/id 3}]]]))))
+                                                      {:b 3 :c 4 :db/id 3}]]])))
+      (t/is (= #:db{:id {1 {:db/id 1 :a 1 :b 2}}}
+               (dx/commit {} [[:dx/put [:db/id 1] :a 1 :b 2]]))))
 
     (t/testing "testing delete"
       (t/is (= {}

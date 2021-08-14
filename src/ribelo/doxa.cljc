@@ -1,6 +1,6 @@
 (ns ribelo.doxa
   (:refer-clojure  :exclude [ident? -next])
-  #?(:cljs (:require-macros [ribelo.doxa :refer [q with-dx -iter]]))
+  #?(:cljs (:require-macros [ribelo.doxa :refer [q with-dx with-dx! -iter -first-key -first-val -ffirst]]))
   (:require
    [meander.epsilon :as m]
    [taoensso.encore :as enc]
@@ -16,11 +16,23 @@
 (def ^:dynamic *atom-fn* atom)
 
 (defmacro ^:private -iter
-  "returns an iterator for both clj and cljs.
-  while there is an iter function in cljs, there isn't and there won't be one in
-  clj, which is a pity because iterator is much faster than reduce."
+  "returns an iterator for both clj and cljs. while there is an iter function in
+  cljs, there isn't and there won't be one in clj, which is a pity because
+  iterator is much faster than reduce."
   [xs]
   `(enc/if-clj (clojure.lang.RT/iter ~xs) (cljs.core/iter ~xs)))
+
+(defmacro ^:private -first-key
+  [xs]
+  `(first (keys ~xs)))
+
+(defmacro ^:private -first-val
+  [xs]
+  `(first (vals ~xs)))
+
+(defmacro ^:private -ffirst
+  [xs]
+  `(get (get ~xs 0) 0))
 
 (def
   ^{:doc "returns a vector even if the argument is nil"}
@@ -31,82 +43,62 @@
 (def ^:private eid?           (some-fn simple-eid? compound-eid?))
 
 (defn- key-id? [k]
-  (enc/cond
-    :when (keyword? k)
-    :if-not [ns'   (namespace k)
-             name' (name k)]
-    false
-    (or (#?(:clj = :cljs identical?) name' "id")
-        (#?(:clj = :cljs identical?) name' "by-id")
-        (#?(:clj = :cljs identical?) name' "list"))))
+  (when (keyword? k)
+    (enc/when-let [ns'   (namespace k)
+                   name' (name k)]
+      (or (#?(:clj = :cljs identical?) name' "id")
+          (#?(:clj = :cljs identical?) name' "by-id")
+          (#?(:clj = :cljs identical?) name' "list")))))
 
-(comment
-  (enc/qb 1e6 (key-id? :db/id))
-  ;; => 73.67
-  )
-
-(defn- #?(:clj ident? :cljs ^boolean ident?) [x]
+(defn- ident? [x]
   (and (vector? x) (key-id? (get x 0)) (eid? (get x 1))))
 
-(defn- #?(:clj idents? :cljs ^boolean idents?) [xs]
+(defn- idents? [xs]
   (when (vector? xs)
     (let [it (-iter xs)]
       (loop []
-        (enc/cond
-          :if-not (.hasNext it) true
-          (ident? (.next it)) (recur))))))
+        (if (.hasNext it)
+          (when (ident? (.next it))
+            (recur))
+          true)))))
 
-(defn- #?(:clj entity? :cljs ^boolean entity?) [m]
+(defn- entity? [m]
   (when (map? m)
-    (let [it (-iter m)]
+    (let [it (-iter ^clojure.lang.IPersistentMap m)]
       (loop []
-        (enc/cond
-          :if-not (.hasNext it) false
-          :let [[k v] (.next it)]
-          (and (key-id? k) (eid? v)) true
-          :else (recur))))))
+        (when (.hasNext it)
+          (let [^clojure.lang.MapEntry e (.next it)
+                k                        (.key   e)
+                v                        (.val   e)]
+            (if (and (key-id? k) (eid? v))
+              true
+              (recur))))))))
 
-(comment
-  (let [m (into {} (map (fn [i] [i i])) (range 1e3))]
-    (enc/qb 1e4
-      (entity? m)))
-  ;; => 58.38
-  )
-
-(defn- #?(:clj entities? :cljs ^boolean entities?) [xs]
+(defn- entities? [xs]
   (when (vector? xs)
-    (let [it (-iter xs)]
+    (let [it (-iter ^clojure.lang.IPersistentVector xs)]
       (loop []
-        (enc/cond
-          :if-not
-          (.hasNext it)
-          true
-          (entity? (.next it))
-          (recur))))))
-
-(comment
-  (enc/qb 1e5 (entities? [{:db/id 1}]))
-  ;; => 18.79
-  )
+        (if (.hasNext it)
+          (when (entity? (.next it))
+            (recur))
+          true)))))
 
 (def ^:private not-entities? (complement (some-fn entity? entities?)))
 
-(defn- entity-id [m]
+(defn- entity-id [^clojure.lang.IPersistentMap m]
   (let [it (-iter m)]
     (loop []
-      (enc/cond
-        :if-not     (.hasNext it) nil
-        :let        [[k v] (.next it)]
-        (key-id? k) [k v]
-        :else       (recur)))))
-
-#?(:clj
-   (m/defsyntax dbg [pattern]
-     `(m/app #(doto % prn) ~pattern)))
+      (when (.hasNext it)
+        (let [^clojure.lang.MapEntry e (.next it)
+              k                        (.key   e)
+              v                        (.val   e)]
+          (if (key-id? k)
+            [k v]
+            (recur)))))))
 
 (defn normalize
   "turns a nested map into a flat collection with references."
-  [data]
+  ^clojure.lang.IPersistentVector [^clojure.lang.IPersistentMap data]
   (let [it (-iter data)]
     (loop [m (transient {}) r [] id nil]
       (enc/cond
@@ -116,7 +108,9 @@
         (and (not (.hasNext it)) (enc/some? id))
         (conj r [id (persistent! m)])
         ;;
-        :let [[k v] (.next it)]
+        :let [^clojure.lang.MapEntry e (.next it)
+              k                        (.key   e)
+              v                        (.val   e)]
         (key-id? k)
         (recur (assoc! m k v) r [k v])
         ;;
@@ -141,62 +135,53 @@
 
 
 (defn- -denormalize
-  ([db data max-level level]
-   (let [it (-iter data)]
-     (loop [m {}]
-       (enc/cond
-         (> level max-level)
-         (timbre/warnf "maximum nesting level %s for %s has been exceeded" max-level (entity-id data))
-         (and (not (.hasNext it)))
-         m
-         ;;
-         :let [[k v] (.next it)]
-         (map? v)
-         (recur (assoc m k (-denormalize db v max-level (inc level))))
-         ;;
-         (ident? v)
-         (recur (assoc m k (let [m (or (get-in m v)
-                                       (-denormalize db (get-in db v) max-level (inc level)))]
-                             m)))
-         (idents? v)
-         (recur (assoc m k (let [xs (mapv (fn [ident] (or (get-in m ident)
-                                                         (-denormalize db (get-in db ident) max-level (inc level)))) v)]
-                             xs)))
-         ;;
-         :else
-         (recur (assoc m k v)))))))
+  ^clojure.lang.IPersistentMap
+  [^clojure.lang.IPersistentMap db ^clojure.lang.IPersistentMap data ^long max-level ^long level]
+  (let [it (-iter data)]
+    (loop [m {}]
+      (enc/cond
+        (> level max-level)
+        (timbre/warnf "maximum nesting level %s for %s has been exceeded" max-level (entity-id data))
+        (not (.hasNext it))
+        m
+        ;;
+        :let [^clojure.lang.MapEntry e (.next it)
+              k                        (.key e)
+              v                        (.val e)]
+        (map? v)
+        (recur (assoc m k (-denormalize db v max-level (inc level))))
+        ;;
+        (ident? v)
+        (recur (assoc m k (let [m (or (get-in m v)
+                                      (-denormalize db (get-in db v) max-level (inc level)))]
+                            m)))
+        (idents? v)
+        (recur (assoc m k (let [xs (mapv (fn [ident] (or (get-in m ident)
+                                                        (-denormalize db (get-in db ident) max-level (inc level)))) v)]
+                            xs)))
+        ;;
+        :else
+        (recur (assoc m k v))))))
 
 (defn denormalize
   "turns a flat map into a nested one. to avoid stackoverflow and infinite loop,
   it takes a maximum nesting level as an additional argument"
-  ([   data          ] (-denormalize data data 12        0))
-  ([db data          ] (-denormalize db   data 12        0))
-  ([db data max-level] (-denormalize db   data max-level 0)))
-
-(comment
-  (let [data (commit {} [:dx/put {:db/id :ivan :name "ivan" :friend [{:db/id 1 :name "petr" :friend [[:db/id :ivan]]}
-                                                                     {:db/id 2 :name "petr"}
-                                                                     {:db/id 3 :name "petr"}
-                                                                     {:db/id 4 :name "petr"}
-                                                                     {:db/id 5 :name "petr"}
-                                                                     {:db/id 6 :name "petr"}
-                                                                     {:db/id 7 :name "petr"}
-                                                                     {:db/id 8 :name "petr"}
-                                                                     {:db/id 9 :name "petr"}
-                                                                     {:db/id 10 :name "petr"}]}])]
-    (denormalize data))[k v] (.next it)
-  ;; => 1362.47
-  )
-
+  (^clojure.lang.IPersistentMap [   data          ] (-denormalize data data 12        0))
+  (^clojure.lang.IPersistentMap [db data          ] (-denormalize db   data 12        0))
+  (^clojure.lang.IPersistentMap [db data max-level] (-denormalize db   data max-level 0)))
 
 (defn -submit-commit
   "apply transactions to db."
-  [db tx]
+  [^clojure.lang.IPersistentMap db ^clojure.lang.IPersistentVector tx]
   (m/find tx
-    ;; put [?tid ?eid] ?k ?v
-    [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)]
-     (m/pred keyword? ?k) (m/pred (complement (some-fn entity? entities? ident?)) ?v)]
-    (assoc-in db [?tid ?eid ?k] ?v)
+    ;; put [?tid ?eid] !ks !vs ...
+    [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] .
+     (m/pred keyword? !ks) (m/pred (complement (some-fn entity? entities? ident?)) !vs) ...]
+    (reduce
+     (fn [acc [k v]]
+       (-> acc (assoc-in [?tid ?eid k] v) (assoc-in [?tid ?eid ?tid] ?eid)))
+     db
+     (mapv vector !ks !vs))
     ;; put [?tid ?eid] ?k ?entity
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred entity? ?v)]
     (let [xs (normalize ?v)
@@ -204,7 +189,7 @@
       (loop [db' (assoc-in db [?tid ?eid ?k] (entity-id ?v))]
         (enc/cond
           :if-not (.hasNext it) db'
-          :let [[ks m] (.next it)]
+          :let    [[ks m] (.next it)]
           (recur (assoc-in db' ks m)))))
     ;; put [?tid ?eid] ?k [?entity ...]
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) [(m/pred entity? !vs) ...]]
@@ -212,8 +197,8 @@
       (loop [acc db]
         (enc/cond
           :if-not (.hasNext itx) acc
-          :let    [?v (.next itx)
-                   xs (normalize ?v)
+          :let    [?v  (.next itx)
+                   xs  (normalize ?v)
                    ity (-iter xs)]
           (recur
            (loop [acc (update-in acc [?tid ?eid ?k] conjv (entity-id ?v))]
@@ -228,7 +213,9 @@
       (loop [acc db]
         (enc/cond
           :if-not (.hasNext it) acc
-          :let    [[ks m] (.next it)]
+          :let    [^clojure.lang.MapEntry e (.next it)
+                   k                        (.key e)
+                   v                        (.val e)]
           (recur (assoc-in acc ks m)))))
     ;; put [m ...]
     [:dx/put (m/pred entities? ?vs)]
@@ -254,7 +241,7 @@
         (enc/cond
           :if-not (.hasNext it) acc
           :let    [[ks m] (.next it)]
-          (recur  (update-in acc ks enc/merge m)))))
+          (recur  (assoc-in acc ks m)))))
     ;; delete [?tid ?eid]
     [:dx/delete [(m/pred key-id? ?tid) (m/pred eid? ?eid) :as ?ident]]
     (enc/cond
@@ -306,10 +293,10 @@
                    acc' (-> (update-in acc [?tid ?eid ?k] conjv (entity-id v))
                             (-submit-commit [:dx/put v]))]
           :else   (recur acc'))))
-    ;; update [?tid ?eid] ?f
+    ;; update [?tid ?eid] ?f & ?args
     [:dx/update [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred fn? ?f) & ?args]
     (update-in db [?tid ?eid] (partial apply ?f) ?args)
-    ;; update [?tid ?eid] ?k ?f
+    ;; update [?tid ?eid] ?k ?f & ?args
     [:dx/update [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred fn? ?f) & ?args]
     (update-in db [?tid ?eid ?k] (partial apply ?f) ?args)
     ;; match [?tid ?eid] ?m
@@ -327,18 +314,6 @@
     ;; _
     _ (timbre/errorf "invalid commit %s" tx)))
 
-(comment
-  (enc/qb 1e5
-    (-submit-commit {:db/id {:ivan {:db/id :ivan :name "ivan"}}}
-                    [:dx/put [:db/id :ivan] :friend {:db/id :petr :name "petr"}]))
-  ;; => 177.95
-  (enc/qb 1e5
-    (-submit-commit {:db/id {:ivan {:db/id :ivan :name "ivan"}}}
-                    [:dx/put [:db/id :ivan] :friend [{:db/id :petr :name "petr"}
-                                                     {:db/id :smith :name "smith"}]]))
-  ;; => 402.66
-  )
-
 (defn listen!
   "listens for changes in the db. each time changes are made via commit, the
   callback is called with the db. the transaction report is written to the db
@@ -351,15 +326,6 @@
      (swap! (get (meta db_) :listeners (atom {})) assoc k cb)
      (alter-meta! db_ assoc :listeners (atom {k cb})))
    k))
-
-(comment
-  (let [db_ (atom (create-dx))]
-    (alter-meta! db_ assoc :a 1)
-    ;; (listen! db_ #(println :sex))
-    ;; (commit! db_ [[:dx/put [:db/id :ivan] :a 1]])
-    )
-
-  )
 
 (defn unlisten!
   "remove registered listener"
@@ -522,38 +488,6 @@
 
 ;; pull
 
-(comment
-  (def txs
-    [{:db/id     :ivan
-      :name      "Ivan"
-      :last-name "Ivanov"
-      :friend    [[:db/id :petr]]
-      :age       30}
-     {:db/id     :petr
-      :name      "Petr"
-      :last-name "Petrov"
-      :friend    [[:db/id :smith] [:db/id :ivan]]
-      :age       15}
-     {:db/id     :smith
-      :name      "Smith"
-      :last-name "Smith"
-      :friend    [[:db/id :petr]]
-      :age       55}])
-
-  (def conn_ (atom (db-with txs)))
-  )
-
-(comment
-  (enc/qb 1e5
-    (commit! conn_ [[:dx/put [:db/id :ivan] :age (rand-int 100)]])
-    (commit! conn2_ [[:dx/put [:db/id :ivan] :name (rand-int 100)]]))
-  (def diff (:tx (meta @conn2_)))
-  (let [tx (repeat 1000 [:dx/put [:db/id :ivan] :age 8])
-        diff (es/edits->script (vec (repeat 1000 (first diff))))]
-    (enc/qb 1e3
-      (commit @conn_ tx)
-      (es/patch @conn2_ diff))))
-
 (defn- -rev-keyword? [k]
   (let [name' (name k)]
     (and (enc/str-starts-with? name' "_")
@@ -592,8 +526,8 @@
            r
            ;;
            :let  [elem (.next it)]
-           (and (map? elem) (ident? (ffirst elem)))
-           (recur (pull* db (second (first elem)) (ffirst elem)) id)
+           (and (map? elem) (ident? (-first-key elem)))
+           (recur (pull* db (-first-val elem) (-ffirst elem)) id)
            ;; prop
            (and (some? id) (#{:*} elem))
            (recur
@@ -604,9 +538,9 @@
                   (not (.hasNext it))
                   (persistent! acc)
                   ;;
-                  :let [elem (.next it)
-                        k    (nth elem 0)
-                        v    (nth elem 1)]
+                  :let [^clojure.lang.MapEntry e (.next it)
+                        k                        (.key   e)
+                        v                        (.val   e)]
                   ;;
                   (and (idents? v) (= 1 (count v)))
                   (recur (assoc! acc k (nth v 0)))
@@ -628,23 +562,23 @@
               id))
            ;; join
            :when (and (some? id) (map? elem)) ;; {:friend [:name]}
-           :let  [k    (ffirst elem)
+           :let  [k    (-first-key elem)
                   rev? (-rev-keyword? k)
                   ref' (if-not rev?
                          (get-in db (conj parent k))
                          (reverse-search db (-rev->keyword k) id))]
            ;;
            (and (some? id) (ident? ref'))
-           (recur (enc/assoc-some r k (pull* db (second (first elem)) ref')) id)
+           (recur (enc/assoc-some r k (pull* db (-first-val elem) ref')) id)
            ;;
            (and (some? id) (idents? ref') (not rev?))
-           (recur (enc/assoc-some r (ffirst elem)
-                                  (into [] (comp (map (partial pull* db (second (first elem)))) (remove empty?)) ref'))
+           (recur (enc/assoc-some r (-first-key elem)
+                                  (into [] (comp (map (partial pull* db (-first-val elem))) (remove empty?)) ref'))
                   id)
            (and (some? id) (idents? ref') rev?)
-           (recur (enc/assoc-some r (ffirst elem)
+           (recur (enc/assoc-some r (-first-key elem)
                                   (enc/cond
-                                    :let [xs (mapv (partial pull* db (second (first elem))) ref')
+                                    :let [xs (mapv (partial pull* db (-first-val elem)) ref')
                                           n  (count xs)]
                                     ;;
                                     (> n 1)
@@ -659,7 +593,7 @@
 
 (defn pull
   ([db query]
-   (pull db (second (first query)) (ffirst query)))
+   (pull db (-first-val query) (-first-key query)))
   ([db query id]
    (enc/cond
      (ident?  id)                (pull* db query id )
@@ -667,38 +601,11 @@
 
 (defn pull-one
   ([db query]
-   (-> (pull db (second (first query)) (ffirst query)) vals first))
+   (-> (pull db (-first-val query) (-first-key query)) vals first))
   ([db query id]
    (enc/cond
      (ident?  id)                (-> (pull* db query id)  vals first)
      (idents? id) (mapv (fn [id'] (-> (pull* db query id') vals first)) id))))
-
-(comment
-
-  (enc/qb 1e5
-    (pull @conn_ [:name {:friend [:name {:friend [:name :age]}]}] [:db/id :ivan]))
-  ;; => 627.52
-
-  (enc/qb 1e5
-    (m/search @conn_
-      {_ {:ivan {:name ?name   :friend (m/scan [_ ?f])}
-          ?f    {:name ?fname  :friend (m/scan [_ ?ff])}
-          ?ff   {:name ?ffname :age ?ffage}}}
-      {:name ?name :friend {:name ?fname :friend {:name ?ffname :age ?ffage}}}))
-  ;; => 620.35
-
-  (enc/qb 1e5
-    (pull @conn_ [:name {:friend [:name]}] [:db/id :ivan]))
-  ;; => 229.91
-
-  (enc/qb 1e5
-    (pull @conn_ [{:friend [:name]}] [:db/id :ivan]))
-  ;; => 187.2
-
-  (enc/qb 1e5
-    (pull @conn_ [:name :age :sex] [:db/id :ivan]))
-  ;; => 150.18
-  )
 
 (defn haul
   ([db]   (denormalize db   12))
@@ -712,8 +619,7 @@
      (denormalize db (get-in db x) max-level)
      ;;
      (map? x)
-     (denormalize db x max-level)
-     )))
+     (denormalize db x max-level))))
 
 ;; * datalog
 
@@ -731,7 +637,7 @@
         (recur more k (-> (update   r k conjv ?table)
                           (update     k conjv ?e)
                           (update :pull conjv [?q [?table ?e]]))))
-      (and (= :find k) (vector? elem) (list? (first elem)) (= 'pull (ffirst elem)) (= '... (last elem)))
+      (and (= :find k) (vector? elem) (list? (first elem)) (= 'pull (-ffirst elem)) (= '... (last elem)))
       (let [[_ ?q [?table ?e]] (first elem)]
         (recur more k (-> (update   r k conjv ?table)
                           (update     k conjv ?e)
@@ -752,21 +658,6 @@
       ;;
       :else
       (recur more k (update r k conjv elem)))))
-
-(comment
-
-  (parse-query '[:find [[?e ?name] ...]])
-  (parse-query '[:find [?e ...]])
-  (q [:find [(pull [:*] [:db/id ?e]) ...]
-      :where
-      [?e :name]]
-    @conn_)
-
-  (q [:find ?e .
-      :where
-      [?e :document/id 1]]
-    {:document/id {1 {:document/id 1}}})
-  )
 
 (defn build-args-map [{:keys [in args] :as q}]
   (m/match q
@@ -789,28 +680,6 @@
      :args [[!ys ...]]}
     (mapcat #(build-args-map {:in !xs :args [%]}) !ys)
     ))
-
-(comment
-  (-> (parse-query '[:where [?e :name ?name]
-                     :in ?name]
-                   "Ivan")
-      (build-args-map))
-  (-> (parse-query '[:in ?name ?age] "ivan" 35)
-      (build-args-map))
-  (-> (parse-query '[:in [?name] [?age]] ["ivan" "petr"] [30 20])
-      (build-args-map))
-  (-> (parse-query '[:in [[?name ?age]]] [["ivan" 20] ["petr" 30]])
-      (build-args-map))
-  (-> (parse-query '[:find ?e
-                     :in ?attr [?value]
-                     :where [?e ?attr ?value]]
-                   :name ["Ivan" "Petr"])
-      (build-args-map))
-  (-> (parse-query '[:find (count ?e)
-                     :in ?attr [?value]
-                     :where [?e ?attr ?value]]
-                   :name ["Ivan" "Petr"])
-      (build-args-map)))
 
 (defn qsymbol? [x]
   (and (symbol? x) (enc/str-starts-with? (name x) "?")))
@@ -849,6 +718,7 @@
     ~(apply list ?f !xs)
     ;; else
     ?x ?x))
+;;
 
 (defn datalog->meander [{:keys [where in args] :as q}]
   (let [args-map (build-args-map q)]
@@ -859,7 +729,7 @@
                     (and (not elem) (or (pos? (count fns)) (pos? (count vars)) (pos? q)))
                     `(m/and ~@(map (fn [[_ m']] m') m) ~@fns ~@vars)
                     ;;
-                    (and (not elem))
+                    (not elem)
                     `~(m 0)
                     ;;
                     :let [[table e k v] (case (count elem) (1 2 3) (into ['_] elem) 4 elem)
@@ -897,44 +767,6 @@
           `(m/or ~@r)
           :else (first r))))))
 
-(comment
-  (enc/qb 1e5
-    (m/search @conn_
-      {_ {?e {:name "Ivan" :friend (m/scan [?t ?f])}
-          ?f {:name ?name}}}
-      ?name)
-    (m/search @conn_
-      (m/and {_ {?e {:name "Ivan" :friend (m/scan [?t ?f])}}}
-             {_ {?f {:name ?name}}})
-      ?name))
-
-
-  (-> (parse-query '[:where
-                     [:person/id ?e1 :name "Ivan"]
-                     [?e2 :name "Ivan"]
-                     [(+ ?e1 ?e2) ?x]])
-      (datalog->meander))
-  (-> (parse-query '[:in [?name]
-                     :where
-                     [?e :name ?name]]
-                   "Ivan")
-      (datalog->meander))
-  (-> (parse-query '[:in [?name]
-                     :where
-                     [?e :name ?name]]
-                   ["Ivan" "Petr"])
-      (datalog->meander))
-  (-> (parse-query '[:in [[?name ?age]]
-                     :where
-                     [?e :name ?name]
-                     [?e :age ?age]]
-                   [["Ivan" 20] ["Petr" 30]])
-      (datalog->meander))
-  (-> (parse-query '[:find (pull [:*] [?table ?e])
-                     :where
-                     [?e :name "Ivan"]])
-      (datalog->meander)))
-
 #?(:clj
    (m/defsyntax query [args]
      (let [q (datalog->meander args)]
@@ -942,17 +774,18 @@
 
 (defmacro q [q' db & args]
   (let [{:keys [find first? unpack? pull] :as pq} (apply parse-query q' args)]
-    `(let [data# (m/rewrites ~db
-                   ~(query pq) ~find)]
+    `(let [data# ~(with-meta `(m/rewrites ~db
+                              ~(query pq) ~find)
+                    (merge {::m/dangerous true} &env (meta &form)))]
        (cond->> data#
          (seq '~pull)
          (map (fn [elem#]
-                   (mapv (fn [[?q# [?table# ?e#]]]
-                           (let [args-map# (zipmap '~find elem#)
-                                 table#    (args-map# ?table#)
-                                 e#        (args-map# ?e#)]
-                             (pull ~db ?q# [table# e#])))
-                         '~pull)))
+                (mapv (fn [[?q# [?table# ?e#]]]
+                        (let [args-map# (zipmap '~find elem#)
+                              table#    (args-map# ?table#)
+                              e#        (args-map# ?e#)]
+                          (pull ~db ?q# [table# e#])))
+                      '~pull)))
          ;;
          '~first?
          first
@@ -961,55 +794,49 @@
          (mapcat identity)
          :else vec))))
 
-(comment
-
-  (q [:find ?id
-      :where
-      [?table ?e :db/id [?table ?id]]]
-    @conn_)
-
-  (q [:find [(pull [:*] [?table ?e]) ...]
-      :where
-      [?table ?e :name ?name]]
-    @conn_)
-  (q [:find ?e
-      :where
-      [?e :name "Ivan"]]
-    @conn_)
-
-  (parse-query '[:find ?e
-                 :in ?name
-                 :where
-                 [?e :name ?name]]
-               "Ivan"))
-
-(comment
-  (enc/qb 1e5
-    (doall
-     (m/rewrite @conn_
-       (m/map-of _ (m/map-of _ {:name !name}))
-       [!name ...]))
-    (doall
-     (m/search @conn_
-       {_ {_ {:name ?name}}}
-       ?name))))
-
-
-;; * re-frame
-
 (def dxs_ (atom {}))
 
+(defn valid-id? [id]
+  (or (keyword? id) (and (vector? id) (enc/revery? keyword? id))))
+
 (defn reg-dx! [id store]
-  (let [id    (enc/have keyword? id)
-        store (enc/have enc/derefable? store)]
-    (swap! dxs_ assoc id store)))
+  (let [id    (enc/have! valid-id? id)
+        store (enc/have! enc/derefable? store)]
+    (#?(:clj swap! :cljs vswap!) dxs_ assoc id store)))
 
-#?(:clj
-   (defmacro with-dx
-     {:style/indent 1}
-     [bindings & body]
-     {:pre [(even? (count bindings))]}
-     `(let [~@(mapcat (fn [[v k]] [v `(@dxs_ ~k)]) (partition 2 bindings))]
-        ~@body)))
+(defn get-dx [k]
+  (enc/have! valid-id? k)
+  (@dxs_ k))
 
-;;
+(defn get-dx! [k]
+  (enc/have! valid-id? k)
+  (if-let [dx (@dxs_ k)]
+    dx
+    (let [dx (*atom-fn* *empty-map*)]
+      (reg-dx! k dx)
+      dx)))
+
+(defmacro with-dx
+  {:style/indent 1}
+  [bindings & body]
+  {:pre [(even? (count bindings))]}
+  (let [s (seq bindings)]
+    (if s
+      (let [[v k & ?more] bindings]
+        `(if-let [~v (@dxs_ ~k)]
+           ~(if ?more `(with-dx ~(vec ?more) ~@body) `(do ~@body))
+           (throw (ex-info "doxa: dx doesn't exists!" {:dx ~k})))))))
+
+(defmacro with-dx!
+  {:style/indent 1}
+  [bindings & body]
+  {:pre [(even? (count bindings))]}
+  (let [s (seq bindings)]
+    (if s
+      (let [[v k & ?more] bindings]
+        `(if-let [~v (@dxs_ ~k)]
+           ~(if ?more `(with-dx! ~(vec ?more) ~@body) `(do ~@body))
+           (let [~v (*atom-fn* *empty-map*)] ; for testing
+             (timbre/warnf "doxa: dx %s doesn't exists! creating it!" ~k)
+             (reg-dx! ~k ~v)
+             ~(if ?more `(with-dx! ~(vec ?more) ~@body) `(do ~@body))))))))
