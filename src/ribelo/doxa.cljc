@@ -211,12 +211,10 @@
     (let [xs (normalize ?m)
           it (-iter xs)]
       (loop [acc db]
-        (enc/cond
-          :if-not (.hasNext it) acc
-          :let    [^clojure.lang.MapEntry e (.next it)
-                   k                        (.key e)
-                   v                        (.val e)]
-          (recur (assoc-in acc ks m)))))
+        (if (.hasNext it)
+          (let [[ks m] (.next it)]
+            (recur (assoc-in acc ks m)))
+          acc)))
     ;; put [m ...]
     [:dx/put (m/pred entities? ?vs)]
     (let [itx (-iter ?vs)]
@@ -484,7 +482,7 @@
   ([data {:keys [with-diff?] :as opts}]
    (with-meta
      (if (not-empty data) (db-with data) *empty-map*)
-     (merge opts {:t (enc/now-udt) :tx nil}))))
+     (merge opts {:t (enc/now-udt) :tx nil :subscribers (atom {})}))))
 
 ;; pull
 
@@ -684,6 +682,12 @@
 (defn qsymbol? [x]
   (and (symbol? x) (enc/str-starts-with? (name x) "?")))
 
+(m/defsyntax *qsymbol?
+  ([]
+   `(m/pred qsymbol?))
+  ([x]
+   `(m/pred qsymbol? ~x)))
+
 (defn- some-value
   ([] `(m/some))
   ([?v]
@@ -793,6 +797,76 @@
          '~unpack?
          (mapcat identity)
          :else vec))))
+
+(defn tx->datom [tx]
+  (m/rewrite tx
+    [[?table] (m/or :+ :r) {?eid {?a ?v}}]
+    [?table ?eid ?a ?v]
+    [[?table ?eid] (m/or :+ :r) {?a ?v}]
+    [?table ?eid ?a ?v]
+    [[?table ?eid ?a] (m/or :+ :r) ?v]
+    [?table ?eid ?a ?v]
+    [[?table] :-]
+    [?table nil nil nil]
+    [[?table ?eid] :-]
+    [?table ?eid nil nil]
+    [[?table ?eid ?a] :-]
+    [?table ?eid ?a nil]))
+
+(defn tx-match-datom? [tx datom]
+  (m/rewrite [(tx->datom tx) datom]
+    [[?table ?eid ?a ?v]
+     (m/or
+      [(m/or ?table (*qsymbol?))
+       (m/or ?eid   (*qsymbol?) (m/guard (nil? ?eid)))
+       (m/or ?a     (*qsymbol?) (m/guard (nil?   ?a)))
+       (m/or ?v     (*qsymbol?) (m/guard (nil?   ?v)))]
+      [(m/or ?eid   (*qsymbol?) (m/guard (nil? ?eid)))
+       (m/or ?a     (*qsymbol?) (m/guard (nil?   ?a)))
+       (m/or ?v     (*qsymbol?) (m/guard (nil?   ?v)))])]
+    true
+    _
+    false))
+
+(defmacro q* [q' db & args]
+  `(let [where# (:where (parse-query (quote ~q')))
+         m#     (meta ~db)
+         t#     (:t m#)
+         tx#    (last (:tx m#))
+         subs#  (:subscribers m#)]
+     (enc/cond
+       (enc/rsome #(enc/kw-identical? :mem/del %) [~@args])
+       (enc/do-true
+        (swap! subs# assoc-in [(quote ~q') :r] nil)
+        (swap! subs# assoc-in [(quote ~q') :t] nil))
+
+       (and (get-in @subs# [(quote ~q') :r])
+            (not (enc/rsome #(enc/kw-identical? :mem/fresh %) [~@args]))
+            (or (not (enc/rsome (partial tx-match-datom? tx#) where#))
+                (> (get-in @subs# [(quote ~q') :t]) t#)))
+       (get-in @subs# [(quote ~q') :r])
+
+       :else
+       (let [r# (q ~q' ~db ~@args)]
+         (swap! subs# assoc-in [(quote ~q') :r] r#)
+         (swap! subs# assoc-in [(quote ~q') :t] (enc/now-udt))
+         r#))))
+
+(comment
+  (def db (create-dx [] {:with-diff? false}))
+  (def conn_ (atom db))
+  (doseq [n (range 1e2)]
+    (commit! conn_ [:dx/put [:db/id n] :a n]))
+  (enc/qb 1e3
+    (q [:find [?e ?v]
+        :where
+        [?e :a ?v]]
+      @conn_)
+    (q* [:find [?e ?v]
+         :where
+         [?e :a ?v]]
+        @conn_ :mem/del))
+  )
 
 (def dxs_ (atom {}))
 

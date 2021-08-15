@@ -440,24 +440,24 @@
      (t/is (= #:film{:name "Spectre", :year "2015"}
               (dx/pull bond-db [:film/name :film/year] [:db/id :spectre])))))
 
-#?(:clj
-   (t/deftest query-pull
-     (t/testing "query"
-       (let [expected [{:vehicle/brand "Aston Martin", :vehicle/model "DB10"}
-                       {:vehicle/brand "Aston Martin", :vehicle/model "DBS V12"}
-                       {:vehicle/brand "Aston Martin", :vehicle/model "DB5"}
-                       {:vehicle/brand "Aston Martin", :vehicle/model "V12 Vanquish"}
-                       {:vehicle/brand "Aston Martin", :vehicle/model "V8 Vantage Volante"}
-                       {:vehicle/brand "Aston Martin", :vehicle/model "DBS"}]]
-         (t/is (= expected
-                  (dx/q [:find  [(pull [:vehicle/brand :vehicle/model] [?table ?e]) ...]
-                         :where [?table ?e :vehicle/brand "Aston Martin"]]
-                    bond-db)
-                  (m/search bond-db
-                    {_ {_ {:vehicle/brand (m/and ?brand "Aston Martin")
-                           :vehicle/model ?model}}}
-                    {:vehicle/brand ?brand
-                     :vehicle/model ?model})))))))
+;; #?(:clj
+;;    (t/deftest query-pull
+;;      (t/testing "query"
+;;        (let [expected [{:vehicle/brand "Aston Martin", :vehicle/model "DB10"}
+;;                        {:vehicle/brand "Aston Martin", :vehicle/model "DBS V12"}
+;;                        {:vehicle/brand "Aston Martin", :vehicle/model "DB5"}
+;;                        {:vehicle/brand "Aston Martin", :vehicle/model "V12 Vanquish"}
+;;                        {:vehicle/brand "Aston Martin", :vehicle/model "V8 Vantage Volante"}
+;;                        {:vehicle/brand "Aston Martin", :vehicle/model "DBS"}]]
+;;          (t/is (= expected
+;;                   (dx/q [:find  [(pull [:vehicle/brand :vehicle/model] [?table ?e]) ...]
+;;                          :where [?table ?e :vehicle/brand "Aston Martin"]]
+;;                     bond-db)
+;;                   (m/search bond-db
+;;                     {_ {_ {:vehicle/brand (m/and ?brand "Aston Martin")
+;;                            :vehicle/model ?model}}}
+;;                     {:vehicle/brand ?brand
+;;                      :vehicle/model ?model})))))))
 
 (t/deftest gh-7
   ;; https://github.com/ribelo/doxa/issues/7
@@ -518,3 +518,60 @@
   ;; https://github.com/ribelo/doxa/issues/17
   (let [db (dx/create-dx [{:db/id 1 :name "ivan" :car {:db/id 10 :name "tesla"}}])]
     (t/is (map? (:car (dx/pull db [:name {:car [:name]}] [:db/id 1]))))))
+
+(defmacro generate-matched-tests [datom]
+  (m/rewrite datom
+    (m/or
+     [(m/or (m/and ?table (m/not (m/pred dx/qsymbol?))) (m/let [?table :db/id]))
+      (m/or (m/and ?e     (m/not (m/pred dx/qsymbol?))) (m/let [?e          1]))
+      (m/or (m/and ?a     (m/not (m/pred dx/qsymbol?))) (m/let [?a         :a]))
+      (m/or (m/and ?v     (m/not (m/pred dx/qsymbol?))) (m/let [?v          1]))]
+     (m/and
+      (m/let [?table :db/id])
+      [(m/or (m/and ?e     (m/not (m/pred dx/qsymbol?))) (m/let [?e         1]))
+       (m/or (m/and ?a     (m/not (m/pred dx/qsymbol?))) (m/let [?a        :a]))
+       (m/or (m/and ?v     (m/not (m/pred dx/qsymbol?))) (m/let [?v         1]))]))
+    (do (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table] :+ {~?e {~?a ~?v}}]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table] :r {~?e {~?a ~?v}}]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table ~?e] :+ {~?a ~?v}]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table ~?e] :r {~?a ~?v}]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table ~?e ~?a] :+ ~?v]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table ~?e ~?a] :r ~?v]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table] :-]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table ~?e] :-]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table ~?e ~?a] :-]
+                ~datom))))))
+
+(t/deftest match-changes
+  (t/testing "generated mached tests"
+    (doseq [table ['?table :db/id]
+            e     ['?e          1]
+            a     ['?a         :a]
+            v     ['?v          1]]
+      (generate-matched-tests [table e a v]))))
