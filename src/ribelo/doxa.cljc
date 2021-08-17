@@ -1,12 +1,14 @@
 (ns ribelo.doxa
   (:refer-clojure  :exclude [ident? -next])
-  #?(:cljs (:require-macros [ribelo.doxa :refer [q with-dx with-dx! -iter -first-key -first-val -ffirst]]))
+  #?(:cljs (:require-macros [ribelo.doxa :refer [q with-dx with-dx! -iter -first-key -first-val -ffirst
+                                                 *qsymbol?]]))
   (:require
    [meander.epsilon :as m]
    [taoensso.encore :as enc]
    [taoensso.timbre :as timbre]
    [editscript.core :as es]
    [editscript.edit :as ese]))
+
 
 #?(:clj (set! *warn-on-reflection* true))
 
@@ -68,8 +70,8 @@
       (loop []
         (when (.hasNext it)
           (let [^clojure.lang.MapEntry e (.next it)
-                k                        (.key   e)
-                v                        (.val   e)]
+                k                        #?(:clj (.key e) :cljs (.-key e))
+                v                        #?(:clj (.val e) :cljs (.-val e))]
             (if (and (key-id? k) (eid? v))
               true
               (recur))))))))
@@ -90,8 +92,8 @@
     (loop []
       (when (.hasNext it)
         (let [^clojure.lang.MapEntry e (.next it)
-              k                        (.key   e)
-              v                        (.val   e)]
+              k                        #?(:clj (.key e) :cljs (.-key e))
+              v                        #?(:clj (.val e) :cljs (.-val e))]
           (if (key-id? k)
             [k v]
             (recur)))))))
@@ -109,8 +111,8 @@
         (conj r [id (persistent! m)])
         ;;
         :let [^clojure.lang.MapEntry e (.next it)
-              k                        (.key   e)
-              v                        (.val   e)]
+              k #?(:clj (.key e) :cljs (.-key e))
+              v #?(:clj (.val e) :cljs (.-val e))]
         (key-id? k)
         (recur (assoc! m k v) r [k v])
         ;;
@@ -146,8 +148,8 @@
         m
         ;;
         :let [^clojure.lang.MapEntry e (.next it)
-              k                        (.key e)
-              v                        (.val e)]
+              k                        #?(:clj (.key e) :cljs (.-key e))
+              v                        #?(:clj (.val e) :cljs (.-val e))]
         (map? v)
         (recur (assoc m k (-denormalize db v max-level (inc level))))
         ;;
@@ -537,8 +539,8 @@
                   (persistent! acc)
                   ;;
                   :let [^clojure.lang.MapEntry e (.next it)
-                        k                        (.key   e)
-                        v                        (.val   e)]
+                        k                        #?(:clj (.key e) :cljs (.-key e))
+                        v                        #?(:clj (.val e) :cljs (.-val e))]
                   ;;
                   (and (idents? v) (= 1 (count v)))
                   (recur (assoc! acc k (nth v 0)))
@@ -682,11 +684,12 @@
 (defn qsymbol? [x]
   (and (symbol? x) (enc/str-starts-with? (name x) "?")))
 
-(m/defsyntax *qsymbol?
-  ([]
-   `(m/pred qsymbol?))
-  ([x]
-   `(m/pred qsymbol? ~x)))
+#?(:clj
+   (m/defsyntax *qsymbol?
+     ([]
+      `(m/pred qsymbol?))
+     ([x]
+      `(m/pred qsymbol? ~x))))
 
 (defn- some-value
   ([] `(m/some))
@@ -798,6 +801,12 @@
          (mapcat identity)
          :else vec))))
 
+;; => [[?table ?e ?v] :-]
+;; => [[?table ?e] :-]
+;; => [[?table] :-]
+;; => [[?table ?e ?a] :+ ?v]
+;; => [[?table ?e ?a] :r ?v]
+;; => [[?table ?e ?a] :-]
 (defn tx->datom [tx]
   (m/rewrite tx
     [[?table] (m/or :+ :r) {?eid {?a ?v}}]
@@ -876,7 +885,7 @@
 (defn reg-dx! [id store]
   (let [id    (enc/have! valid-id? id)
         store (enc/have! enc/derefable? store)]
-    (#?(:clj swap! :cljs vswap!) dxs_ assoc id store)))
+    (swap! dxs_ assoc id store)))
 
 (defn get-dx [k]
   (enc/have! valid-id? k)
