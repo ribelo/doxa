@@ -486,6 +486,8 @@
      (if (not-empty data) (db-with data) *empty-map*)
      (merge opts {:t (enc/now-udt) :tx nil :subscribers (atom {})}))))
 
+(defn last-tx [db] (some-> db meta :tx last))
+
 ;; pull
 
 (defn- -rev-keyword? [k]
@@ -856,7 +858,7 @@
 
        (and (get-in @subs# [(quote ~q') :r])
             (not (enc/rsome #(enc/kw-identical? :mem/fresh %) [~@args]))
-            (or (not (enc/rsome (partial tx-match-datom? tx#) where#))
+            (or (not (-tx-match-query? tx# (quote ~q')))
                 (> (get-in @subs# [(quote ~q') :t]) t#)))
        (get-in @subs# [(quote ~q') :r])
 
