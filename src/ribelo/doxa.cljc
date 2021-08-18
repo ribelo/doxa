@@ -826,20 +826,25 @@
   (m/rewrite [(tx->datom tx) datom]
     [[?table ?eid ?a ?v]
      (m/or
-      [(m/or ?table (*qsymbol?))
-       (m/or ?eid   (*qsymbol?) (m/guard (nil? ?eid)))
-       (m/or ?a     (*qsymbol?) (m/guard (nil?   ?a)))
-       (m/or ?v     (*qsymbol?) (m/guard (nil?   ?v)))]
-      [(m/or ?eid   (*qsymbol?) (m/guard (nil? ?eid)))
-       (m/or ?a     (*qsymbol?) (m/guard (nil?   ?a)))
-       (m/or ?v     (*qsymbol?) (m/guard (nil?   ?v)))])]
+      [(m/or ?table (m/pred symbol?))
+       (m/or ?eid   (m/pred symbol?) (m/guard (nil? ?eid)))
+       (m/or ?a     (m/pred symbol?) (m/guard (nil?   ?a)))
+       (m/or ?v     (m/pred symbol?) (m/guard (nil?   ?v)))]
+      [(m/or ?eid   (m/pred symbol?) (m/guard (nil? ?eid)))
+       (m/or ?a     (m/pred symbol?) (m/guard (nil?   ?a)))
+       (m/or ?v     (m/pred symbol?) (m/guard (nil?   ?v)))])]
     true
     _
     false))
 
+(defn -tx-match-where? [tx datoms]
+  (enc/rsome (partial tx-match-datom? tx) datoms))
+
+(defn -tx-match-query? [tx query]
+  (-> query parse-query :where (partial -tx-match-where? tx)))
+
 (defmacro q* [q' db & args]
-  `(let [where# (:where (parse-query (quote ~q')))
-         m#     (meta ~db)
+  `(let [m#     (meta ~db)
          t#     (:t m#)
          tx#    (last (:tx m#))
          subs#  (:subscribers m#)]
