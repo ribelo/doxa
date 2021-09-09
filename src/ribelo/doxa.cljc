@@ -276,7 +276,13 @@
                    acc' (-> (update-in acc [?tid ?eid ?k] conjv (entity-id v))
                             (-submit-commit [:dx/put v]))]
           :else   (recur acc'))))
-    ;; update [?tid ?eid] ?f
+    ;; merge [?tid ?eid] ?m
+    [:dx/merge [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/and (m/pred map? ?v) (m/not (m/pred entity? ?v)))]
+    (update-in db [?tid ?eid] into-map (assoc ?v ?tid ?eid))
+    ;; merge [?tid ?eid] ?k ?m
+    [:dx/merge [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/and (m/pred map? ?v) (m/not (m/pred entity? ?v)))]
+    (update-in db [?tid ?eid ?k] into-map ?v)
+    ;; update [?tid ?eid] ?f & ?args
     [:dx/update [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred fn? ?f) & ?args]
     (update-in db [?tid ?eid] (partial apply ?f) ?args)
     ;; update [?tid ?eid] ?k ?f
