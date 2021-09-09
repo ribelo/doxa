@@ -1,6 +1,6 @@
 (ns ribelo.doxa
   (:refer-clojure  :exclude [ident? -next])
-  #?(:cljs (:require-macros [ribelo.doxa :refer [q with-dx -iter]]))
+  #?(:cljs (:require-macros [ribelo.doxa :refer [q with-dx with-dx! -iter]]))
   (:require
    [meander.epsilon :as m]
    [taoensso.encore :as enc]
