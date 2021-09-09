@@ -716,6 +716,8 @@
   (m/rewrite q
     [:find & ?args & (m/cata ?out)]
     {& [~(parse-find ?args) ?out]}
+    [:keys [!ks ...] & (m/cata ?out)]
+    {& [[:keys [!ks ...]] ?out]}
     [(m/keyword _ _ :as ?keyword) & ?args & (m/cata ?out)]
     {?keyword ?args & ?out}
 
@@ -896,7 +898,7 @@
   (apply comp (filter identity fns)))
 
 (defmacro q [q' db & args]
-  (let [{:keys [find first? mapcat? pull] :as pq} (apply parse-query q' args)]
+  (let [{:keys [find first? mapcat? pull keys] :as pq} (apply parse-query q' args)]
     `(let [data# ~(with-meta `(m/rewrites ~db
                                 ~(query pq) ~find)
                     (merge {::m/dangerous true} &env (meta &form)))]
@@ -912,6 +914,7 @@
                            (pull ~db q# [table# e#])))))
               ~(when first? `(take 1))
               ~(when mapcat? `(mapcat identity))
+              ~(when keys `(map (fn [m#] (zipmap '~keys m#))))
               )
              data#))))
 
