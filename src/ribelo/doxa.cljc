@@ -186,6 +186,11 @@
                (not (.hasNext ity)) acc
                :let                 [[ks m] (.next ity)]
                (recur (assoc-in acc ks m))))))))
+    ;; put [?tid ?eid] ?k [?ref ?id]
+    [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) [(m/pred key-id? ?kid) (m/pred eid? ?rid)]]
+    (if (get-in db [?kid ?rid])
+      (assoc-in db [?tid ?eid ?k] [?kid ?rid])
+      (throw (ex-info "lookup ref does not exist" {:ref [?kid ?rid]})))
     ;; put ?entity
     [:dx/put (m/pred entity? ?m)]
     (let [xs (normalize ?m)
