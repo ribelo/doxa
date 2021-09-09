@@ -14,6 +14,7 @@
 
 (def ^:dynamic *empty-map* (hash-map))
 (def ^:dynamic *atom-fn* atom)
+(def ^:dynamic *id-sufixes* #{"id" "by-id" "list"})
 
 (defmacro ^:private -iter
   "returns an iterator for both clj and cljs.
@@ -35,78 +36,38 @@
 (def ^:private eid?           (some-fn simple-eid? compound-eid?))
 
 (defn- key-id? [k]
-  (enc/cond
-    :when (keyword? k)
-    :if-not [ns'   (namespace k)
-             name' (name k)]
-    false
-    (or (#?(:clj = :cljs identical?) name' "id")
-        (#?(:clj = :cljs identical?) name' "by-id")
-        (#?(:clj = :cljs identical?) name' "list"))))
+  (m/rewrite k
+    (m/keyword _ (m/pred #(contains? *id-sufixes* %))) true
+    _ false))
 
-(comment
-  (enc/qb 1e6 (key-id? :db/id))
-  ;; => 73.67
-  )
+(defn- ident? [x]
+  (m/rewrite x
+    [(m/pred key-id?) (m/pred eid?)] true
+    _ false))
 
-(defn- #?(:clj ident? :cljs ^boolean ident?) [x]
-  (and (vector? x) (key-id? (get x 0)) (eid? (get x 1))))
+(defn- idents? [xs]
+  (m/rewrite xs
+    [(m/pred ident?) ...] true
+    _ false))
 
-(defn- #?(:clj idents? :cljs ^boolean idents?) [xs]
-  (when (vector? xs)
-    (let [it (-iter xs)]
-      (loop []
-        (enc/cond
-          :if-not (.hasNext it) true
-          (ident? (.next it)) (recur))))))
+(defn- entity? [^clojure.lang.IPersistentMap m]
+  (m/rewrite m
+    (m/and {} (m/scan [(m/pred key-id?) (m/pred eid?)])) true
+    _ false))
 
-(defn- #?(:clj entity? :cljs ^boolean entity?) [m]
-  (when (map? m)
-    (let [it (-iter m)]
-      (loop []
-        (enc/cond
-          :if-not (.hasNext it) false
-          :let [[k v] (.next it)]
-          (and (key-id? k) (eid? v)) true
-          :else (recur))))))
-
-(comment
-  (let [m (into {} (map (fn [i] [i i])) (range 1e3))]
-    (enc/qb 1e4
-      (entity? m)))
-  ;; => 58.38
-  )
-
-(defn- #?(:clj entities? :cljs ^boolean entities?) [xs]
-  (when (vector? xs)
-    (let [it (-iter xs)]
-      (loop []
-        (enc/cond
-          :if-not
-          (.hasNext it)
-          true
-          (entity? (.next it))
-          (recur))))))
-
-(comment
-  (enc/qb 1e5 (entities? [{:db/id 1}]))
-  ;; => 18.79
-  )
+(defn- entities? [^clojure.lang.IPersistentVector xs]
+  (m/rewrite xs
+    [(m/pred entity?) ...] true
+    _ false))
 
 (def ^:private not-entities? (complement (some-fn entity? entities?)))
 
-(defn- entity-id [m]
-  (let [it (-iter m)]
-    (loop []
-      (enc/cond
-        :if-not     (.hasNext it) nil
-        :let        [[k v] (.next it)]
-        (key-id? k) [k v]
-        :else       (recur)))))
-
-#?(:clj
-   (m/defsyntax dbg [pattern]
-     `(m/app #(doto % prn) ~pattern)))
+(defn- entity-id [^clojure.lang.IPersistentMap m]
+  ^::m/dangerous
+  (m/rewrite m
+    (m/scan [(m/pred key-id? ?k) ?v])
+    [?k ?v]
+    _ false))
 
 (defn normalize
   "turns a nested map into a flat collection with references."
