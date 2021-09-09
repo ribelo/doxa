@@ -689,56 +689,37 @@
 
 ;; * datalog
 
+(defn parse-find [args]                 ;TODO
+  (m/rewrite args
+    [!xs ... '.]
+    {& (m/cata [!xs ...]) :mapcat? true :first? true}
+    [!xs ... '...]
+    {& (m/cata [!xs ...]) :mapcat? true}
+    ;; ?x ?y ...
+    [(m/symbol _ _ :as !symbols) ...]
+    {:find [!symbols ...]}
+    ;; ?x ?y ?z
+    [(m/symbol _ _ :as !symbols) ...]
+    {:find [!symbols ...]}
+    ;; pull
+    [(pull ?q [?table ?e])]
+    {:find [?table ?e] :pull {:q ?q :ident [?table ?e]}}
+    ;; [?x ?y]
+    [[!xs ...]]
+    {:find [[!xs ...]]}
+    [[!xs ... '.]]
+    {:find [[!xs ...]] :mapcat? true :first? true}
+    [[!xs ... '...]]
+    {:find [[!xs ...]] :mapcat? true}))
+
 (defn parse-query [q & args]
-  (loop [[elem & more] q k nil r {:args (vec args)}]
-    (enc/cond
-      (not elem)
-      r
-      ;;
-      (keyword? elem)
-      (recur more elem r)
-      ;;
-      (and (= :find k) (list? elem) (= 'pull (first elem)))
-      (let [[_ ?q [?table ?e]] elem]
-        (recur more k (-> (update   r k conjv ?table)
-                          (update     k conjv ?e)
-                          (update :pull conjv [?q [?table ?e]]))))
-      (and (= :find k) (vector? elem) (list? (first elem)) (= 'pull (ffirst elem)) (= '... (last elem)))
-      (let [[_ ?q [?table ?e]] (first elem)]
-        (recur more k (-> (update   r k conjv ?table)
-                          (update     k conjv ?e)
-                          (assoc  :unpack? true)
-                          (update :pull conjv [?q [?table ?e]]))))
-      ;;
-      (and (= :find k) (= '. elem))
-      (recur more k (assoc r :first? true))
-      ;;
-      (and (= :find k) (vector? elem) (= '... (last elem)))
-      (recur more k (-> (assoc r :unpack? true)
-                        (update k (partial enc/into-all []) (butlast elem))))
-      ;;
-      ;; (and (= :find k) (list? elem))
-      ;; (let [[?fn & ?args] elem]
-      ;;   (recur more k (-> (update r k (partial enc/into-all []) ?args)
-      ;;                     (update :fns conjv [?fn ?args]))))
-      ;;
-      :else
-      (recur more k (update r k conjv elem)))))
+  (m/rewrite q
+    [:find & ?args & (m/cata ?out)]
+    {& [~(parse-find ?args) ?out]}
+    [(m/keyword _ _ :as ?keyword) & ?args & (m/cata ?out)]
+    {?keyword ?args & ?out}
 
-(comment
-
-  (parse-query '[:find [[?e ?name] ...]])
-  (parse-query '[:find [?e ...]])
-  (q [:find [(pull [:*] [:db/id ?e]) ...]
-      :where
-      [?e :name]]
-    @conn_)
-
-  (q [:find ?e .
-      :where
-      [?e :document/id 1]]
-    {:document/id {1 {:document/id 1}}})
-  )
+    [] {:args ~(or (vec args) [])}))
 
 (defn build-args-map [{:keys [in args] :as q}]
   (m/match q
@@ -778,9 +759,9 @@
                      :where [?e ?attr ?value]]
                    :name ["Ivan" "Petr"])
       (build-args-map))
-  (-> (parse-query '[:find (count ?e)
+  (-> (parse-query '[:find [(pull [:*] [?table ?e])]
                      :in ?attr [?value]
-                     :where [?e ?attr ?value]]
+                     :where [?table ?e ?attr ?value]]
                    :name ["Ivan" "Petr"])
       (build-args-map)))
 
@@ -789,25 +770,24 @@
 
 (defn- some-value
   ([] `(m/some))
-  ([?v]
-   (enc/cond
-     (not (symbol? ?v))
+  ([v]
+   (m/rewrite v
+     (m/and ?v (m/not (m/symbol _)))
      ?v
      ;;
-     (and (symbol? ?v) (qsymbol? ?v))
-     `(m/some ~?v)
+     (m/pred qsymbol? ?v)
+     ~`(m/some ~?v)
      ;;
-     (symbol? ?v)
-     `(m/some (unquote ~?v))))
-  ([?s ?v]
-   (enc/cond
+     (m/symbol _ _ :as ?v)
+     ~`(m/some (unquote ~?v))))
+  ([s v]
+   (m/rewrite [s v]
+     [(m/symbol _ _ :as ?s) (m/and ?v (m/not (m/symbol _)))]
+     ~`(m/and ~?s ~?v)
      ;;
-     (and (symbol? ?s) (not (symbol? ?v)))
-     `(m/and ~?s ~?v)
-     (and (symbol? ?s) (symbol? ?v))
-     `(m/some (unquote ~?v))
-     ;;
-     :else ?v)))
+     [(m/symbol _ _ :as ?s) (m/symbol _ _ :as ?v)]
+     ~`(m/some (unquote ~?v))
+     _ ~v)))
 
 (defn parse-query-elem [elem args-map]
   (m/rewrite elem
@@ -834,11 +814,11 @@
                     (and (not elem))
                     `~(m 0)
                     ;;
-                    :let [[table e k v] (case (count elem) (1 2 3) (into ['_] elem) 4 elem)
-                          [?table ?e ?k ?v]    [(parse-query-elem table arg-map)
-                                                (parse-query-elem e     arg-map)
-                                                (parse-query-elem k     arg-map)
-                                                (parse-query-elem v     arg-map)]]
+                    :let [[table e k v]     (case (count elem) (1 2 3) (into ['_] elem) 4 elem)
+                          [?table ?e ?k ?v] [(parse-query-elem table arg-map)
+                                             (parse-query-elem e     arg-map)
+                                             (parse-query-elem k     arg-map)
+                                             (parse-query-elem v     arg-map)]]
                     ;; [?e ?k nil]
                     (and (not (list? ?e)) ?k (nil? ?v))
                     (recur more (update-in m [q ?table ?e] merge {?k (some-value)}) fns vars q)
@@ -912,48 +892,166 @@
      (let [q (datalog->meander args)]
        `~q)))
 
+(defn comp-some [& fns]
+  (apply comp (filter identity fns)))
+
 (defmacro q [q' db & args]
-  (let [{:keys [find first? unpack? pull] :as pq} (apply parse-query q' args)]
-    `(let [data# (m/rewrites ~db
-                   ~(query pq) ~find)]
-       (cond->> data#
-         (seq '~pull)
-         (map (fn [elem#]
-                   (mapv (fn [[?q# [?table# ?e#]]]
-                           (let [args-map# (zipmap '~find elem#)
-                                 table#    (args-map# ?table#)
-                                 e#        (args-map# ?e#)]
-                             (pull ~db ?q# [table# e#])))
-                         '~pull)))
-         ;;
-         '~first?
-         first
-         ;;
-         '~unpack?
-         (mapcat identity)
-         :else vec))))
+  (let [{:keys [find first? mapcat? pull] :as pq} (apply parse-query q' args)]
+    `(let [data# ~(with-meta `(m/rewrites ~db
+                                ~(query pq) ~find)
+                    (merge {::m/dangerous true} &env (meta &form)))]
+       (into ~(if-not (and (seq pull) first?) [] {})
+             (comp-some
+              ~(when (seq pull)
+                 `(map (fn [elem#]
+                         (let [q#            '~(:q pull)
+                               [?table# ?e#] '~(:ident pull)
+                               args-map#     (zipmap '~find elem#)
+                               table#        (args-map# ?table#)
+                               e#            (args-map# ?e#)]
+                           (pull ~db q# [table# e#])))))
+              ~(when first? `(take 1))
+              ~(when mapcat? `(mapcat identity))
+              )
+             data#))))
+
+;; => [[?table ?e ?v] :-]
+;; => [[?table ?e] :-]
+;; => [[?table] :-]
+;; => [[?table ?e ?a] :+ ?v]
+;; => [[?table ?e ?a] :r ?v]
+;; => [[?table ?e ?a] :-]
+(defn tx->datom [tx]
+  (m/rewrite tx
+    [[?table] (m/or :+ :r) {?eid {?a ?v}}]
+    [?table ?eid ?a ?v]
+    [[?table ?eid] (m/or :+ :r) {?a ?v}]
+    [?table ?eid ?a ?v]
+    [[?table ?eid ?a] (m/or :+ :r) ?v]
+    [?table ?eid ?a ?v]
+    [[?table] :-]
+    [?table nil nil nil]
+    [[?table ?eid] :-]
+    [?table ?eid nil nil]
+    [[?table ?eid ?a] :-]
+    [?table ?eid ?a nil]))
+
+(defn tx-match-datom? [tx datom]
+  (m/rewrite [(tx->datom tx) datom]
+    [[?table ?eid ?a ?v]
+     (m/or
+      [(m/or ?table (m/pred symbol?))
+       (m/or ?eid   (m/pred symbol?) (m/guard (nil? ?eid)))
+       (m/or ?a     (m/pred symbol?) (m/guard (nil?   ?a)))
+       (m/or ?v     (m/pred symbol?) (m/guard (nil?   ?v)))]
+      [(m/or ?eid   (m/pred symbol?) (m/guard (nil? ?eid)))
+       (m/or ?a     (m/pred symbol?) (m/guard (nil?   ?a)))
+       (m/or ?v     (m/pred symbol?) (m/guard (nil?   ?v)))])]
+    true
+    _
+    false))
+
+(defn -tx-match-where? [tx datoms]
+  (enc/rsome (partial tx-match-datom? tx) datoms))
+
+(defn -tx-match-query? [tx query]
+  (-> query parse-query :where (partial -tx-match-where? tx)))
 
 (comment
+  (let [q '[:find ?e
+            :in [?name]
+            :where
+            [?e :name ?name]
+            [?e :age  ?age]]]
 
-  (q [:find ?id
-      :where
-      [?table ?e :db/id [?table ?id]]]
-    @conn_)
+    (m/rewrite q
+      [:find ?find & (m/cata ?more)]
+      {:find ?find & ?more}
+      [:in ?in & (m/cata ?more)]
+      {:in ?in & ?more}
+      [:where . !xs ...]
+      {:where [!xs ...]}
 
-  (q [:find [(pull [:*] [?table ?e]) ...]
-      :where
-      [?table ?e :name ?name]]
-    @conn_)
-  (q [:find ?e
-      :where
-      [?e :name "Ivan"]]
-    @conn_)
+      ?x nil)))
 
-  (parse-query '[:find ?e
-                 :in ?name
-                 :where
-                 [?e :name ?name]]
-               "Ivan"))
+(comment
+  (let [q '[:find ?e
+            :in [?name]
+            :where
+            [?e :name ?name]
+            [?e :age  ?age]]]
+
+    (m/rewrite q
+      [:find ?find & (m/cata ?more)]
+      {:find ?find & ?more}
+      [:in ?in & (m/cata ?more)]
+      {:in ?in}
+      [:where . !xs ...]
+      {:where [!xs ...]}
+
+      ?x nil))
+
+
+  (m/rewrite '[:find ?e
+               :in [?name]
+               :where
+               [?e :name ?name]
+               [?e :age ?age]]
+    [& :where !xs] !xs)
+
+  (let [l1 '(x y x y)]
+    (m/find l1 (& ?1 & ?2) [?1 ?2]))
+
+  (let [q '[:find ?e
+            :in [?name]
+            :where
+            [?e :name ?name]]
+        {:keys [where in args] :as pq} (parse-query q ["Ivan" "Petr"])
+        args-map (build-args-map pq)]
+    (loop [[arg-map & more] args-map r []]
+      (if arg-map
+        (let [x (loop [[elem & more] where datoms []]
+                  (println :elem elem :datoms datoms)
+                  (enc/cond
+                    (not elem)
+                    datoms
+                    ;;
+                    :let [[table e k v]      (case (count elem) (1 2 3) (into ['_] elem) 4 elem)
+                          [?table ?e ?k ?v]  [(parse-query-elem table arg-map)
+                                              (parse-query-elem e     arg-map)
+                                              (parse-query-elem k     arg-map)
+                                              (parse-query-elem v     arg-map)]]
+                    ;; [?e ?k ?v]
+                    (and (not (list? ?e)) ?k (not (vector? ?v)) (not (qsymbol? ?v)))
+                    (recur more (conj datoms [?table ?e ?k ?v]))
+                    ;; [?e ?k [!vs ...]]
+                    (and (not (list? ?e)) ?k (vector? ?v) (not (qsymbol? ?v)))
+                    (recur more (into datoms (mapv (fn [v] [?table ?e ?k v]) ?v)))))]
+          (recur more (into r x)))
+        r))))
+
+(defmacro q* [q' db & args]
+  `(let [m#     (meta ~db)
+         t#     (:t m#)
+         tx#    (last (:tx m#))
+         subs#  (:subscribers m#)]
+     (enc/cond
+       (enc/rsome #(enc/kw-identical? :mem/del %) [~@args])
+       (enc/do-true
+        (swap! subs# assoc-in [(quote ~q') :r] nil)
+        (swap! subs# assoc-in [(quote ~q') :t] nil))
+
+       (and (get-in @subs# [(quote ~q') :r])
+            (not (enc/rsome #(enc/kw-identical? :mem/fresh %) [~@args]))
+            (or (not (-tx-match-query? tx# (quote ~q')))
+                (> (get-in @subs# [(quote ~q') :t]) t#)))
+       (get-in @subs# [(quote ~q') :r])
+
+       :else
+       (let [r# (q ~q' ~db ~@args)]
+         (swap! subs# assoc-in [(quote ~q') :r] r#)
+         (swap! subs# assoc-in [(quote ~q') :t] (enc/now-udt))
+         r#))))
 
 (comment
   (enc/qb 1e5
