@@ -8,6 +8,21 @@
 
 ;; * datalog->meander
 
+(t/deftest parse-query
+  (t/testing "find"
+    (t/is (= {:find '[?x ?y]}
+             (dx/parse-find '[?x ?y])))
+    (t/is (= {:find '[?x ?y]     :mapcat? true :first? true}
+             (dx/parse-find '[?x ?y .])))
+    (t/is (= {:find '[?x ?y]     :mapcat? true}
+             (dx/parse-find '[?x ?y ...])))
+    (t/is (= {:find '[?table ?e]                            :pull {:q [:*] :ident '[?table ?e]}}
+             (dx/parse-find '[(pull [:*] [?table ?e])])))
+    (t/is (= {:find '[?table ?e] :mapcat? true :first? true :pull {:q [:*] :ident '[?table ?e]}}
+             (dx/parse-find '[(pull [:*] [?table ?e]) .])))
+    (t/is (= {:find '[?table ?e] :mapcat? true              :pull {:q [:*] :ident '[?table ?e]}}
+             (dx/parse-find '[(pull [:*] [?table ?e]) ...])))))
+
 (t/deftest datalog->meander
   (t/testing "where"
     (t/is (= `{~'_ {~'?e {:name "Ivan"}}}
@@ -106,7 +121,12 @@
       (t/is (= #:db{:id {1 {:db/id 1 :name "Petr"}}}
                (dx/commit db [[:dx/delete [:db/id 1] :aka "Devil"]])))
       (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
-               (dx/commit db [[:dx/delete [:db/id 1] :AKA "Devil"]]))))
+               (dx/commit db [[:dx/delete [:db/id 1] :AKA "Devil"]])))
+      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
+               (dx/commit db [[:dx/put [:db/id 1] :friend {:db/id 2 :name "Ivan"}]
+                              [:dx/delete [:db/id 2]]])
+               (dx/commit db [[:dx/conj [:db/id 1] :friend {:db/id 2 :name "Ivan"}]
+                              [:dx/delete [:db/id 2]]]))))
 
     (t/testing "testing conj"
       (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil" "Tupen"]}}}
@@ -122,6 +142,14 @@
                (dx/commit db [[:dx/conj [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
       (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"] :sex ["male"]}}}
                (dx/commit db [[:dx/conj [:db/id 1] :sex "male"]]))))
+
+    (t/testing "testing merge"
+      (t/is (= #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"], :address {:city "Warsaw"}}}}
+               (dx/commit db [:dx/merge [:db/id 1] :address {:city "Warsaw"}])))
+      (t/is (= #:db{:id {1 {:db/id 1, :name "Petr", :aka "Tupen"}}}
+               (dx/commit db [:dx/merge [:db/id 1] {:aka "Tupen"}])))
+      (t/is (= #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}, 2 #:db{:id 2}}}
+               (dx/commit db [:dx/merge [:db/id 2] {}]))))
 
     (t/testing "testing update"
       (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka "Tupen"}}}
@@ -145,6 +173,7 @@
                               [:dx/put    [:db/id 1] :age 15]
                               [:dx/match  [:db/id 1] :name "Petr"]
                               [:dx/put    [:db/id 1] :sex :male]]))))))
+;; => #'ribelo.doxa-test/commit
 
 
 (def people-docs
@@ -272,10 +301,10 @@
 ;; * query
 
 (comment
-  (def db (dx/db-with [{:db/id 1, :name "Ivan", :age 15 :friend [[:db/id 2] [:db/id 3]]}
-                        {:db/id 2, :name "Petr", :age 37 :friend [:db/id 3]}
-                        {:db/id 3, :name "Ivan", :age 37}
-                        {:db/id 4, :age 15}])))
+  (def db (dx/db-with [{:db/id 1, :name "Ivan" :age 15 :friend [[:db/id 2] [:db/id 3]]}
+                       {:db/id 2, :name "Petr" :age 37 :friend [:db/id 3]}
+                       {:db/id 3, :name "Ivan" :age 37}
+                       {:db/id 4, :age 15}])))
 
 (t/deftest test-joins
   (let [db (dx/db-with [{:db/id 1, :name "Ivan", :age 15 :friend [[:db/id 2] [:db/id 3]]}
@@ -427,7 +456,15 @@
 
 #?(:clj
    (def bond-db
-     (let [data (read-string (slurp "./resources/james-bond.edn"))]
+     (let [data (->> (read-string (slurp "./resources/james-bond.edn"))
+                     (mapv (fn [m]
+                             (-> m
+                                 (update :film/director   (partial vector :db/id))
+                                 (update :film/bond       (partial vector :db/id))
+                                 (update :film/vehicles   (fn [xs] (mapv (partial vector :db/id) xs)))
+                                 (update :film/box        (partial vector :db/id))
+                                 (update :film/bond-girls (fn [xs] (mapv (partial vector :db/id) xs)))
+                                 (update :film/box        (partial vector :db/id))))))]
        (dx/commit {} (into [] (map (fn [tx] [:dx/put tx])) data)))))
 
 #?(:clj
@@ -438,6 +475,11 @@
 #?(:clj
    (t/deftest query-pull
      (t/testing "query"
+       (t/is (= [{} {} {} {} {} {}]
+                (dx/q [:find (pull [] [?table ?e])
+                       :where [?table ?e :vehicle/brand "Aston Martin"]]
+                  bond-db)))
+
        (let [expected [{:vehicle/brand "Aston Martin", :vehicle/model "DB10"}
                        {:vehicle/brand "Aston Martin", :vehicle/model "DBS V12"}
                        {:vehicle/brand "Aston Martin", :vehicle/model "DB5"}
@@ -445,7 +487,7 @@
                        {:vehicle/brand "Aston Martin", :vehicle/model "V8 Vantage Volante"}
                        {:vehicle/brand "Aston Martin", :vehicle/model "DBS"}]]
          (t/is (= expected
-                  (dx/q [:find  [(pull [:vehicle/brand :vehicle/model] [?table ?e]) ...]
+                  (dx/q [:find  (pull [:vehicle/brand :vehicle/model] [?table ?e])
                          :where [?table ?e :vehicle/brand "Aston Martin"]]
                     bond-db)
                   (m/search bond-db
@@ -498,6 +540,15 @@
                   [?e :age ?age]]
              db age)))))
 
+(comment
+  (m/rewrites
+    db
+    {_
+     {?e
+      {:name (m/some ?name),
+       :age (m/some (unquote age))}}}
+    [?name]))
+
 (t/deftest gh-16
   ;; https://github.com/ribelo/doxa/issues/16
   (let [db (dx/create-dx [{:db/id 1 :name "ivan" :cars [{:db/id 10 :name "tesla"}
@@ -513,3 +564,110 @@
   ;; https://github.com/ribelo/doxa/issues/17
   (let [db (dx/create-dx [{:db/id 1 :name "ivan" :car {:db/id 10 :name "tesla"}}])]
     (t/is (map? (:car (dx/pull db [:name {:car [:name]}] [:db/id 1]))))))
+
+(defmacro generate-matched-tests [datom]
+  (m/rewrite datom
+    (m/or
+     [(m/or (m/and ?table (m/not (m/pred dx/qsymbol?))) (m/let [?table :db/id]))
+      (m/or (m/and ?e     (m/not (m/pred dx/qsymbol?))) (m/let [?e          1]))
+      (m/or (m/and ?a     (m/not (m/pred dx/qsymbol?))) (m/let [?a         :a]))
+      (m/or (m/and ?v     (m/not (m/pred dx/qsymbol?))) (m/let [?v          1]))]
+     (m/and
+      (m/let [?table :db/id])
+      [(m/or (m/and ?e     (m/not (m/pred dx/qsymbol?))) (m/let [?e         1]))
+       (m/or (m/and ?a     (m/not (m/pred dx/qsymbol?))) (m/let [?a        :a]))
+       (m/or (m/and ?v     (m/not (m/pred dx/qsymbol?))) (m/let [?v         1]))]))
+    (do (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table] :+ {~?e {~?a ~?v}}]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table] :r {~?e {~?a ~?v}}]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table ~?e] :+ {~?a ~?v}]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table ~?e] :r {~?a ~?v}]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table ~?e ~?a] :+ ~?v]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table ~?e ~?a] :r ~?v]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table] :-]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table ~?e] :-]
+                ~datom)))
+        (t/is (true?
+               (dx/tx-match-datom?
+                [[~?table ~?e ~?a] :-]
+                ~datom))))))
+
+(comment
+  (def db (dx/create-dx [] {:with-diff? true})))
+
+;; (t/deftest match-changes
+;;   (let [db (dx/create-dx [] {:with-diff? true})]
+;;     (t/testing "generated mached tests"
+;;       (doseq [table ['?table :db/id]
+;;               e     ['?e          1]
+;;               a     ['?a         :a]
+;;               v     ['?v          1]]
+;;         (generate-matched-tests [table e a v])))
+;;     (t/testing "??"
+;;       (t/is (true?
+;;              (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"]) dx/last-tx
+;;                  (dx/tx-match-datom?
+;;                   ['?table '?e '?a 'v]))))
+;;       (t/is (true?
+;;              (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"]) dx/last-tx
+;;                  (dx/tx-match-datom?
+;;                   [:db/id '?e '?a '?v]))))
+;;       (t/is (true?
+;;              (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"]) dx/last-tx
+;;                  (dx/tx-match-datom?
+;;                   ['?table '?e '?a "ivan"]))))
+;;       (t/is (false?
+;;              (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"]) dx/last-tx
+;;                  (dx/tx-match-datom?
+;;                   ['?table '?e '?a "petr"])))))))
+
+;; (def team {:team/id 1
+;;            :name    "Red Bull"
+;;            :owner   {:person/id 1000
+;;                      :name      "Helmut Marko"
+;;                      :gender    :male}})
+;; (def jack {:person/id 1001
+;;            :name      "Jack Brabham"
+;;            :gender    :male})
+
+;; (def partial-jack (dissoc jack :gender))
+;; (def db1 (dx/create-dx [team jack]))
+;;                                         ; want to change the owner ref
+
+;;                                         ; this works but...
+;; (def db2 (dx/commit db1 [[:dx/put [:team/id 1] :owner partial-jack]]))
+
+;;                                         ; would prefer to use a lookup ref for the update so not concerned about changing the referenced entity
+;;                                         ; this fails.
+;;                                         ;db2 (dx/commit db1 [[:dx/put [:team/id 1] :owner [:person/id 1001]]])
+;; (dx/commit db1 [[:dx/put [:team/id 1] :owner [:person/id 1002]]])
+;; ;; => {:person/id {1000 {:person/id 1000, :name "Helmut Marko", :gender :male},
+;; ;;                 1001 {:person/id 1001, :name "Jack Brabham", :gender :male}},
+;; ;;     :team/id {1 {:team/id 1, :name "Red Bull", :owner [:person/id 1001]}}}
+
+;; (dx/pull db1 [:* {:owner [:*]}] [:team/id 1])
+;;                                         ; gender not lost for new owner. that's good but it's a bit magical.
+;; (dx/pull db2 [:* {:owner [:*]}] [:team/id 1])
+;; => {:team/id 1, :name "Red Bull", :owner {:person/id 1001, :name "Jack Brabham"}}
