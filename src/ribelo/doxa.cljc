@@ -99,12 +99,6 @@
         :else
         (recur (assoc! m k v) r id)))))
 
-(comment
-  (enc/qb 1e5 (normalize {:db/id 1 :name "ivan" :car {:db/id 10 :name "tesla"}}))
-  ;; => 79.35
-  )
-
-
 (defn- -denormalize
   ([db data max-level level]
    (let [it (-iter data)]
