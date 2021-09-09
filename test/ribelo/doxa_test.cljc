@@ -452,6 +452,26 @@
                              :email (m/and ?email "petr@gmail.com")}}})
                [?e ?email])))))
 
+(t/deftest test-q-keys
+  (let [db (dx/db-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
+                        {:db/id 2, :name "Petr" :age 37 :email "petr@gmail.com"}
+                        {:db/id 3, :name "Ivan" :age 37 :email "ivan@mail.ru"}])]
+    (t/is (= [{:name "Ivan", :email "ivan@mail.ru", :age 15}
+              {:name "Petr", :email "petr@gmail.com", :age 37}
+              {:name "Ivan", :email "ivan@mail.ru", :age 37}]
+             (dx/q [:find ?name ?email ?age
+                    :keys [:name :email :age]
+                    :where
+                    [?e :name ?name]
+                    [?e :age ?age]
+                    [?e :email ?email]]
+               db)
+             (m/search db
+               {_ {?e {:name (m/some ?name)
+                       :age  (m/some ?age)
+                       :email (m/some ?email)}}}
+               {:name ?name :age ?age :email ?email})))))
+
 ;; crux
 
 #?(:clj
