@@ -301,7 +301,7 @@
     [:dx/match [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred fn? ?f)]
     (?f (get-in db [?tid ?eid ?k]))
     ;; _
-    _ (timbre/errorf "invalid commit %s" tx)))
+    _ (throw (ex-info "invalid commit" {:tx tx}))))
 
 (comment
   (enc/qb 1e5
