@@ -249,11 +249,11 @@
     ;; delete [?tid ?eid] ?k ?v
     [:dx/delete [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred some? ?v)]
     (enc/cond
-      :if-not                       [v (get-in db [?tid ?eid ?k])] db
-      (and (seq v) (> (count v) 1)) (update-in db [?tid ?eid ?k] #(into [] (remove #{?v}) %))
-      (and (seq v) (= (count v) 1)) (enc/dissoc-in db [?tid ?eid] ?k)
-      (and v (not (vector? v)))     (throw (ex-info (enc/format "%s is not a vector" [?tid ?eid ?k]) {:v v}))
-      db)
+      :if-not                                        [v (get-in db [?tid ?eid ?k])] db
+      (and (seq v) (> (count v) 1) (not (ident? v))) (update-in db [?tid ?eid ?k] #(into [] (remove #{?v}) %))
+      (or (and (seq v) (= (count v) 1)) (ident? v))  (enc/dissoc-in db [?tid ?eid] ?k)
+      (and v (not (vector? v)))                      (throw (ex-info (enc/format "%s is not a vector" [?tid ?eid ?k]) {:v v}))
+      (throw (ex-info "invalid commit" {:tx tx})))
     ;; conj [?tid ?eid] ?k ?v
     [:dx/conj [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred not-entities? ?v)]
     (enc/cond
