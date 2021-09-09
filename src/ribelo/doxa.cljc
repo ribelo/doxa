@@ -543,8 +543,10 @@
 
 (defn reverse-search
   ([db id]
+   ^::m/dangerous
    (vec (m/search db {?pid {?eid {?k (m/or ~id (m/scan ~id))}}} [?pid ?eid ?k])))
   ([db k id]
+   ^::m/dangerous
    (vec (m/search db {?pid {?eid {~k (m/or ~id (m/scan ~id))}}} [?pid ?eid]))))
 
 (defn pull*
