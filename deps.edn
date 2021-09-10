@@ -1,5 +1,7 @@
 {:paths ["src" "resources"]
- :deps  {meander/epsilon        {:local/root "/home/ribelo/code/meander"}
+ :deps  {
+         ;; meander/epsilon        {:local/root "/home/ribelo/code/meander"}
+         meander/epsilon        {:mvn/version "0.0.650"}
          com.taoensso/encore    {:mvn/version "3.10.1"}
          com.taoensso/timbre    {:mvn/version "5.1.2"}
          thheller/shadow-cljs   {:mvn/version "2.11.15"}
