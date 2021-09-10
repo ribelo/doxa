@@ -23,7 +23,7 @@
     (t/is (= {:find '[?table ?e] :mapcat? true              :pull {:q [:*] :ident '[?table ?e]}}
              (dx/parse-find '[(pull [:*] [?table ?e]) ...]))))
   (t/testing "keys"
-    (t/is (= {:keys [:a :b :c]}
+    (t/is (= {:keys [:a :b :c] :args []}
              (dx/parse-query [:keys [:a :b :c]])))))
 
 (t/deftest datalog->meander
