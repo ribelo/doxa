@@ -81,7 +81,9 @@
         (and (not (.hasNext it)) (enc/some? id))
         (conj r [id (persistent! m)])
         ;;
-        :let [[k v] (.next it)]
+        :let [^clojure.lang.MapEntry me (.next it)
+              k  #?(:clj (.key me) :cljs (.-key me))
+              v  #?(:clj (.val me) :cljs (.-val me))]
         (key-id? k)
         (recur (assoc! m k v) r [k v])
         ;;
@@ -109,7 +111,9 @@
          (and (not (.hasNext it)))
          m
          ;;
-         :let [[k v] (.next it)]
+         :let [^clojure.lang.MapEntry me (.next it)
+               k  #?(:clj (.key me) :cljs (.-key me))
+               v  #?(:clj (.val me) :cljs (.-val me))]
          (map? v)
          (recur (assoc m k (-denormalize db v max-level (inc level))))
          ;;
@@ -143,7 +147,7 @@
                                                                      {:db/id 8 :name "petr"}
                                                                      {:db/id 9 :name "petr"}
                                                                      {:db/id 10 :name "petr"}]}])]
-    (denormalize data))[k v] (.next it)
+    (denormalize data))
   ;; => 1362.47
   )
 
