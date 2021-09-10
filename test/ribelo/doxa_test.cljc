@@ -21,7 +21,10 @@
     (t/is (= {:find '[?table ?e] :mapcat? true :first? true :pull {:q [:*] :ident '[?table ?e]}}
              (dx/parse-find '[(pull [:*] [?table ?e]) .])))
     (t/is (= {:find '[?table ?e] :mapcat? true              :pull {:q [:*] :ident '[?table ?e]}}
-             (dx/parse-find '[(pull [:*] [?table ?e]) ...])))))
+             (dx/parse-find '[(pull [:*] [?table ?e]) ...]))))
+  (t/testing "keys"
+    (t/is (= {:keys [:a :b :c]}
+             (dx/parse-query [:keys [:a :b :c]])))))
 
 (t/deftest datalog->meander
   (t/testing "where"
@@ -220,8 +223,8 @@
                  {:name ?name :father ?father :db/id 6})))
 
       (t/is (= {:name "Matthew" :father {:name "Thomas"} :db/id 6}
-               (dx/pull db '[:name :db/id {:father [:name]}] [:db/id 6])
-               (m/match db
+               (dx/pull db [:name :db/id {:father [:name]}] [:db/id 6])
+               (m/find db
                  (m/and {:db/id {6 {:name ?name :father [?table ?id]}}}
                         {?table {?id {:name ?father-name}}})
                  {:name ?name :father {:name ?father-name} :db/id 6})))
@@ -239,23 +242,36 @@
 
     (t/testing "test pull reverse attr"
       (t/is (= {:name "David" :_child [:db/id 1]}
-               (dx/pull db [:name :_child] [:db/id 2])))
+               (dx/pull db [:name :_child] [:db/id 2])
+               (m/find db
+                 (m/and {?table {?id {:child (m/or [:db/id 2] (m/scan [:db/id 2]))}}}
+                        {:db/id {2 {:name ?name}}})
+                 {:name ?name :_child [?table ?id]})))
 
       (t/is (= {:name "David" :_child {:name "Petr"}}
-               (dx/pull db [:name {:_child [:name]}] [:db/id 2])))
+               (dx/pull db [:name {:_child [:name]}] [:db/id 2])
+               (m/find db
+                 (m/and {?table {?id {:name  ?name1
+                                      :child (m/or [:db/id 2] (m/scan [:db/id 2]))}}}
+                        {:db/id {2 {:name ?name2}}})
+                 {:name ?name2 :_child {:name ?name1}})))
 
       (t/testing "reverse non-component references yield collections"
         (t/is (= {:name "Thomas" :_father [:db/id 6]}
-                 (dx/pull db '[:name :_father] [:db/id 3])))
+                 (dx/pull db [:name :_father] [:db/id 3])
+                 (m/find db
+                   (m/and {?table {?id {:father (m/or [:db/id 3] (m/scan [:db/id 3]))}}}
+                          {:db/id {3 {:name ?name}}})
+                   {:name ?name :_father [?table ?id]})))
 
         (t/is (= {:name "Petr" :_father [[:db/id 3] [:db/id 2]]}
-                 (dx/pull db '[:name :_father] [:db/id 1])))
+                 (dx/pull db [:name :_father] [:db/id 1])))
 
         (t/is (= {:name "Thomas" :_father {:name "Matthew"}}
-                 (dx/pull db '[:name {:_father [:name]}] [:db/id 3])))
+                 (dx/pull db [:name {:_father [:name]}] [:db/id 3])))
 
         (t/is (= {:name "Petr" :_father [{:name "Thomas"} {:name "David"}]}
-                 (dx/pull db '[:name {:_father [:name]}] [:db/id 1])))))
+                 (dx/pull db [:name {:_father [:name]}] [:db/id 1])))))
 
     (t/testing "test pull component attr"
       (t/is (= {:part-name "Part A.A", :part-of [:db/id 10]}
