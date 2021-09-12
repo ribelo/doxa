@@ -21,7 +21,27 @@
     (t/is (= {:find '[?table ?e] :mapcat? true :first? true :pull {:q [:*] :ident '[?table ?e]}}
              (dx/parse-find '[(pull [:*] [?table ?e]) .])))
     (t/is (= {:find '[?table ?e] :mapcat? true              :pull {:q [:*] :ident '[?table ?e]}}
-             (dx/parse-find '[(pull [:*] [?table ?e]) ...])))))
+             (dx/parse-find '[(pull [:*] [?table ?e]) ...]))))
+
+  (t/testing "build-args-map"
+    (t/is (= '[{?name "Ivan"}]
+             (-> (dx/parse-query '[:where [?e :name ?name]
+                                   :in ?name]
+                                 "Ivan")
+                 (dx/build-args-map))))
+    (t/is (= '[{?name "ivan" ?age 35}]
+             (-> (dx/parse-query '[:in ?name ?age] "ivan" 35)
+                 (dx/build-args-map))))
+    (t/is (= '[{?name ["ivan" "petr"] ?age [30 20]}]
+             (-> (dx/parse-query '[:in [?name] [?age]] ["ivan" "petr"] [30 20])
+                 (dx/build-args-map))))
+    (t/is (= '[{?name "ivan" ?age 20} {?name "petr" ?age 30}]
+             (-> (dx/parse-query '[:in [[?name ?age]]] [["ivan" 20] ["petr" 30]])
+                 (dx/build-args-map))))
+    (t/is (= '[{?attr :name ?value ["ivan" "petr"]}]
+             (-> (dx/parse-query '[:in ?attr [?value]]
+                                 :name ["ivan" "petr"])
+                 (dx/build-args-map))))))
 
 (t/deftest datalog->meander
   (t/testing "where"
