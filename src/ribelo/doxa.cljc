@@ -23,6 +23,14 @@
   [xs]
   `(enc/if-clj (clojure.lang.RT/iter ~xs) (cljs.core/iter ~xs)))
 
+(defmacro ^:private -first-key
+  [xs]
+  `(first (keys ~xs)))
+
+(defmacro ^:private -first-val
+  [xs]
+  `(first (vals ~xs)))
+
 (def
   ^{:doc "returns a vector even if the argument is nil"}
   conjv (fnil conj []))
@@ -740,30 +748,7 @@
     [(into {} (map vector !xs !ys))]
     {:in [[[!xs ...]]]
      :args [[!ys ...]]}
-    (mapcat #(build-args-map {:in !xs :args [%]}) !ys)
-    ))
-
-(comment
-  (-> (parse-query '[:where [?e :name ?name]
-                     :in ?name]
-                   "Ivan")
-      (build-args-map))
-  (-> (parse-query '[:in ?name ?age] "ivan" 35)
-      (build-args-map))
-  (-> (parse-query '[:in [?name] [?age]] ["ivan" "petr"] [30 20])
-      (build-args-map))
-  (-> (parse-query '[:in [[?name ?age]]] [["ivan" 20] ["petr" 30]])
-      (build-args-map))
-  (-> (parse-query '[:find ?e
-                     :in ?attr [?value]
-                     :where [?e ?attr ?value]]
-                   :name ["Ivan" "Petr"])
-      (build-args-map))
-  (-> (parse-query '[:find [(pull [:*] [?table ?e])]
-                     :in ?attr [?value]
-                     :where [?table ?e ?attr ?value]]
-                   :name ["Ivan" "Petr"])
-      (build-args-map)))
+    (mapcat #(build-args-map {:in !xs :args [%]}) !ys)))
 
 (defn qsymbol? [x]
   (and (symbol? x) (enc/str-starts-with? (name x) "?")))
