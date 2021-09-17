@@ -693,31 +693,35 @@
 (comment
   (def db (dx/create-dx [] {:with-diff? true})))
 
-;; (t/deftest match-changes
-;;   (let [db (dx/create-dx [] {:with-diff? true})]
-;;     (t/testing "generated mached tests"
-;;       (doseq [table ['?table :db/id]
-;;               e     ['?e          1]
-;;               a     ['?a         :a]
-;;               v     ['?v          1]]
-;;         (generate-matched-tests [table e a v])))
-;;     (t/testing "??"
-;;       (t/is (true?
-;;              (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"]) dx/last-tx
-;;                  (dx/tx-match-datom?
-;;                   ['?table '?e '?a 'v]))))
-;;       (t/is (true?
-;;              (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"]) dx/last-tx
-;;                  (dx/tx-match-datom?
-;;                   [:db/id '?e '?a '?v]))))
-;;       (t/is (true?
-;;              (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"]) dx/last-tx
-;;                  (dx/tx-match-datom?
-;;                   ['?table '?e '?a "ivan"]))))
-;;       (t/is (false?
-;;              (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"]) dx/last-tx
-;;                  (dx/tx-match-datom?
-;;                   ['?table '?e '?a "petr"])))))))
+(t/deftest match-changes
+  (let [db (dx/create-dx [] {:with-diff? true})]
+    (t/testing "generated mached tests"
+      (doseq [table ['?table :db/id]
+              e     ['?e          1]
+              a     ['?a         :a]
+              v     ['?v          1]]
+        (generate-matched-tests [table e a v])))
+    (t/testing "??"
+      (t/is (true?
+             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
+                 dx/last-tx
+                 (dx/tx-match-datom?
+                  ['?table '?e '?a 'v]))))
+      (t/is (true?
+             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
+                 dx/last-tx
+                 (dx/tx-match-datom?
+                  [:db/id '?e '?a '?v]))))
+      (t/is (true?
+             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
+                 dx/last-tx
+                 (dx/tx-match-datom?
+                  ['?table '?e '?a "ivan"]))))
+      (t/is (false?
+             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
+                 dx/last-tx
+                 (dx/tx-match-datom?
+                  ['?table '?e '?a "petr"])))))))
 
 ;; (def team {:team/id 1
 ;;            :name    "Red Bull"
