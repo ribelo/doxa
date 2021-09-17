@@ -502,6 +502,8 @@
      (if (not-empty data) (db-with data) *empty-map*)
      (merge opts {:t (enc/now-udt) :tx nil}))))
 
+(defn last-tx [db] (some-> db meta :tx last))
+
 ;; pull
 
 (comment
