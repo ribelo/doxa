@@ -878,44 +878,6 @@
        :elem [(?f . (m/app #(parse-query-elem % ?args-map) !args) ...) ?x]}
       [:let [?x (?f . !args ...)]])))
 
-(comment
-  (enc/qb 1e5
-    (m/search @conn_
-      {_ {?e {:name "Ivan" :friend (m/scan [?t ?f])}
-          ?f {:name ?name}}}
-      ?name)
-    (m/search @conn_
-      (m/and {_ {?e {:name "Ivan" :friend (m/scan [?t ?f])}}}
-             {_ {?f {:name ?name}}})
-      ?name))
-
-
-  (-> (parse-query '[:where
-                     [:person/id ?e1 :name "Ivan"]
-                     [?e2 :name "Ivan"]
-                     [(+ ?e1 ?e2) ?x]])
-      (datalog->meander))
-  (-> (parse-query '[:in [?name]
-                     :where
-                     [?e :name ?name]]
-                   "Ivan")
-      (datalog->meander))
-  (-> (parse-query '[:in [?name]
-                     :where
-                     [?e :name ?name]]
-                   ["Ivan" "Petr"])
-      (datalog->meander))
-  (-> (parse-query '[:in [[?name ?age]]
-                     :where
-                     [?e :name ?name]
-                     [?e :age ?age]]
-                   [["Ivan" 20] ["Petr" 30]])
-      (datalog->meander))
-  (-> (parse-query '[:find (pull [:*] [?table ?e])
-                     :where
-                     [?e :name "Ivan"]])
-      (datalog->meander)))
-
 #?(:clj
    (m/defsyntax query [args]
      (let [q (datalog->meander args)]
