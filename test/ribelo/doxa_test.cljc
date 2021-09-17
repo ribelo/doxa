@@ -22,9 +22,31 @@
              (dx/parse-find '[(pull [:*] [?table ?e]) .])))
     (t/is (= {:find '[?table ?e] :mapcat? true              :pull {:q [:*] :ident '[?table ?e]}}
              (dx/parse-find '[(pull [:*] [?table ?e]) ...]))))
+
   (t/testing "keys"
     (t/is (= {:keys [:a :b :c] :args []}
              (dx/parse-query [:keys [:a :b :c]])))))
+
+  (t/testing "build-args-map"
+    (t/is (= '{?name "Ivan"}
+             (-> (dx/parse-query '[:where [?e :name ?name]
+                                   :in ?name]
+                                 "Ivan")
+                 (dx/build-args-map))))
+    (t/is (= '{?name "ivan" ?age 35}
+             (-> (dx/parse-query '[:in ?name ?age] "ivan" 35)
+                 (dx/build-args-map))))
+    (t/is (= '{?name [:or ["ivan" "petr"]] ?age [:or [30 20]]}
+             (-> (dx/parse-query '[:in [?name] [?age]] ["ivan" "petr"] [30 20])
+                 (dx/build-args-map))))
+    (t/is (= '[{?name "ivan" ?age 20} {?name "petr" ?age 30}]
+             (-> (dx/parse-query '[:in [[?name ?age]]] [["ivan" 20] ["petr" 30]])
+                 (dx/build-args-map))))
+    (t/is (= '[{?attr :name ?value [:or ["ivan" "petr"]]}]
+             (-> (dx/parse-query '[:in ?attr [?value]]
+                                 :name ["ivan" "petr"])
+                 (dx/build-args-map))))))
+======= end
 
 (t/deftest datalog->meander
   (t/testing "where"
@@ -81,8 +103,8 @@
                                  [["Ivan" 20]
                                   ["Petr" 30]])
                  (dx/datalog->meander))))
-    (t/is (= `(m/and {~'_ {~'?e {:friend (m/scan [~'?t ~'?f])}}}
-                     {~'_ {~'?f {:name   (m/some ~'?name)}}})
+    (t/is (= `{~'_ {~'?e {:friend (m/or [~'?t ~'?f] (m/scan [~'?t ~'?f]))}
+                    ~'?f {:name   (m/some ~'?name)}}}
              (-> (dx/parse-query '[:where
                                    [?e :friend [?t ?f]]
                                    [?f :name ?name]])
@@ -429,8 +451,6 @@
                     :where [?e ?attr ?value]]
                db :name "Ivan")
              (m/search db
-               {_ {?e {:name "Ivan"}}} [?e])
-             (m/search db
                {_ {?e {:name "Ivan"}}} [?e])))
 
     (t/is (= [[1] [2] [3]]
@@ -569,12 +589,12 @@
                           {:db/id 2, :name "Petr" :age 37}])
         age 15]
     (t/is (= [["Ivan"]]
-           (dx/q [:find ?name
-                  :in ?age
-                  :where
-                  [?e :name ?name]
-                  [?e :age ?age]]
-             db age)))))
+             (dx/q [:find ?name
+                    :in ?age
+                    :where
+                    [?e :name ?name]
+                    [?e :age ?age]]
+               db age)))))
 
 (comment
   (m/rewrites
