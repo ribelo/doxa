@@ -730,25 +730,25 @@
     [] {:args ~(or (vec args) [])}))
 
 (defn build-args-map [{:keys [in args] :as q}]
-  (m/match q
+  (m/rewrite q
     {:in nil}
-    [{}]
+    {}
     ;;
     {:in   [(m/pred symbol? !xs) ..?n]
      :args (m/or [!ys ..?n] [[!ys ..?n]])}
-    [(into {} (map vector !xs !ys))]
+    {& [[!xs !ys] ...]}
     ;;
     {:in   [(m/pred symbol? !xs) (m/pred vector? !zs) ..?n]
      :args [!ys !js ..?n]}
-    [(enc/into-all
+    [~(enc/into-all
       {} (map vector !xs !ys) (build-args-map {:in !zs :args !js}))]
     ;;
     {:in   [[(m/pred symbol? !xs)] ...]
      :args [!ys ...]}
-    [(into {} (map vector !xs !ys))]
+    {& [[!xs [:or !ys]] ...]}
     {:in [[[!xs ...]]]
      :args [[!ys ...]]}
-    (mapcat #(build-args-map {:in !xs :args [%]}) !ys)))
+    ~(into [] (map #(build-args-map {:in !xs :args [%]})) !ys)))
 
 (defn qsymbol? [x]
   (and (symbol? x) (enc/str-starts-with? (name x) "?")))
