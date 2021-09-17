@@ -787,52 +787,90 @@
     ;; else
     ?x ?x))
 
+
+(defn build-meander-query [m]
+  (m/rewrite m
+    {:maps   (m/pred seq [!maps ..?mc])
+     :guards (m/pred seq [!guards ..?gc])
+     :let    (m/pred seq [!let  ..?lc])}
+    (m/and
+     (m/let [!let ...]) .
+     (m/guard !guards) ...
+     !maps ...)))
+
+(defn build-meander-query [m]
+  (m/rewrite m
+    {:maps (m/pred seq [!maps ...]) & ?more}
+    (m/cata [:done [~(reduce enc/nested-merge !maps) & (m/cata ?more)]])
+    {:let (m/pred seq [!let ...]) & ?more}
+    [(`m/let [!let ...]) & (m/cata ?more)]
+    {:guards (m/pred seq [!guards ...]) & ?more}
+    [(`m/guard !guards) ... & (m/cata ?more)]
+    (m/and [:done [!elems ..?n :as ?m]] (m/guard (= ?n 1)))
+    {& [!elems ...]}
+    (m/and [:done [!elems ..?n]] (m/guard (> ?n 1)))
+    (`m/and . !elems ...)
+    {} nil))
+
 (defn datalog->meander [{:keys [where in args] :as q}]
-  (let [args-map (build-args-map q)]
-    (loop [[arg-map & more] args-map r []]
-      (if arg-map
-        (let [x (loop [[elem & more] where m {} fns [] vars [] q 0]
-                  (enc/cond
-                    (and (not elem) (or (pos? (count fns)) (pos? (count vars)) (pos? q)))
-                    `(m/and ~@(map (fn [[_ m']] m') m) ~@fns ~@vars)
-                    ;;
-                    (and (not elem))
-                    `~(m 0)
-                    ;;
-                    :let [[table e k v]     (case (count elem) (1 2 3) (into ['_] elem) 4 elem)
-                          [?table ?e ?k ?v] [(parse-query-elem table arg-map)
-                                             (parse-query-elem e     arg-map)
-                                             (parse-query-elem k     arg-map)
-                                             (parse-query-elem v     arg-map)]]
-                    ;; [?e ?k nil]
-                    (and (not (list? ?e)) ?k (nil? ?v))
-                    (recur more (update-in m [q ?table ?e] merge {?k (some-value)}) fns vars q)
-                    ;; [?e ?k ?v]
-                    (and (not (list? ?e)) ?k (not (vector? ?v)) (not (qsymbol? ?v)))
-                    (recur more (update-in m [q ?table ?e] merge {?k (some-value v ?v)}) fns vars q)
-                    ;;
-                    (and (not (list? ?e)) ?k (not (vector? ?v)) (qsymbol? ?v))
-                    (recur more (update-in m [q ?table ?e] merge {?k (some-value ?v)}) fns vars q)
-                    ;; [?e ?k [?t ?ref]]
-                    (and (not (list? ?e)) ?k (vector? ?v) (= 2 (count ?v)) (enc/rsome qsymbol? ?v))
-                    (recur more (update-in m [q ?table ?e] merge {?k `(m/scan ~?v)}) fns vars (inc q))
-                    ;; [?e ?k [!vs ...]]
-                    (and (not (list? ?e)) ?k (vector? ?v) (not (enc/rsome qsymbol? ?v)))
-                    (recur more (update-in m [q ?table ?e] merge {?k `(m/or ~@?v)}) fns vars q)
-                    ;; [(?f)]
-                    :let [?fn   (first ?e)
-                          !args (rest ?e)]
-                    ;;
-                    (and (list? ?e) (nil? ?k))
-                    (recur more m (conj fns `(m/guard (~?fn ~@!args))) vars q)
-                    ;; [(?f) ?x]
-                    (and (list? ?e) (symbol? ?k))
-                    (recur more m fns (conj vars `(m/let [~?k (~?fn ~@!args)])) q)))]
-          (recur more (conj r x)))
-        (enc/cond
-          (> (count r) 1)
-          `(m/or ~@r)
-          :else (first r))))))
+  (let [args-maps (build-args-map q)]
+    (m/rewrite {:where where :args-maps args-maps}
+      {:where ?where :args-maps [!maps ..?n]}
+      (`m/or . (m/cata {:where ?where :args-map !maps}) ...)
+      ;;
+      {:where ?where :args-maps {:as ?map}}
+      (m/cata {:where ?where :args-map ?map})
+      ;;
+      {:where [!elems ...] :args-map (m/some ?args-map)}
+      (m/cata [:done . (m/cata {:elem !elems :args-map ?args-map}) ...])
+      ;;
+      (m/with [%map   [:map !maps]
+               %guard [:guard !guards]
+               %let   [:let [!lets ...]]
+               %seq   [:done . (m/or %map %guard %let) ...]]
+        %seq)
+      ~(build-meander-query {:maps !maps :guards !guards :let !lets})
+      ;;
+      (m/and {:elem [!xs ..?n] :as ?m} (m/guard (= ?n 2)))
+      (m/cata {& ?m :elem ['_ . !xs ... nil]})
+      (m/and {:elem [!xs ..?n] :as ?m} (m/guard (= ?n 3)))
+      (m/cata {& ?m :elem ['_ . !xs ...]})
+      ;;
+      {:args-map ?args-map
+       :elem   [(m/app #(parse-query-elem % ?args-map) ?table)
+                (m/app #(parse-query-elem % ?args-map) ?e)
+                (m/app #(parse-query-elem % ?args-map) ?attr)
+                (m/app #(parse-query-elem % ?args-map) ?val)]
+       :parsed (m/not (m/some))
+       :as     ?m}
+      (m/cata {& ?m :parsed [?table ?e ?attr ?val]})
+      ;; [?e ?k nil?]
+      {:parsed [?table (m/and ?e (m/not (m/pred list?))) ?attr (m/pred nil?)]}
+      [:map {?table {?e {?attr ~(some-value)}}}]
+      ;; [?e ?k ?v]
+      {:parsed [?table (m/and ?e (m/not (m/pred list?))) ?attr (m/and ?v (m/not (m/pred vector?)) (m/not (m/pred qsymbol?)))]
+       :elem   [_ _ _ ?uv]}
+      [:map {?table {?e {?attr ~(some-value ?uv ?v)}}}]
+      ;; [?e ?k ?v]
+      {:parsed [?table (m/and ?e (m/not (m/pred list?))) ?attr (m/and ?v (m/not (m/pred vector?)) (m/pred qsymbol?))]}
+      [:map {?table {?e {?attr ~(some-value ?v)}}}]
+      ;; [?e ?k [:or [!xs ...]]
+      {:parsed [?table (m/and ?e (m/not (m/pred list?))) ?attr [:or [!vs ...]]]}
+      [:map {?table {?e {?attr (`m/or . !vs ...)}}}]
+      ;; [?e ?k [?ref ?id]]
+      {:parsed [?table (m/and ?e (m/not (m/pred list?))) ?attr (m/and ?v [_ _])]}
+      [:map {?table {?e {?attr ~`(m/or ~?v (m/scan ~?v))}}}]
+      ;; [?e ?k [!vs ...]]
+      {:parsed [?table (m/and ?e (m/not (m/pred list?))) ?attr (m/and ?v [!vs ...])]}
+      [:map {?table {?e {?attr (`m/or ?v . !vs ...)}}}]
+      ;; [(f)]
+      {:args-map (m/some ?args-map)
+       :elem [(?f . (m/app #(parse-query-elem % ?args-map) !args) ...)]}
+      [:guard (?f . !args ...)]
+      ;; [(f) ?x]
+      {:args-map (m/some ?args-map)
+       :elem [(?f . (m/app #(parse-query-elem % ?args-map) !args) ...) ?x]}
+      [:let [?x (?f . !args ...)]])))
 
 (comment
   (enc/qb 1e5
