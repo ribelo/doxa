@@ -25,7 +25,7 @@
 
   (t/testing "keys"
     (t/is (= {:keys [:a :b :c] :args []}
-             (dx/parse-query [:keys [:a :b :c]])))))
+             (dx/parse-query [:keys [:a :b :c]]))))
 
   (t/testing "build-args-map"
     (t/is (= '{?name "Ivan"}
@@ -46,7 +46,6 @@
              (-> (dx/parse-query '[:in ?attr [?value]]
                                  :name ["ivan" "petr"])
                  (dx/build-args-map))))))
-======= end
 
 (t/deftest datalog->meander
   (t/testing "where"
