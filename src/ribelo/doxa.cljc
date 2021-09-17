@@ -1099,17 +1099,47 @@
 
 (def dxs_ (atom {}))
 
+(defn valid-id? [id]
+  (or (keyword? id) (and (vector? id) (enc/revery? keyword? id))))
+
 (defn reg-dx! [id store]
-  (let [id    (enc/have keyword? id)
-        store (enc/have enc/derefable? store)]
-    (swap! dxs_ assoc id store)))
+  (let [id    (enc/have! valid-id? id)
+        store (enc/have! enc/derefable? store)]
+    (#?(:clj swap! :cljs vswap!) dxs_ assoc id store)))
 
-#?(:clj
-   (defmacro with-dx
-     {:style/indent 1}
-     [bindings & body]
-     {:pre [(even? (count bindings))]}
-     `(let [~@(mapcat (fn [[v k]] [v `(@dxs_ ~k)]) (partition 2 bindings))]
-        ~@body)))
+(defn get-dx [k]
+  (enc/have! valid-id? k)
+  (@dxs_ k))
 
-;;
+(defn get-dx! [k]
+  (enc/have! valid-id? k)
+  (if-let [dx (@dxs_ k)]
+    dx
+    (let [dx (*atom-fn* *empty-map*)]
+      (reg-dx! k dx)
+      dx)))
+
+(defmacro with-dx
+  {:style/indent 1}
+  [bindings & body]
+  {:pre [(even? (count bindings))]}
+  (let [s (seq bindings)]
+    (if s
+      (let [[v k & ?more] bindings]
+        `(if-let [~v (@dxs_ ~k)]
+           ~(if ?more `(with-dx ~(vec ?more) ~@body) `(do ~@body))
+           (throw (ex-info "doxa: dx doesn't exists!" {:dx ~k})))))))
+
+(defmacro with-dx!
+  {:style/indent 1}
+  [bindings & body]
+  {:pre [(even? (count bindings))]}
+  (let [s (seq bindings)]
+    (if s
+      (let [[v k & ?more] bindings]
+        `(if-let [~v (@dxs_ ~k)]
+           ~(if ?more `(with-dx! ~(vec ?more) ~@body) `(do ~@body))
+           (let [~v (*atom-fn* *empty-map*)] ; for testing
+             (timbre/warnf "[doxa]: dx %s doesn't exists! creating it!" ~k)
+             (reg-dx! ~k ~v)
+             ~(if ?more `(with-dx! ~(vec ?more) ~@body) `(do ~@body))))))))
