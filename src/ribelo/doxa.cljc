@@ -248,7 +248,9 @@
           (recur  (-submit-commit acc [:dx/delete [tid eid] k ?ident])))))
     ;; delete [?tid ?eid] ?k
     [:dx/delete [(m/pred key-id? ?tid) (m/pred eid? ?eid)] ?k]
-    (enc/dissoc-in db [?tid ?eid] ?k)
+    (let [m  (get-in db [?tid ?eid])
+          m' (dissoc m ?k)]
+      (if (seq m') (assoc-in [?tid ?eid] m') (-submit-commit db [:dx/delete [?tid ?eid]])))
     ;; delete {}
     [:dx/delete {(m/pred key-id? ?tid) (m/pred eid? ?eid)}]
     (-submit-commit db [:dx/delete [?tid ?eid]])
