@@ -932,26 +932,25 @@
     [[?table ?eid ?a] :-]
     [?table ?eid ?a nil]))
 
-(defn tx-match-datom? [tx datom]
-  (m/rewrite [(tx->datom tx) datom]
-    [[?table ?eid ?a ?v]
-     (m/or
-      [(m/or ?table (m/pred symbol?))
-       (m/or ?eid   (m/pred symbol?) (m/guard (nil? ?eid)))
-       (m/or ?a     (m/pred symbol?) (m/guard (nil?   ?a)))
-       (m/or ?v     (m/pred symbol?) (m/guard (nil?   ?v)))]
-      [(m/or ?eid   (m/pred symbol?) (m/guard (nil? ?eid)))
-       (m/or ?a     (m/pred symbol?) (m/guard (nil?   ?a)))
-       (m/or ?v     (m/pred symbol?) (m/guard (nil?   ?v)))])]
+(defn -last-tx-match-datom? [db datom]
+  (m/rewrite {:tx (tx->datom (last-tx db)) :datom datom :db db}
+    {:tx [?table ?eid ?a ?v]
+     :datom (m/or
+             [(m/or ?table (m/pred symbol?))
+              (m/or ?eid (m/pred symbol?) (m/guard (nil? ?eid)))
+              (m/or ?a (m/pred symbol?) (m/guard (nil? ?a)))
+              (m/or ?v (m/pred symbol?) (m/guard (nil? ?v)))]
+             [(m/or ?eid (m/pred symbol?) (m/guard (nil? ?eid)))
+              (m/or ?a (m/pred symbol?) (m/guard (nil? ?a)))
+              (m/or ?v (m/pred symbol?) (m/guard (nil? ?v)))])}
     true
     _
     false))
 
-(defn -tx-match-where? [tx datoms]
-  (enc/rsome (partial tx-match-datom? tx) datoms))
-
-(defn -tx-match-query? [tx query]
-  (-> query parse-query :where (partial -tx-match-where? tx)))
+(defn -tx-match-where? [db datoms]
+  (m/rewrite datoms
+    (m/scan (m/app (partial -last-tx-match-datom? db) (m/pred true?))) true
+    _ false))
 
 (comment
   (let [q '[:find ?e
