@@ -952,78 +952,6 @@
     (m/scan (m/app (partial -last-tx-match-datom? db) (m/pred true?))) true
     _ false))
 
-(comment
-  (let [q '[:find ?e
-            :in [?name]
-            :where
-            [?e :name ?name]
-            [?e :age  ?age]]]
-
-    (m/rewrite q
-      [:find ?find & (m/cata ?more)]
-      {:find ?find & ?more}
-      [:in ?in & (m/cata ?more)]
-      {:in ?in & ?more}
-      [:where . !xs ...]
-      {:where [!xs ...]}
-
-      ?x nil)))
-
-(comment
-  (let [q '[:find ?e
-            :in [?name]
-            :where
-            [?e :name ?name]
-            [?e :age  ?age]]]
-
-    (m/rewrite q
-      [:find ?find & (m/cata ?more)]
-      {:find ?find & ?more}
-      [:in ?in & (m/cata ?more)]
-      {:in ?in}
-      [:where . !xs ...]
-      {:where [!xs ...]}
-
-      ?x nil))
-
-
-  (m/rewrite '[:find ?e
-               :in [?name]
-               :where
-               [?e :name ?name]
-               [?e :age ?age]]
-    [& :where !xs] !xs)
-
-  (let [l1 '(x y x y)]
-    (m/find l1 (& ?1 & ?2) [?1 ?2]))
-
-  (let [q '[:find ?e
-            :in [?name]
-            :where
-            [?e :name ?name]]
-        {:keys [where in args] :as pq} (parse-query q ["Ivan" "Petr"])
-        args-map (build-args-map pq)]
-    (loop [[arg-map & more] args-map r []]
-      (if arg-map
-        (let [x (loop [[elem & more] where datoms []]
-                  (println :elem elem :datoms datoms)
-                  (enc/cond
-                    (not elem)
-                    datoms
-                    ;;
-                    :let [[table e k v]      (case (count elem) (1 2 3) (into ['_] elem) 4 elem)
-                          [?table ?e ?k ?v]  [(parse-query-elem table arg-map)
-                                              (parse-query-elem e     arg-map)
-                                              (parse-query-elem k     arg-map)
-                                              (parse-query-elem v     arg-map)]]
-                    ;; [?e ?k ?v]
-                    (and (not (list? ?e)) ?k (not (vector? ?v)) (not (qsymbol? ?v)))
-                    (recur more (conj datoms [?table ?e ?k ?v]))
-                    ;; [?e ?k [!vs ...]]
-                    (and (not (list? ?e)) ?k (vector? ?v) (not (qsymbol? ?v)))
-                    (recur more (into datoms (mapv (fn [v] [?table ?e ?k v]) ?v)))))]
-          (recur more (into r x)))
-        r))))
 
 (defmacro q* [q' db & args]
   `(let [m#     (meta ~db)
@@ -1049,15 +977,7 @@
          r#))))
 
 (comment
-  (enc/qb 1e5
-    (doall
-     (m/rewrite @conn_
-       (m/map-of _ (m/map-of _ {:name !name}))
-       [!name ...]))
-    (doall
-     (m/search @conn_
-       {_ {_ {:name ?name}}}
-       ?name))))
+  )
 
 
 ;; * re-frame
