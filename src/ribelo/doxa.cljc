@@ -502,7 +502,7 @@
   ([data {:keys [with-diff?] :as opts}]
    (with-meta
      (if (not-empty data) (db-with data) *empty-map*)
-     (merge opts {:t (enc/now-udt) :tx nil}))))
+     (into opts {:t (enc/now-udt) :tx nil :subscribers (atom {})}))))
 
 (defn last-tx [db] (some-> db meta :tx last))
 
