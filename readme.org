@@ -787,6 +787,15 @@ categories
            [(< ?price 50)]]
       dx100k)))
 
+(defn cached-dx-query []
+  (enc/qb 1e1
+    (dx/q* [:find ?e
+           :where
+           [?e :name "Avocado"]
+           [?e :price ?price]
+           [(< ?price 50)]]
+      dx100k)))
+
 (defn fast-dx-query []
   (enc/qb 1e1
     (dx/q [:find ?e
@@ -797,8 +806,18 @@ categories
            [(< ?price 50)]]
       dx100k :fruit/id)))
 
-[(datascript-query) (dx-query) (fast-dx-query)]
-;; clj => [182.98 685.15 71.05]
+(defn fast-cached-dx-query []
+  (enc/qb 1e1
+    (dx/q* [:find ?e
+            :in ?table
+            :where
+            [?table ?e :name "Avocado"]
+            [?table ?e :price ?price]
+            [(< ?price 50)]]
+           dx100k :fruit/id)))
+
+[(datascript-query) (dx-query) (cached-dx-query) (fast-dx-query) (fast-cached-dx-query)]
+;; clj => [163.76 576.19 0.04 53.31 0.05]
 #+end_src
 
 **** query by one condition
