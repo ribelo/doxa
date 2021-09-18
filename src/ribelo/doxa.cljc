@@ -952,11 +952,12 @@
     (m/scan (m/app (partial -last-tx-match-datom? db) (m/pred true?))) true
     _ false))
 
+(defn -tx-match-query? [db query]
+  (-tx-match-where? db (-> query parse-query :where)))
 
 (defmacro q* [q' db & args]
   `(let [m#     (meta ~db)
          t#     (:t m#)
-         tx#    (last (:tx m#))
          subs#  (:subscribers m#)]
      (enc/cond
        (enc/rsome #(enc/kw-identical? :mem/del %) [~@args])
@@ -966,8 +967,8 @@
 
        (and (get-in @subs# [(quote ~q') :r])
             (not (enc/rsome #(enc/kw-identical? :mem/fresh %) [~@args]))
-            (or (not (-tx-match-query? tx# (quote ~q')))
-                (> (get-in @subs# [(quote ~q') :t]) t#)))
+            (or (> (get-in @subs# [(quote ~q') :t]) t#)
+                (not (-tx-match-query? ~db (quote ~q')))))
        (get-in @subs# [(quote ~q') :r])
 
        :else
