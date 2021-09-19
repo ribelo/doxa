@@ -652,39 +652,39 @@
        (m/or (m/and ?a     (m/not (m/pred dx/qsymbol?))) (m/let [?a        :a]))
        (m/or (m/and ?v     (m/not (m/pred dx/qsymbol?))) (m/let [?v         1]))]))
     (do (t/is (true?
-               (dx/-last-tx-match-datom?
+               (dx/-tx-match-datom?
                 [[~?table] :+ {~?e {~?a ~?v}}]
                 ~datom)))
         (t/is (true?
-               (dx/-last-tx-match-datom?
+               (dx/-tx-match-datom?
                 [[~?table] :r {~?e {~?a ~?v}}]
                 ~datom)))
         (t/is (true?
-               (dx/-last-tx-match-datom?
+               (dx/-tx-match-datom?
                 [[~?table ~?e] :+ {~?a ~?v}]
                 ~datom)))
         (t/is (true?
-               (dx/-last-tx-match-datom?
+               (dx/-tx-match-datom?
                 [[~?table ~?e] :r {~?a ~?v}]
                 ~datom)))
         (t/is (true?
-               (dx/-last-tx-match-datom?
+               (dx/-tx-match-datom?
                 [[~?table ~?e ~?a] :+ ~?v]
                 ~datom)))
         (t/is (true?
-               (dx/-last-tx-match-datom?
+               (dx/-tx-match-datom?
                 [[~?table ~?e ~?a] :r ~?v]
                 ~datom)))
         (t/is (true?
-               (dx/-last-tx-match-datom?
+               (dx/-tx-match-datom?
                 [[~?table] :-]
                 ~datom)))
         (t/is (true?
-               (dx/-last-tx-match-datom?
+               (dx/-tx-match-datom?
                 [[~?table ~?e] :-]
                 ~datom)))
         (t/is (true?
-               (dx/-last-tx-match-datom?
+               (dx/-tx-match-datom?
                 [[~?table ~?e ~?a] :-]
                 ~datom))))))
 
