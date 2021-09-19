@@ -880,7 +880,7 @@
 (defn comp-some [& fns]
   (apply comp (filter identity fns)))
 
-(defmacro q [q' db & args]
+(defmacro execute-q [q' db & args]
   (let [{:keys [find first? mapcat? pull keys] :as pq} (apply parse-query q' args)]
     `(let [data# ~(with-meta `(m/rewrites ~db
                                 ~(query pq) ~find)
@@ -947,30 +947,53 @@
 (defn -tx-match-query? [db query]
   (-tx-match-where? db (-> query parse-query :where)))
 
-(defmacro q* [q' db & args]
-  `(let [m#     (meta ~db)
-         t#     (:t m#)
-         subs#  (:subscribers m#)]
-     (enc/cond
-       (enc/rsome #(enc/kw-identical? :mem/del %) [~@args])
-       (enc/do-true
-        (swap! subs# assoc-in [(quote ~q') :r] nil)
-        (swap! subs# assoc-in [(quote ~q') :t] nil))
+(defn delete-cached-results! [db kw]
+  (when-let [subs (some-> (meta db) :subs)]
+    (enc/do-true (swap! subs dissoc kw))))
 
-       (and (get-in @subs# [(quote ~q') :r])
-            (not (enc/rsome #(enc/kw-identical? :mem/fresh %) [~@args]))
-            (or (> (get-in @subs# [(quote ~q') :t]) t#)
+(defmacro q [q' db & args]
+  (let [env    (meta &form)
+        kw     `(m/rewrite ~env {::cache? true} (quote ~q') {::cache? ~'?x} [~'?x ~'args])
+        m      `(meta ~db)
+        fresh? `(boolean (::fresh? ~env))
+        del?   `(boolean (::delete? ~env))
+        subs   `(::cache_ ~m)
+        cr      (gensym 'cached-result_)
+        fr      (gensym 'fresh-result_)
+        ltt     (gensym 'last-transaction-timestamp_)
+        lqt     (gensym 'last-query-timestamp_)]
+    `(enc/cond
+       ~del?
+       (delete-cached-results! ~db ~kw)
+       ;;
+       :let [~cr  (some-> ~subs deref (get-in [~kw ::cached-results]))
+             ~lqt (some-> ~subs deref (get-in [~kw ::last-query-timestamp]))
+             ~ltt (::last-transaction-timestamp ~m)]
+       (and (some? ~cr)
+            (or (> ~lqt ~ltt)
                 (not (-tx-match-query? ~db (quote ~q')))))
-       (get-in @subs# [(quote ~q') :r])
-
+       (with-meta ~cr {::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt})
+       ;;
        :else
-       (let [r# (q ~q' ~db ~@args)]
-         (swap! subs# assoc-in [(quote ~q') :r] r#)
-         (swap! subs# assoc-in [(quote ~q') :t] (enc/now-udt))
-         r#))))
+       (let [~fr (execute-q ~q' ~db ~@args)]
+         (when ~kw
+           (swap! ~subs assoc-in [~kw ::cached-results] ~fr)
+           (swap! ~subs assoc-in [~kw ::last-query-timestamp] (enc/now-udt)))
+         (with-meta ~fr {::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt})))))
 
 (comment
+  (let [del? true kw [:a 1]]
+    ^{::fresh? del?}
+    (q [:find ?e :where [?e :name "ivan"]] (create-dx [] {:with-diff? true})))
   )
+(m/rewrite
+  #:ribelo.doxa{:cache? [:a 1], :delete? :sex, :fresh? true}
+  #:ribelo.doxa{:cache? true}
+  '[:find ?e :where [?e :name "ivan"]]
+  #:ribelo.doxa{:cache? (m/some ?x)}
+  ?x)
+
+
 
 
 ;; * re-frame

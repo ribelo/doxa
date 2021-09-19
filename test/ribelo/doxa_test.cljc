@@ -669,17 +669,18 @@
                 ~datom))))))
 
 (comment
-  (def db (dx/create-dx [] {:with-diff? true})))
+  (def db (dx/create-dx [] {::dx/with-diff? true})))
 
 (t/deftest match-changes
-  (let [db (dx/create-dx [] {:with-diff? true})]
-    (t/testing "generated mached tests"
+  (let [db (dx/create-dx [] {::dx/with-diff? true})]
+    (t/testing "generated maching tests"
       (doseq [table ['?table :db/id]
               e     ['?e          1]
               a     ['?a         :a]
               v     ['?v          1]]
         (generate-matched-tests [table e a v])))
-    (t/testing "??"
+
+    (t/testing "match-datom"
       (t/is (true?
              (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
                  (dx/-last-tx-match-datom?
