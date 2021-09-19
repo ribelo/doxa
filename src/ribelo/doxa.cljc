@@ -800,16 +800,6 @@
 
 (defn build-meander-query [m]
   (m/rewrite m
-    {:maps   (m/pred seq [!maps ..?mc])
-     :guards (m/pred seq [!guards ..?gc])
-     :let    (m/pred seq [!let  ..?lc])}
-    (m/and
-     (m/let [!let ...]) .
-     (m/guard !guards) ...
-     !maps ...)))
-
-(defn build-meander-query [m]
-  (m/rewrite m
     {:maps (m/pred seq [!maps ...]) & ?more}
     (m/cata [:done [~(reduce enc/nested-merge !maps) & (m/cata ?more)]])
     {:let (m/pred seq [!let ...]) & ?more}
@@ -907,16 +897,9 @@
                            (pull ~db q# [table# e#])))))
               ~(when first? `(take 1))
               ~(when mapcat? `(mapcat identity))
-              ~(when keys `(map (fn [m#] (zipmap '~keys m#))))
-              )
+              ~(when keys `(map (fn [m#] (zipmap '~keys m#)))))
              data#))))
 
-;; => [[?table ?e ?v] :-]
-;; => [[?table ?e] :-]
-;; => [[?table] :-]
-;; => [[?table ?e ?a] :+ ?v]
-;; => [[?table ?e ?a] :r ?v]
-;; => [[?table ?e ?a] :-]
 (defn tx->datom [tx]
   (m/rewrite tx
     [[?table] (m/or :+ :r) {?eid {?a ?v}}]
