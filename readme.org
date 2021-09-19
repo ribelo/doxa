@@ -789,7 +789,8 @@ categories
 
 (defn cached-dx-query []
   (enc/qb 1e1
-    (dx/q* [:find ?e
+    ^{::dx/cache? true}
+    (dx/q [:find ?e
            :where
            [?e :name "Avocado"]
            [?e :price ?price]
@@ -798,6 +799,7 @@ categories
 
 (defn fast-dx-query []
   (enc/qb 1e1
+    ^{::dx/cache? true}
     (dx/q [:find ?e
            :in ?table
            :where
