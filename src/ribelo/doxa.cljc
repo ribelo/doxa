@@ -957,7 +957,7 @@
         m      `(meta ~db)
         fresh? `(boolean (::fresh? ~env))
         del?   `(boolean (::delete? ~env))
-        subs   `(::cache_ ~m)
+        cache_ `(::cache_ ~m)
         cr      (gensym 'cached-result_)
         fr      (gensym 'fresh-result_)
         ltt     (gensym 'last-transaction-timestamp_)
@@ -966,19 +966,20 @@
        ~del?
        (delete-cached-results! ~db ~kw)
        ;;
-       :let [~cr  (some-> ~subs deref (get-in [~kw ::cached-results]))
-             ~lqt (some-> ~subs deref (get-in [~kw ::last-query-timestamp]))
+       :let [~cr  (some-> ~cache_ deref (get-in [~kw ::cached-results]))
+             ~lqt (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
              ~ltt (::last-transaction-timestamp ~m)]
-       (and (some? ~cr)
+       (and (some? ~kw)
+            (some? ~cr)
             (or (> ~lqt ~ltt)
                 (not (-tx-match-query? ~db (quote ~q')))))
        (with-meta ~cr {::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt})
        ;;
        :else
        (let [~fr (execute-q ~q' ~db ~@args)]
-         (when ~kw
-           (swap! ~subs assoc-in [~kw ::cached-results] ~fr)
-           (swap! ~subs assoc-in [~kw ::last-query-timestamp] (enc/now-udt)))
+         (when (and ~kw ~cache_)
+           (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
+           (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] (enc/now-udt)))
          (with-meta ~fr {::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt})))))
 
 (comment
