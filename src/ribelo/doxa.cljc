@@ -502,7 +502,7 @@
   ([data {:keys [with-diff?] :as opts}]
    (with-meta
      (if (not-empty data) (db-with data) *empty-map*)
-     (into opts {::last-transaction-timestamp nil ::tx nil ::cache_ (atom {})}))))
+     (into opts {::last-transaction-timestamp (enc/now-udt) ::tx nil ::cache_ (atom {})}))))
 
 (defn -last-tx [db] (some-> db meta ::tx last))
 
