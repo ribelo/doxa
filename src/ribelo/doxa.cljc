@@ -504,7 +504,7 @@
      (if (not-empty data) (db-with data) *empty-map*)
      (into opts {::last-transaction-timestamp nil ::tx nil ::cache_ (atom {})}))))
 
-(defn last-tx [db] (some-> db meta :tx last))
+(defn -last-tx [db] (some-> db meta ::tx last))
 
 ;; pull
 
@@ -948,7 +948,7 @@
     false))
 
 (defn -last-tx-match-datom? [db datom]
-  (-tx-match-datom? (last-tx db) datom))
+  (-tx-match-datom? (-last-tx db) datom))
 
 (defn -tx-match-where? [db datoms]
   (m/rewrite datoms
