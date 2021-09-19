@@ -954,7 +954,6 @@ categories
 
 (defn fast-dx-query []
   (enc/qb 1e1
-    ^{::dx/cache? true}
     (dx/q [:find ?e
            :in ?table
            :where
@@ -965,13 +964,14 @@ categories
 
 (defn fast-cached-dx-query []
   (enc/qb 1e1
-    (dx/q* [:find ?e
-            :in ?table
-            :where
-            [?table ?e :name "Avocado"]
-            [?table ?e :price ?price]
-            [(< ?price 50)]]
-           dx100k :fruit/id)))
+    ^{::dx/cache :any-value}
+    (dx/q [:find ?e
+           :in ?table
+           :where
+           [?table ?e :name "Avocado"]
+           [?table ?e :price ?price]
+           [(< ?price 50)]]
+      dx100k :fruit/id)))
 
 [(datascript-query) (dx-query) (cached-dx-query) (fast-dx-query) (fast-cached-dx-query)]
 ;; clj => [163.76 576.19 0.04 53.31 0.05]
