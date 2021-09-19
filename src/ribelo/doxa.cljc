@@ -900,7 +900,7 @@
               ~(when keys `(map (fn [m#] (zipmap '~keys m#)))))
              data#))))
 
-(defn tx->datom [tx]
+(defn -tx->datom [tx]
   (m/rewrite tx
     [[?table] :+ {?eid {?a ?v}}]
     [?table ?eid ?a ?v]
@@ -939,18 +939,18 @@
     false))
 
 (defn -tx-match-datom? [tx datom]
-  (-match-two-datoms (ribelo.doxa/tx->datom tx) datom))
+  (-match-two-datoms (ribelo.doxa/-tx->datom tx) datom))
 
 (defn -last-tx-match-datom? [db datom]
   (-tx-match-datom? (-last-tx db) datom))
 
-(defn -tx-match-where? [db datoms]
+(defn -last-tx-match-where? [db datoms]
   (m/rewrite datoms
     (m/scan (m/app (partial -last-tx-match-datom? db) (m/or true ::non-applicable))) true
     _ false))
 
-(defn -tx-match-query? [db query]
-  (-tx-match-where? db (-> query parse-query :where)))
+(defn -last-tx-match-query? [db query]
+  (-last-tx-match-where? db (-> query parse-query :where)))
 
 (defn delete-cached-results! [db kw]
   (when-let [subs (some-> (meta db) :subs)]
@@ -977,7 +977,7 @@
        (and (some? ~kw)
             (some? ~cr)
             (or (> ~lqt ~ltt)
-                (not (-tx-match-query? ~db (quote ~q')))))
+                (not (-last-tx-match-query? ~db (quote ~q')))))
        (with-meta ~cr {::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt})
        ;;
        :else

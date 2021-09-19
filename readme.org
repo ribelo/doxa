@@ -419,8 +419,8 @@ far-reaching consequences
 
 #+end_src
 
-each element is checked once, so the result in a normal engine would be [[1 1]
-[1 3] [3 3]]
+each element is checked once, so the result in a normal engine would be =[[1 1]
+[1 3] [3 3]]=
 
 #+begin_src clojure :results silent :exports code
 
@@ -463,7 +463,6 @@ meander, e.g. scan
        [?e2 :name ?n2]]
   db)
 ;; => [["Ivan" "Petr"] ["Petr" "Ivan"]]
-
 #+end_src
 
 **** in
@@ -539,7 +538,7 @@ references are always vector and must be treated as such
 
 #+begin_src clojure :results silent :exports code
 
-(dx/q [:find [?friends ...]
+(dx/q [:find ?friends ...
        :where
        [?e :name "Ivan"]
        [?e :friend ?friends]]
@@ -566,7 +565,7 @@ but knowing what a reference looks like, we can get around this
 
 #+begin_src clojure :results silent :exports code
 
-(dx/q [:find [?fname ...]
+(dx/q [:find ?fname ...
        :where
        [?e :name "Ivan"]
        [?e :friend [_ ?friend]]
@@ -578,11 +577,167 @@ but knowing what a reference looks like, we can get around this
 
 at the moment my knowledge of meader internals is too limited to make it nicer
 
+**** caching & matching
+
+=q= allows results caching and re-run queries only if the last transaction changes
+data that may have an impact. editscript diffs are used, which, when converted
+into datoms, are compared with each query datom. the most pessimistic scenario
+is taken into consideration, because it is better to have false positives than
+false negatives. in other words, it is better to re-run a query unnecessarily
+than not to run it when you need to
+
+#+begin_src clojure :results silent :exports code
+(def conn_ (atom (dx/create-dx [] {::dx/with-diff? true})))
+(meta @conn_)
+;; => #:ribelo.doxa{:with-diff? true,
+;;                  :last-transaction-timestamp 1632083203039,
+;;                  :tx nil,
+;;                  :cache_ #atom[{} 0x281c70de]}
+
+#+end_src
+
+#+begin_src clojure :results silent :exports code
+
+(dx/commit! conn_ [:dx/put [:db/id 1] {:name "ivan"}])
+
+@conn_
+;; => #:db{:id {1 {:name "ivan", :db/id 1}}}
+
+(meta @conn_)
+;; => #:ribelo.doxa{:with-diff? true,
+;;                  :last-transaction-timestamp 1632083289779,
+;;                  :tx [[[:db/id] :+ {1 {:name "ivan", :db/id 1}}]],
+;;                  :cache_ #atom[{} 0x281c70de],
+;;                  :h -69594259}
+
+(dx/-last-tx @conn_)
+;; => [[:db/id] :+ {1 {:name "ivan", :db/id 1}}]
+
+(-> (dx/-last-tx @conn_)
+    (dx/-tx->datom))
+;; => [:db/id 1 :name "ivan"]
+
+(-> (dx/-last-tx-match-query?
+     @conn_
+     '[:find ?e
+       :where
+       [?e ?attr ?v]]))
+;; => true
+
+;; meander allows to match after each element of the datom
+(-> (dx/-last-tx-match-query?
+     @conn_
+     '[:find ?e
+       :where
+       [:db/id ?e ?attr ?v]]))
+;; => true
+
+(-> (dx/-last-tx-match-query?
+     @conn_
+     '[:find ?e
+       :where
+       [:db/id 1 ?attr ?v]]))
+;; => true
+
+(-> (dx/-last-tx-match-query?
+     @conn_
+     '[:find ?e
+       :where
+       [:db/id 2 ?attr ?v]]))
+;; => false
+
+(-> (dx/-last-tx-match-query?
+     @conn_
+     '[:find ?e
+       :where
+       [?e ?attr "ivan"]]))
+;; => true
+
+(-> (dx/-last-tx-match-query?
+     @conn_
+     '[:find ?e
+       :where
+       [?e ?attr "petr"]]))
+;; => false
+#+end_src
+
+each data returned by =q= has metadata attached to it showing whether the results
+are fresh etc
+
+#+begin_src clojure :results silent :exports code
+^{::cache? true}
+(defn do-query []
+  ^{::dx/cache ::my-query}
+  (dx/q [:find (pull [:*] [?table ?e]) .
+         :where
+         [?table ?e :name "ivan"]]
+    @conn_))
+(def r (do-query))
+r
+;; => {:name "ivan", :db/id 1}
+(meta r)
+;; => #:ribelo.doxa{:last-transaction-timestamp 1632083289779,
+;;                  :last-query-timestamp nil,
+;;                  :fresh? true}
+(meta (do-query))
+;; => #:ribelo.doxa{:last-transaction-timestamp 1632083289779,
+;;                  :last-query-timestamp 1632084271082,
+;;                  :fresh? false}
+#+end_src
+
+this allows you to write advanced queries that are not re-run until needed, and
+thus views are re-rendered only when data changes.
+
+#+begin_src clojure :results silent :exports code
+@conn_
+;; => #:db{:id {1 {:name "ivan", :db/id 1}}}
+
+(defn find-petr []
+  ^{::dx/cache? true}
+  (dx/q [:find (pull [:*] [?table ?e]) .
+         :where
+         [?table ?e :name "petr"]]
+    @conn_))
+
+(::dx/fresh? (meta (find-petr)))
+;; => true
+(::dx/fresh? (meta (find-petr)))
+;; => false
+(dx/commit! conn_ [:dx/put [:db/id 1] :age 18])
+@conn_
+;; => #:db{:id {1 {:name "ivan", :db/id 1, :age 18}}}
+
+;; data is still retrieved from the cache and the query is not executed again
+(::dx/fresh? (meta (find-petr)))
+;; => false
+
+(dx/commit! conn_ [:dx/put [:db/id 2] :name "petr"])
+@conn_
+;; => #:db{:id {1 {:name "ivan", :db/id 1, :age 18}, 2 {:name "petr"}}}
+
+(def r (find-petr))
+r
+;; => {:name "petr"}
+(::dx/fresh? (meta r))
+;; => true
+
+;; query has been re-run and the data has been pulled correctly
+
+(find-petr)
+;; => {:name "petr"}
+
+(::dx/fresh? (meta (find-petr)))
+;; => false
+#+end_src
+
+what effect this has on performance can be found in the [[https://github.com/ribelo/doxa#query][benchmark]]
+
 ** benchmark
 
 #+begin_src clojure :results silent :exports code
 
 (require '[taoensso.encore :as enc])
+(require '[meander.epsilon :as   m])
 (require '[datascript.core :as   d])
 (require '[ribelo.doxa     :as  dx])
 
