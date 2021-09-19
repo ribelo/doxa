@@ -390,7 +390,7 @@
   db metadata.
 
   usage:
-  [:dx/|put|delete|conj|update|match [table eid] ?m | (?k ?v)]
+  [:dx/put|delete|conj|update|match [table eid] ?m | (?k ?v)]
 
   put:
       entire map|s with entity id
