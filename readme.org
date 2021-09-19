@@ -1,7 +1,7 @@
 #+TITLE: doxa
 
 a simple in-memory database, trying to copy the best solutions from =datascript=,
-=crux=, =fulcro=, =autonormal=, =kechema=, =shadow-grow= etc. each of them has its own
+=crux=, =fulcro=, =autonormal=, =kechema=, =shadow-grove= etc. each of them has its own
 strengths, and is an excellent solution in its own narrow scope, but each lacks
 some of the cool things that the others have. as usual in my case, everything
 but the copying worst things came out poorly
