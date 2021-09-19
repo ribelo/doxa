@@ -1085,21 +1085,40 @@ categories
 
 #+begin_src clojure :results silent :exports code
 
+(def db50k
+  (d/db-with (d/empty-db)
+             (mapv
+              (fn [m]
+                (reduce-kv
+                 (fn [acc k v]
+                   (if (= :id (name k))
+                     (assoc acc :db/id v)
+                     (assoc acc k v)))
+                 {}
+                 m))
+              people50k)))
+
+(def dx50k (dx/create-dx people50k))
+
+#+end_src
+
+#+begin_src clojure :results silent :exports code
+
 (defn datascript-q1 []
   (enc/qb 1
     (d/q '[:find ?e
            :where [?e :name "Ivan"]]
-      db100k)))
+      db50k)))
 
 (defn dx-q1 []
   (enc/qb 1
     (dx/q [:find  ?e
            :where [?e :name "Ivan"]]
-      dx100k)))
+      dx50k)))
 
 [(datascript-q1) (dx-q1)]
 ;; cljs => [   9    51]
-;; clj  => [3.56 13.95]
+;; clj  => [5.45 32.09]
 
 #+end_src
 
@@ -1113,19 +1132,18 @@ categories
     (d/q '[:find ?e ?a
            :where [?e :name "Ivan"]
            [?e :age ?a]]
-      db100k)))
+      db50k)))
 
 (defn dx-q2 []
   (enc/qb 1e1
     (dx/q [ :find  [?e ?a]
              :where [?e :name "Ivan"]
             [?e :age ?a]]
-      dx100k)))
+      dx50k)))
 
 [(datascript-q2) (dx-q2)]
-;; cljs => [  242    618]
-;; clj  => [65.51 142.94]
-
+;; cljs => [   242    618]
+;; clj  => [152.96 317.74]
 #+end_src
 
 **** 3
@@ -1138,7 +1156,7 @@ categories
            :where [?e :name "Ivan"]
            [?e :age ?a]
            [?e :sex :male]]
-      db100k)))
+      db50k)))
 
 (defn dx-q3 []
   (enc/qb 1e1
@@ -1146,12 +1164,11 @@ categories
              :where [?e :name "Ivan"]
                      [?e :age ?a]
             [?e :sex :male]]
-      dx100k)))
+      dx50k)))
 
 [(datascript-q3) (dx-q3)]
-;; cljs => [  409    646]
-;; clj  => [94.34 141.06]
-
+;; cljs => [   409    646]
+;; clj  => [133.26 307.05]
 #+end_src
 
 **** 4
@@ -1165,7 +1182,7 @@ categories
            [?e :last-name ?l]
            [?e :age ?a]
            [?e :sex :male]]
-      db100k)))
+      db50k)))
 
 (defn dx-q4 []
   (enc/qb 1e1
@@ -1175,11 +1192,11 @@ categories
             [?e :last-name ?l]
             [?e :age ?a]
             [?e :sex :male]]
-       dx100k))))
+       dx50k))))
 
 [(datascript-q4) (dx-q4)]
 ;; cljs => [  588    681]
-;; clj  => [149.9 142.44]
+;; clj  => [252.49 310.05]
 
 #+end_src
 
@@ -1192,18 +1209,18 @@ categories
     (d/q '[:find ?e ?s
            :where [?e :salary ?s]
            [(> ?s 50000)]]
-      db100k)))
+      db50k)))
 
 (defn dx-qpred1 []
   (enc/qb 1e1
     (dx/q [:find ?e ?s
           :where [?e :salary ?s]
           [(> ?s 50000)]]
-      dx100k)))
+      dx50k)))
 
 [(datascript-qpred1) (dx-qpred1)]
 ;; cljs => [  321    959]
-;; clj  => [93.36 179.29]
+;; clj  => [259.34 384.9]
 
 #+end_src
 
@@ -1223,7 +1240,7 @@ categories
 
 [(datascript-pull1) (dx-pull1)]
 ;; cljs => [   15    8]
-;; clj  => [12.37 2.23]
+;; clj  => [14.43 1.36]
 
 #+end_src
 
