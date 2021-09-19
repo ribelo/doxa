@@ -375,11 +375,11 @@
                  (keyword? (first txs))
                  (-submit-commit db txs))
          meta' (meta db')]
-     (cond-> (vary-meta db' assoc :t (enc/now-udt))
-       (:with-diff? meta')
+     (cond-> (vary-meta db' assoc ::last-transaction-timestamp (enc/now-udt))
+       (::with-diff? meta')
        (vary-meta assoc
-                  :tx (ese/get-edits (es/diff db db' {:algo :quick}))
-                  :h  (hash db'))
+                  ::tx (ese/get-edits (es/diff db db' {:algo :quick}))
+                  ::h  (hash db'))
        ;;
        tx-meta
        (vary-meta assoc :tx-meta tx-meta)))))
@@ -474,8 +474,8 @@
   ([db edits time]
    (let [db' (es/patch db (es/edits->script edits))]
      (vary-meta db' assoc
-                :t  time
-                :tx edits))))
+                ::last-transaction-timestamp  time
+                ::tx edits))))
 
 (defn patch!
   "patch db inside atom, see `patch`"
@@ -496,13 +496,13 @@
 (defn create-dx
   "creates a db, can take a map, which is written to the metadata"
   ([]
-   (create-dx [] {:with-diff? false}))
+   (create-dx [] {::with-diff? false}))
   ([data]
-   (create-dx data {:with-diff? false}))
+   (create-dx data {::with-diff? false}))
   ([data {:keys [with-diff?] :as opts}]
    (with-meta
      (if (not-empty data) (db-with data) *empty-map*)
-     (into opts {:t (enc/now-udt) :tx nil :subscribers (atom {})}))))
+     (into opts {::last-transaction-timestamp nil ::tx nil ::cache_ (atom {})}))))
 
 (defn last-tx [db] (some-> db meta :tx last))
 
