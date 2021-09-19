@@ -250,7 +250,7 @@
     [:dx/delete [(m/pred key-id? ?tid) (m/pred eid? ?eid)] ?k]
     (let [m  (get-in db [?tid ?eid])
           m' (dissoc m ?k)]
-      (if (seq m') (assoc-in db [?tid ?eid] m') (-submit-commit db [:dx/delete [?tid ?eid]])))
+      (if (> (count (keys m')) 1) (assoc-in db [?tid ?eid] m') (-submit-commit db [:dx/delete [?tid ?eid]])))
     ;; delete {}
     [:dx/delete {(m/pred key-id? ?tid) (m/pred eid? ?eid)}]
     (-submit-commit db [:dx/delete [?tid ?eid]])
