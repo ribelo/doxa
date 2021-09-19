@@ -953,7 +953,7 @@
 
 (defmacro q [q' db & args]
   (let [env    (meta &form)
-        kw     `(m/rewrite ~env {::cache? true} (quote ~q') {::cache? ~'?x} [~'?x ~'args])
+        kw     `(m/rewrite ~env {::cache? true} (quote ~q') {::cache? (m/some ~'?x)} [~'?x ~'args])
         m      `(meta ~db)
         fresh? `(boolean (::fresh? ~env))
         del?   `(boolean (::delete? ~env))
