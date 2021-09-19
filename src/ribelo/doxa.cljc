@@ -183,8 +183,8 @@
       (loop [acc db]
         (enc/cond
           :if-not (.hasNext itx) acc
-          :let    [?v (.next itx)
-                   xs (normalize ?v)
+          :let    [?v  (.next itx)
+                   xs  (normalize ?v)
                    ity (-iter xs)]
           (recur
            (loop [acc (update-in acc [?tid ?eid ?k] conjv (entity-id ?v))]
