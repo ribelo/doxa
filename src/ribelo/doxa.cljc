@@ -921,9 +921,9 @@
     [[?table ?eid ?a] :-]
     [?table ?eid ?a nil]))
 
-(defn -tx-match-datom? [tx datom]
-  (m/rewrite [(tx->datom tx) datom]
-    [[?table ?eid ?a ?v]
+(defn -match-two-datoms [d1 d2]
+  (m/rewrite [d1 d2]
+    [(m/or [?table ?eid ?a ?v] (m/and [?eid ?a ?v] (m/let [?table '_])))
      (m/or
       [(m/or ?table (m/pred symbol?))
        (m/or ?eid   (m/pred symbol?) (m/guard (nil? ?eid)))
@@ -933,15 +933,20 @@
        (m/or ?a     (m/pred symbol?) (m/guard (nil? ?a)))
        (m/or ?v     (m/pred symbol?) (m/guard (nil? ?v)))])]
     true
+    [_ [(m/pred list?) & _]]
+    ::non-applicable
     _
     false))
+
+(defn -tx-match-datom? [tx datom]
+  (-match-two-datoms (ribelo.doxa/tx->datom tx) datom))
 
 (defn -last-tx-match-datom? [db datom]
   (-tx-match-datom? (-last-tx db) datom))
 
 (defn -tx-match-where? [db datoms]
   (m/rewrite datoms
-    (m/scan (m/app (partial -last-tx-match-datom? db) (m/pred true?))) true
+    (m/scan (m/app (partial -last-tx-match-datom? db) (m/or true ::non-applicable))) true
     _ false))
 
 (defn -tx-match-query? [db query]
