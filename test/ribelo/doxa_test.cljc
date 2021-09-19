@@ -824,11 +824,24 @@
                  (dx/-tx-match-query?
                   '[:where
                     [?table ?e ?attr "ivan"]]))))
-      (t/is (false?
+      (t/is (true?
              (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
-                 (dx/commit    [:dx/delete [:db/id 1] :age])
                  (dx/-tx-match-query?
                   '[:where
+                    [?table ?e :name "ivan"]
+                    [?table ?e :age  ?age]]))))
+      (t/is (true?
+             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 (dx/-tx-match-query?
+                  '[:where
+                    [?table ?e :age  ?age]
+                    [?table ?e :name "ivan"]]))))
+      (t/is (true?
+             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 (dx/-tx-match-query?
+                  '[:where
+                    [(adult? ?age)]
+                    [?table ?e :age  ?age]
                     [?table ?e :name "ivan"]])))))))
 
 (t/deftest cached-query
