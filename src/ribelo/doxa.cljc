@@ -926,12 +926,12 @@
     [[?table ?eid ?a ?v]
      (m/or
       [(m/or ?table (m/pred symbol?))
-       (m/or ?eid (m/pred symbol?) (m/guard (nil? ?eid)))
-       (m/or ?a (m/pred symbol?) (m/guard (nil? ?a)))
-       (m/or ?v (m/pred symbol?) (m/guard (nil? ?v)))]
-      [(m/or ?eid (m/pred symbol?) (m/guard (nil? ?eid)))
-       (m/or ?a (m/pred symbol?) (m/guard (nil? ?a)))
-       (m/or ?v (m/pred symbol?) (m/guard (nil? ?v)))])]
+       (m/or ?eid   (m/pred symbol?) (m/guard (nil? ?eid)))
+       (m/or ?a     (m/pred symbol?) (m/guard (nil? ?a)))
+       (m/or ?v     (m/pred symbol?) (m/guard (nil? ?v)))]
+      [(m/or ?eid   (m/pred symbol?) (m/guard (nil? ?eid)))
+       (m/or ?a     (m/pred symbol?) (m/guard (nil? ?a)))
+       (m/or ?v     (m/pred symbol?) (m/guard (nil? ?v)))])]
     true
     _
     false))
