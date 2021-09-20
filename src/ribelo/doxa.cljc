@@ -168,17 +168,6 @@
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)]
      (m/pred keyword? ?k) (m/pred (complement (some-fn entity? entities? ident?)) ?v)]
     (assoc-in db [?tid ?eid ?k] ?v)
-    ;; put [?tid ?eid] . !ks !vs ...
-    [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] .
-     (m/pred keyword? !ks) !vs ...]
-    (let [kit (-iter !ks)
-          vit (-iter !vs)]
-      (loop [db' db]
-        (enc/cond
-          :if-not (.hasNext kit) db'
-          :let [k (.next kit)
-                v (.next vit)]
-          (recur (-submit-commit db [:dx/put [?tid ?eid] k v])))))
     ;; put [?tid ?eid] ?k ?entity
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred entity? ?v)]
     (let [xs (normalize ?v)
@@ -242,6 +231,17 @@
           :if-not (.hasNext it) acc
           :let    [[ks m] (.next it)]
           (recur  (update-in acc ks enc/merge m)))))
+    ;; put [?tid ?eid] . !ks !vs ...
+    [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] .
+     (m/pred keyword? !ks) !vs ...]
+    (let [kit (-iter !ks)
+          vit (-iter !vs)]
+      (loop [db' db]
+        (enc/cond
+          :if-not (.hasNext kit) db'
+          :let [k (.next kit)
+                v (.next vit)]
+          (recur (-submit-commit db [:dx/put [?tid ?eid] k v])))))
     ;; delete [?tid ?eid]
     [:dx/delete [(m/pred key-id? ?tid) (m/pred eid? ?eid) :as ?ident]]
     (enc/cond
