@@ -1077,7 +1077,7 @@ categories
       dx100k :fruit/id)))
 
 [(datascript-query) (dx-query) (cached-dx-query) (fast-dx-query) (fast-cached-dx-query)]
-;; clj => [163.76 576.19 0.04 53.31 0.05]
+;; clj => [159.42 531.67 0.05 50.15 0.03]
 #+end_src
 
 **** query by one condition
