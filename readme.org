@@ -1,5 +1,7 @@
 #+TITLE: doxa
 
+[[https://clojars.org/com.github.ribelo/doxa][https://img.shields.io/clojars/v/com.github.ribelo/doxa.svg]]
+
 a simple in-memory database, trying to copy the best solutions from [[https://github.com/tonsky/datascript][datascript]],
 [[https://github.com/xtdb/xtdb/][xtdb]], [[https://github.com/fulcrologic/fulcro][fulcro]], [[https://github.com/lilactown/autonormal][autonormal]] and especially [[https://github.com/thheller/shadow-experiments/blob/master/src/main/shadow/experiments/grove/db.cljc][shadow-grove]]. each of them has its own
 strengths, and is an excellent solution, but each lacks some of the cool things
