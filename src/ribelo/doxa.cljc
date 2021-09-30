@@ -45,6 +45,7 @@
 
 (defn- key-id? [k]
   (m/rewrite k
+    :id                                                true
     (m/keyword _ (m/pred #(contains? *id-sufixes* %))) true
     _ false))
 
@@ -59,9 +60,15 @@
     _ false))
 
 (defn- entity? [^clojure.lang.IPersistentMap m]
-  (m/rewrite m
-    (m/and {} (m/scan [(m/pred key-id?) (m/pred eid?)])) true
-    _ false))
+  (m/rewrite [m (meta m)]
+    [_ {::entity-key (m/some)}]
+    true
+    [{:id (m/pred eid?)} _]
+    true
+    [(m/and {} (m/scan [(m/pred key-id?) (m/pred eid?)])) _]
+    true
+    _
+    false))
 
 (defn- entities? [^clojure.lang.IPersistentVector xs]
   (m/rewrite xs
@@ -71,16 +78,21 @@
 (def ^:private not-entities? (complement (some-fn entity? entities?)))
 
 (defn- entity-id [^clojure.lang.IPersistentMap m]
-  ^::m/dangerous
-  (m/rewrite m
-    (m/scan [(m/pred key-id? ?k) ?v])
+  (m/rewrite [m (meta m)]
+    [{?eid ?v} {::entity-key ?eid}]
+    [?eid ?v]
+    [{:id (m/pred eid? ?eid)} _]
+    [:id ?eid]
+    [(m/scan [(m/pred key-id? ?k) ?v]) _]
     [?k ?v]
     _ false))
 
 (defn normalize
   "turns a nested map into a flat collection with references."
   [data]
-  (let [it (-iter data)]
+  (let [entity-key   (some-> (meta data) ::entity-key)
+        has-id-key?  (when-not entity-key (some? (data :id)))
+        it (-iter data)]
     (loop [m (transient {}) r [] id nil]
       (enc/cond
         (and (not (.hasNext it)) (nil? id))
@@ -92,7 +104,14 @@
         :let [^clojure.lang.MapEntry me (.next it)
               k  #?(:clj (.key me) :cljs (.-key me))
               v  #?(:clj (.val me) :cljs (.-val me))]
-        (key-id? k)
+        ;;
+        (and (some? entity-key) (enc/kw-identical? entity-key k))
+        (recur (assoc! m k v) r [k v])
+        ;;
+        (and (not (some? entity-key)) (enc/kw-identical? :id k))
+        (recur (assoc! m k v) r [k v])
+        ;;
+        (and (not has-id-key?) (not (some? entity-key)) (key-id? k))
         (recur (assoc! m k v) r [k v])
         ;;
         (entity? v)
