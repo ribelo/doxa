@@ -82,9 +82,11 @@ to the possibility of limiting the iterated elements, see [[https://github.com/r
 
 #+end_src
 
-each map that is supposed to be an =entity= needs a key with one of the =#{"id"
-"by-id" "list"}= suffixes, which are defined in the dynamic variable
-=dx/*id-sufixes*=, if that wasn't enough
+each map that is supposed to be an =entity= needs a =:id= key or key with name one
+of the =#{"id" "by-id" "list"}= suffixes, which are defined in the dynamic
+variable =dx/*id-sufixes*=, if that wasn't enough. in addition it is possible to
+explicitly declare via =metadata= which key is to be treated as the primary key of
+an entity. examples in [[https://github.com/ribelo/doxa#with-metadata][metadata]].
 
 =doxa= tries to use the full potential of =meander= and be as forgiving as possible
 with the data it receives. =commit= can accept either a single =transaction= or any
@@ -348,6 +350,34 @@ db
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"], :sex :male}}}
 
 #+end_src
+
+
+** with metadata
+
+explicitly declaring a key allows you to indicate exactly which key should be
+used to build the db tree. this makes working with =graphql= much easier, while
+also allowing you to split the data in a way that makes =q= queries [[https://github.com/ribelo/doxa#can-we-be-faster-than-datascript-yes][much faster]]
+
+ #+begin_src clojure :results silent :exports code
+ (def db (->>
+           ^{::dx/entity-key :person/id}
+           {:id        "10"
+            :person/id "10"
+            :name      "Enzo"
+            :car
+            ^{::dx/entity-key :automobile/id}
+            {:id            "20"
+             :automobile/id "20"
+             :name          "Audi"}}
+           (vector :dx/put)
+           (dx/commit (dx/create-dx))))
+ db
+ ;; => {:automobile/id {"20" {:id "20", :automobile/id "20", :name "Audi"}},
+ ;;     :person/id     {"10" {:id "10", :person/id "10", :name "Enzo", :car [:automobile/id "20"]}}}
+
+ (dx/pull db [:name {:car [:autombile/id :name]}] [:person/id "10"])
+ ;; => {:name "Enzo", :car {:name "Audi"}}
+ #+end_src
 
 ** pull
 
@@ -1002,9 +1032,6 @@ categories
 *** query
 
 **** can we be faster than datascript? yes!
-:PROPERTIES:
-:ID:       cc58c12e-7411-4844-a805-5bbfdac1cbba
-:END:
 
 #+begin_src clojure :results silent :exports code
 
@@ -1025,7 +1052,7 @@ categories
 
 #+end_src
 
-#+begin_src clojure :results silent :exports none
+#+begin_src clojure :results silent :exports code
 
 (defn datascript-query []
   (enc/qb 1e1
