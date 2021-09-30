@@ -250,6 +250,17 @@
           :if-not (.hasNext it) acc
           :let    [[ks m] (.next it)]
           (recur  (update-in acc ks enc/merge m)))))
+    ;; put [?tid ?eid] . !ks !vs ...
+    [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] .
+     (m/pred keyword? !ks) !vs ...]
+    (let [kit (-iter !ks)
+          vit (-iter !vs)]
+      (loop [db' db]
+        (enc/cond
+          :if-not (.hasNext kit) db'
+          :let [k (.next kit)
+                v (.next vit)]
+          (recur (-submit-commit db [:dx/put [?tid ?eid] k v])))))
     ;; delete [?tid ?eid]
     [:dx/delete [(m/pred key-id? ?tid) (m/pred eid? ?eid) :as ?ident]]
     (enc/cond
@@ -269,7 +280,7 @@
     [:dx/delete [(m/pred key-id? ?tid) (m/pred eid? ?eid)] ?k]
     (let [m  (get-in db [?tid ?eid])
           m' (dissoc m ?k)]
-      (if (seq m') (assoc-in db [?tid ?eid] m') (-submit-commit db [:dx/delete [?tid ?eid]])))
+      (if (> (count (keys m')) 1) (assoc-in db [?tid ?eid] m') (-submit-commit db [:dx/delete [?tid ?eid]])))
     ;; delete {}
     [:dx/delete {(m/pred key-id? ?tid) (m/pred eid? ?eid)}]
     (-submit-commit db [:dx/delete [?tid ?eid]])

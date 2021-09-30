@@ -1,53 +1,62 @@
 #+TITLE: doxa
 
-a simple in-memory database, trying to copy the best solutions from =datascript=,
-=crux=, =fulcro=, =autonormal=, =kechema=, =shadow-grow= etc. each of them has its own
-strengths, and is an excellent solution in its own narrow scope, but each lacks
-some of the cool things that the others have. as usual in my case, everything
-but the copying worst things came out poorly
+a simple in-memory database, trying to copy the best solutions from [[https://github.com/tonsky/datascript][datascript]],
+[[https://github.com/xtdb/xtdb/][xtdb]], [[https://github.com/fulcrologic/fulcro][fulcro]], [[https://github.com/lilactown/autonormal][autonormal]] and especially [[https://github.com/thheller/shadow-experiments/blob/master/src/main/shadow/experiments/grove/db.cljc][shadow-grove]]. each of them has its own
+strengths, and is an excellent solution, but each lacks some of the cool things
+that the others have. =doxa= tries to take the best from every solution while
+being damn fast and lightweight.
 
-this is an attempt to create a normalized db based on a simple hashmap, that
-allows you to edit data both using =clojure.core= functions and using
-transactions, where pull is incredibly fast, and that allows you to write
-queries using datalog. surprisingly i was able to get most things working and
-usable.
+* rationale
 
-but basically why? primarily out of curiosity and boredom, and because
-datascript completely failed me when writing spas using re-frame & re-posh.
-while datascript has excellent search capabilities using datalog, it is,
-contrary to opinion, a deadly slow, unreliable solution. the db itself is also
-very cumbersome when trying to use tools like re-frame-10x, it also dramatically
-complicates sync data with firebase firestore and realtime db.
+one of the biggest challenges when working on the front end is state management.
+[[https://github.com/day8/re-frame][re-frame]] was one of the first solutions to propose one central =app-db=, one source of
+truth. solution works great, but as the application grows, there is a problem
+with data denormalization and fatigue with multiple nested maps.
 
-so what advantage does doxa have? by using a regular hasmap with structure
-={?table {?eid {?k ?v ...} ...} ...}= allows you to seamlessly synchronize data
-with any document db. it also makes it easy to inspect data, save to disk,
-upload, patch and much more. this design also allows for lightning-fast searches
-using =pull-syntax/eql=, which is an order of magnitude faster than in =datascript=,
-despite such a simple structure, it managed to create an incomplete and buggy
-way to write queries using =datalog=, which are translated into a meander =search=, 
-thanks to the macro. even more surprising, the meander is so amazing
-that the speed for simple queries is barely slower, while for more complex
-queries performance matches =datascript=.
+the ideal solution seems to be =datascript=, but there have been several attempts
+to incorporate it into the =re-frame= ecosystem, eg. [[https://github.com/mpdairy/posh][posh]] and [[https://github.com/denistakeda/re-posh][re-posh]], and in my
+humble opinion, despite much desire and hard work, the transplant has failed.
+datascript seems to be too heavy for the frontend. it's not necessarily because
+it's too slow for normal use, it's because =clojurescript= itself has additional
+overhead compared to =js=, and there's always the chase for numbers and
+optimization for lighthouse. much bigger inconvenience is that
+datascript is built around its own data types. =re-frame= has a whole bunch of
+tools with [[https://github.com/day8/re-frame-10x][re-frame-10x]] that allow you to preview =app-db= in real time.
+=shadow-cljs= also offers =tap>= and there is no problem to spit out entire =app-db=
+and check each individual map, leaf and node.
 
-#+begin_src clojure :results silent :exports code
-
-(require '[ribelo.doxa :as dx])
-
-#+end_src
+=doxa= is an attempt to create a normalized db based on a simple =hashmap=, that
+allows you to edit data both using =clojure.core= functions like =assoc=, =assoc-in=,
+and using transactions similar to =datascript=. in addition, it offers the ability
+to use =datalog= and =pull/eql= queries, as well as =clojure.core= =filter=, =map=, =keep=,
+=take= and all the data processing features we love. due to being built around 3
+nested maps, pretending to be a =triplestore=, it allows to use the whole =clojure=
+ecosystem operating around maps, like =malli=, =spec=, =specter=, =meander= etc.
 
 * db structure
 :PROPERTIES:
 :ID:       b281c1be-a657-4a21-a828-99e929558302
 :END:
 
-db is a simple map with three levels of nesting
+#+begin_src clojure :results silent :exports code
+
+(require '[ribelo.doxa     :as dx])
+(require '[meander.epsilon :as  m])
+
+#+end_src
+
+=db= is a simple map with three levels of nesting
 
 #+begin_src clojure :results silent :exports code
 
 {?table {?eid {:db/id ?eid
                ?k     ?v}}
  ...    {...  {:db/id ...}}}
+
+;;eg
+
+{:person/id {1 {:person/id 1 :name "ivan" :age 18}
+             2 {:person/id 2 :name "petr" :age 24 :friend [:person/id 1]}}}
 
 #+end_src
 
@@ -57,7 +66,7 @@ better than =:person.id/ivan=, is easier to create and easier to use.
 
 but wouldn't operations on a flat map be faster? in normal use, the speed
 difference is negligible, while a nested map can be faster than =datascript= due
-to the possibility of limiting the iterated elements, see [[#can-we-be-faster-than-datascript-yes][benchmark]]
+to the possibility of limiting the iterated elements, see [[https://github.com/ribelo/doxa#can-we-be-faster-than-datascript-yes][benchmark]]
 
 * usage examples
 
@@ -73,7 +82,22 @@ to the possibility of limiting the iterated elements, see [[#can-we-be-faster-th
 
 #+end_src
 
+each map that is supposed to be an =entity= needs a key with one of the =#{"id"
+"by-id" "list"}= suffixes, which are defined in the dynamic variable
+=dx/*id-sufixes*=, if that wasn't enough
+
+=doxa= tries to use the full potential of =meander= and be as forgiving as possible
+with the data it receives. =commit= can accept either a single =transaction= or any
+collection of =transtactions= that is =sequable?=.
+
+the reference of =transaction= can be a =map= or =lookup-ref=, the arguments can be a
+=key-value pair=, where the value can be anything, a =map=, a =variable=, a =collection
+of anything=, a lookup-ref etc. Arguments can be mixed and mangled. data
+automatically normalizes, adds and is converted into =lookup-ref= or =collection of
+lookup-refs= if needed and required.
+
 *** put
+
 **** add entity
 
 #+begin_src clojure :results silent :exports code
@@ -81,14 +105,13 @@ to the possibility of limiting the iterated elements, see [[#can-we-be-faster-th
 (dx/commit {} [[:dx/put {:db/id 1 :name "David" :aka ["Devil"]}]])
 ;; => #:db{:id {1 {:db/id 1, :name "David", :aka ["Devil"]}}}
 
-(dx/commit {} [[:dx/put [:db/id 1] {:name "David" :aka ["Devil"]}]])
+(dx/commit {} [:dx/put [:db/id 1] {:name "David" :aka ["Devil"]}])
 ;; => #:db{:id {1 {:name "David", :aka ["Devil"], :db/id 1}}}
 
 #+end_src
 
 
 **** single keyword change
-
 
 #+begin_src clojure :results silent :exports code
 
@@ -98,6 +121,17 @@ to the possibility of limiting the iterated elements, see [[#can-we-be-faster-th
 (dx/commit db [[:dx/put [:db/id 1] :aka ["Tupen"]]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Tupen"]}}}
 
+#+end_src
+
+**** multiple kv
+
+#+begin_src clojure :results silent :exports code
+
+db
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
+
+(dx/commit db [:dx/put [:db/id 1] :name "Ivan" :age 18 :aka ["Tupen"]])
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Tupen"]}}}
 #+end_src
 
 
@@ -113,8 +147,12 @@ to the possibility of limiting the iterated elements, see [[#can-we-be-faster-th
 
 #+end_src
 
-
 *** delete
+
+deleting data automatically cleans up the database. i.e. if you delete an
+=entity=, all =look-up refs= refering to it will be deleted at the same time. if you
+delete the last =map entry= from a map, the whole map will be deleted etc.
+
 
 **** delete entity
 
@@ -133,12 +171,19 @@ to the possibility of limiting the iterated elements, see [[#can-we-be-faster-th
 (dx/commit db [[:dx/delete [:db/id 1] :aka]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr"}}}
 
+(dx/commit db [[:dx/delete [:db/id 1] :aka]
+               [:dx/delete [:db/id 1] :name]])
+;; => {}
+
 #+end_src
 
 
 **** remove elem from vector
 
 #+begin_src clojure :results silent :exports code
+
+db
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
 
 (dx/commit db [[:dx/delete [:db/id 1] :aka "Devil"]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr"}}}
@@ -149,6 +194,9 @@ to the possibility of limiting the iterated elements, see [[#can-we-be-faster-th
 **** remove an invalid key
 
 #+begin_src clojure :results silent :exports code
+db
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
+
 (dx/commit db [[:dx/delete [:db/id 1] :AKA "Devil"]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
 
@@ -156,14 +204,16 @@ to the possibility of limiting the iterated elements, see [[#can-we-be-faster-th
 
 
 *** conj
-because the database is schemeless, if we want to add something to the vector we
-have to use =conj=
 
-
+because =doxa= is schemeless, if we want to add something to the vector we have to
+use =:dx/conj=
 
 **** add elem
 
 #+begin_src clojure :results silent :exports code
+
+db
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
 
 (dx/commit db [[:dx/conj [:db/id 1] :aka "Tupen"]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil" "Tupen"]}}}
@@ -178,6 +228,9 @@ have to use =conj=
 
 #+begin_src clojure :results silent :exports code
 
+db
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
+
 (dx/commit db [[:dx/conj [:db/id 1] :friend {:db/id 2 :name "Ivan"}]])
 ;; =>
 ;; #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"], :friend [[:db/id 2]]},
@@ -191,10 +244,27 @@ have to use =conj=
 
 #+end_src
 
+*** merge
+
+=:dx/merge= can easily be replaced by update, but using a specialized transaction
+allows for speed optimizations and a few other minor things
+
+#+begin_src clojure :results silent :exports code
+
+db
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
+
+(dx/commit db [:dx/merge [:db/id 1] {:age 18}])
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"], :age 18}}}
+#+end_src
+
 
 *** update
 
 #+begin_src clojure :results silent :exports code
+
+db
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
 
 (dx/commit db [[:dx/update [:db/id 1] assoc :aka "Tupen"]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka "Tupen"}}}
@@ -206,15 +276,17 @@ have to use =conj=
 
 
 *** match
-just like in =crux=, we can use match
 
-
-if data match, db is returned unchanged, otherwise nil
+just like in =xtdb=, we can use match. if data match, =db= is returned unchanged,
+otherwise =nil=.
 
 
 **** match entity
 
 #+begin_src clojure :results silent :exports code
+
+db
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
 
 (dx/commit db [[:dx/match [:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
@@ -226,6 +298,9 @@ if data match, db is returned unchanged, otherwise nil
 
 #+begin_src clojure :results silent :exports code
 
+db
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
+
 (dx/commit db [[:dx/match [:db/id 1] :aka ["Devil"]]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
 
@@ -235,6 +310,9 @@ if data match, db is returned unchanged, otherwise nil
 
 
 #+begin_src clojure :results silent :exports code
+
+db
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
 
 (dx/commit db [[:dx/match [:db/id 1] :aka ["Devil"]]
                [:dx/put   [:db/id 1] :aka ["Tupen"]]])
@@ -247,7 +325,10 @@ if data match, db is returned unchanged, otherwise nil
 
 #+begin_src clojure :results silent :exports code
 
-(dx/commit db [[:dx/match [:db/id 1]  :aka ["Tupen"]]
+db
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
+
+(dx/commit db [[:dx/match  [:db/id 1]  :aka ["Tupen"]]
                [:dx/delete [:db/id 1] :aka]])
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
 
@@ -256,11 +337,16 @@ if data match, db is returned unchanged, otherwise nil
 transactions are dropped until the next valid match occurs
 
 #+begin_src clojure :results silent :export code
-(dx/commit db [[:dx/match [:db/id 1] :aka ["Tupen"]]
-               [:dx/put [:db/id 1] :age 15]
-               [:dx/match [:db/id 1] :name "Petr"]
-               [:dx/put [:db/id 1] :sex :male]])
+
+db
+;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}}}
+
+(dx/commit db [[:dx/match [:db/id 1] :aka ["Tupen"]]       ;; unmatched
+               [:dx/put [:db/id 1] :age 15]                ;;    skiped
+               [:dx/match [:db/id 1] :name "Petr"]         ;;   matched
+               [:dx/put [:db/id 1] :sex :male]])           ;;  commited
 ;; => #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"], :sex :male}}}
+
 #+end_src
 
 ** pull
@@ -281,7 +367,6 @@ transactions are dropped until the next valid match occurs
 (def db (dx/create-dx people-docs))
 
 #+end_src
-
 
 
 *** eql
@@ -400,10 +485,17 @@ transactions are dropped until the next valid match occurs
 
 *** joins
 
-unlike everything else, doxa does not return a set, but a vector, which has
+unlike everything else, =doxa= does not return a set, but a =vector=, which has
 far-reaching consequences
 
 #+begin_src clojure :results silent :exports code
+
+db
+;; => #:db{:id {1 {:db/id 1, :name "Ivan", :age 15},
+;;              2 {:db/id 2, :name "Petr", :age 37},
+;;              3 {:db/id 3, :name "Ivan", :age 37},
+;;              4 {:db/id 4, :age 15}}}
+
 
 (dx/q [:find ?e
        :where [?e :name]]
@@ -419,10 +511,16 @@ far-reaching consequences
 
 #+end_src
 
-each element is checked once, so the result in a normal engine would be =[[1 1]
+each element is checked once, so the result in a normal =datalog= engine would be =[[1 1]
 [1 3] [3 3]]=
 
 #+begin_src clojure :results silent :exports code
+
+db
+;; => #:db{:id {1 {:db/id 1, :name "Ivan", :age 15},
+;;              2 {:db/id 2, :name "Petr", :age 37},
+;;              3 {:db/id 3, :name "Ivan", :age 37},
+;;              4 {:db/id 4, :age 15}}}
 
 (dx/q [:find ?e1 ?e2
        :where
@@ -443,8 +541,8 @@ each element is checked once, so the result in a normal engine would be =[[1 1]
 
 **** many
 
-meander is running underneath, so you can use all the functions available in the
-meander, e.g. scan
+=meander= is running underneath, so you can use all the functions available in the
+=meander=, e.g. =scan=
 
 #+begin_src clojure :results silent :exports code
 
@@ -513,7 +611,7 @@ meander, e.g. scan
 
 **** joins with idents
 
-unfortunately, but using links in the form of [?table ?id] also entails
+unfortunately, but using links in the form of =[?table ?id]= also entails
 disadvantages and difficulties.
 
 #+begin_src clojure :results silent :exports code
@@ -534,7 +632,7 @@ db
 
 #+end_src
 
-references are always vector and must be treated as such
+references are always =vector= and must be treated as such
 
 #+begin_src clojure :results silent :exports code
 
@@ -547,7 +645,7 @@ references are always vector and must be treated as such
 
 #+end_src
 
-if we try to do a simple join we get nothing :(
+if we try to do a simple join we get nothing =:(=
 
 #+begin_src clojure :results silent :exports code
 
@@ -580,7 +678,7 @@ at the moment my knowledge of meader internals is too limited to make it nicer
 **** caching & matching
 
 =q= allows results caching and re-run queries only if the last transaction changes
-data that may have an impact. editscript diffs are used, which, when converted
+data that may have an impact. [[https://github.com/juji-io/editscript][editscript]] diffs are used, which, when converted
 into datoms, are compared with each query datom. the most pessimistic scenario
 is taken into consideration, because it is better to have false positives than
 false negatives. in other words, it is better to re-run a query unnecessarily
@@ -743,7 +841,7 @@ what effect this has on performance can be found in the [[https://github.com/rib
 
 #+end_src
 
-It is rare for a spa database to contain things that cannot be divided into
+it is rare for a spa database to contain things that cannot be divided into
 tables or assigned categories. so let's create 100k maps for 10 different
 categories
 
@@ -821,6 +919,7 @@ categories
 (def country          (repeatedly random-country))
 (def language         (repeatedly random-language))
 (def marijuana-strain (repeatedly random-marijuana-strain))
+
 (def planet           (repeatedly random-planet))
 
 (def people50k           (shuffle (take 50000 people)))
@@ -875,7 +974,7 @@ categories
 
 ;; result in ms
 [(datascript-add-1 people50k) (doxa-add-1 people50k)]
-;; clj => [1520.5 166.99]
+;; clj => [1277.13 204.93]
 
 #+end_src
 
@@ -923,6 +1022,10 @@ categories
               data100k)))
 
 (def dx100k (dx/create-dx data100k))
+
+#+end_src
+
+#+begin_src clojure :results silent :exports none
 
 (defn datascript-query []
   (enc/qb 1e1
@@ -974,7 +1077,7 @@ categories
       dx100k :fruit/id)))
 
 [(datascript-query) (dx-query) (cached-dx-query) (fast-dx-query) (fast-cached-dx-query)]
-;; clj => [163.76 576.19 0.04 53.31 0.05]
+;; clj => [159.42 531.67 0.05 50.15 0.03]
 #+end_src
 
 **** query by one condition
@@ -982,21 +1085,40 @@ categories
 
 #+begin_src clojure :results silent :exports code
 
+(def db50k
+  (d/db-with (d/empty-db)
+             (mapv
+              (fn [m]
+                (reduce-kv
+                 (fn [acc k v]
+                   (if (= :id (name k))
+                     (assoc acc :db/id v)
+                     (assoc acc k v)))
+                 {}
+                 m))
+              people50k)))
+
+(def dx50k (dx/create-dx people50k))
+
+#+end_src
+
+#+begin_src clojure :results silent :exports code
+
 (defn datascript-q1 []
   (enc/qb 1
     (d/q '[:find ?e
            :where [?e :name "Ivan"]]
-      db100k)))
+      db50k)))
 
 (defn dx-q1 []
   (enc/qb 1
     (dx/q [:find  ?e
            :where [?e :name "Ivan"]]
-      dx100k)))
+      dx50k)))
 
 [(datascript-q1) (dx-q1)]
 ;; cljs => [   9    51]
-;; clj  => [3.56 13.95]
+;; clj  => [5.45 32.09]
 
 #+end_src
 
@@ -1010,19 +1132,18 @@ categories
     (d/q '[:find ?e ?a
            :where [?e :name "Ivan"]
            [?e :age ?a]]
-      db100k)))
+      db50k)))
 
 (defn dx-q2 []
   (enc/qb 1e1
     (dx/q [ :find  [?e ?a]
              :where [?e :name "Ivan"]
             [?e :age ?a]]
-      dx100k)))
+      dx50k)))
 
 [(datascript-q2) (dx-q2)]
-;; cljs => [  242    618]
-;; clj  => [65.51 142.94]
-
+;; cljs => [   242    618]
+;; clj  => [152.96 317.74]
 #+end_src
 
 **** 3
@@ -1035,7 +1156,7 @@ categories
            :where [?e :name "Ivan"]
            [?e :age ?a]
            [?e :sex :male]]
-      db100k)))
+      db50k)))
 
 (defn dx-q3 []
   (enc/qb 1e1
@@ -1043,12 +1164,11 @@ categories
              :where [?e :name "Ivan"]
                      [?e :age ?a]
             [?e :sex :male]]
-      dx100k)))
+      dx50k)))
 
 [(datascript-q3) (dx-q3)]
-;; cljs => [  409    646]
-;; clj  => [94.34 141.06]
-
+;; cljs => [   409    646]
+;; clj  => [133.26 307.05]
 #+end_src
 
 **** 4
@@ -1062,7 +1182,7 @@ categories
            [?e :last-name ?l]
            [?e :age ?a]
            [?e :sex :male]]
-      db100k)))
+      db50k)))
 
 (defn dx-q4 []
   (enc/qb 1e1
@@ -1072,11 +1192,11 @@ categories
             [?e :last-name ?l]
             [?e :age ?a]
             [?e :sex :male]]
-       dx100k))))
+       dx50k))))
 
 [(datascript-q4) (dx-q4)]
 ;; cljs => [  588    681]
-;; clj  => [149.9 142.44]
+;; clj  => [252.49 310.05]
 
 #+end_src
 
@@ -1089,18 +1209,18 @@ categories
     (d/q '[:find ?e ?s
            :where [?e :salary ?s]
            [(> ?s 50000)]]
-      db100k)))
+      db50k)))
 
 (defn dx-qpred1 []
   (enc/qb 1e1
     (dx/q [:find ?e ?s
           :where [?e :salary ?s]
           [(> ?s 50000)]]
-      dx100k)))
+      dx50k)))
 
 [(datascript-qpred1) (dx-qpred1)]
 ;; cljs => [  321    959]
-;; clj  => [93.36 179.29]
+;; clj  => [259.34 384.9]
 
 #+end_src
 
@@ -1120,7 +1240,7 @@ categories
 
 [(datascript-pull1) (dx-pull1)]
 ;; cljs => [   15    8]
-;; clj  => [12.37 2.23]
+;; clj  => [14.43 1.36]
 
 #+end_src
 
