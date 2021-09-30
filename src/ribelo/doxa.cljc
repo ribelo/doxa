@@ -163,22 +163,6 @@
   ([db data          ] (-denormalize db   data 12        0))
   ([db data max-level] (-denormalize db   data max-level 0)))
 
-(comment
-  (let [data (commit {} [:dx/put {:db/id :ivan :name "ivan" :friend [{:db/id 1 :name "petr" :friend [[:db/id :ivan]]}
-                                                                     {:db/id 2 :name "petr"}
-                                                                     {:db/id 3 :name "petr"}
-                                                                     {:db/id 4 :name "petr"}
-                                                                     {:db/id 5 :name "petr"}
-                                                                     {:db/id 6 :name "petr"}
-                                                                     {:db/id 7 :name "petr"}
-                                                                     {:db/id 8 :name "petr"}
-                                                                     {:db/id 9 :name "petr"}
-                                                                     {:db/id 10 :name "petr"}]}])]
-    (denormalize data))
-  ;; => 1362.47
-  )
-
-
 (defn -submit-commit
   "apply transactions to db."
   [db tx]
@@ -341,18 +325,6 @@
     ;; _
     _ (throw (ex-info "invalid commit" {:tx tx}))))
 
-(comment
-  (enc/qb 1e5
-    (-submit-commit {:db/id {:ivan {:db/id :ivan :name "ivan"}}}
-                    [:dx/put [:db/id :ivan] :friend {:db/id :petr :name "petr"}]))
-  ;; => 177.95
-  (enc/qb 1e5
-    (-submit-commit {:db/id {:ivan {:db/id :ivan :name "ivan"}}}
-                    [:dx/put [:db/id :ivan] :friend [{:db/id :petr :name "petr"}
-                                                     {:db/id :smith :name "smith"}]]))
-  ;; => 402.66
-  )
-
 (defn listen!
   "listens for changes in the db. each time changes are made via commit, the
   callback is called with the db. the transaction report is written to the db
@@ -365,15 +337,6 @@
      (swap! (get (meta db_) :listeners (atom {})) assoc k cb)
      (alter-meta! db_ assoc :listeners (atom {k cb})))
    k))
-
-(comment
-  (let [db_ (atom (create-dx))]
-    (alter-meta! db_ assoc :a 1)
-    ;; (listen! db_ #(println :sex))
-    ;; (commit! db_ [[:dx/put [:db/id :ivan] :a 1]])
-    )
-
-  )
 
 (defn unlisten!
   "remove registered listener"
@@ -538,38 +501,6 @@
 
 ;; pull
 
-(comment
-  (def txs
-    [{:db/id     :ivan
-      :name      "Ivan"
-      :last-name "Ivanov"
-      :friend    [[:db/id :petr]]
-      :age       30}
-     {:db/id     :petr
-      :name      "Petr"
-      :last-name "Petrov"
-      :friend    [[:db/id :smith] [:db/id :ivan]]
-      :age       15}
-     {:db/id     :smith
-      :name      "Smith"
-      :last-name "Smith"
-      :friend    [[:db/id :petr]]
-      :age       55}])
-
-  (def conn_ (atom (db-with txs)))
-  )
-
-(comment
-  (enc/qb 1e5
-    (commit! conn_ [[:dx/put [:db/id :ivan] :age (rand-int 100)]])
-    (commit! conn2_ [[:dx/put [:db/id :ivan] :name (rand-int 100)]]))
-  (def diff (:tx (meta @conn2_)))
-  (let [tx (repeat 1000 [:dx/put [:db/id :ivan] :age 8])
-        diff (es/edits->script (vec (repeat 1000 (first diff))))]
-    (enc/qb 1e3
-      (commit @conn_ tx)
-      (es/patch @conn2_ diff))))
-
 (defn- -rev-keyword? [k]
   (let [name' (name k)]
     (and (enc/str-starts-with? name' "_")
@@ -690,33 +621,6 @@
    (enc/cond
      (ident?  id)                (-> (pull* db query id)  vals first)
      (idents? id) (mapv (fn [id'] (-> (pull* db query id') vals first)) id))))
-
-(comment
-
-  (enc/qb 1e5
-    (pull @conn_ [:name {:friend [:name {:friend [:name :age]}]}] [:db/id :ivan]))
-  ;; => 627.52
-
-  (enc/qb 1e5
-    (m/search @conn_
-      {_ {:ivan {:name ?name   :friend (m/scan [_ ?f])}
-          ?f    {:name ?fname  :friend (m/scan [_ ?ff])}
-          ?ff   {:name ?ffname :age ?ffage}}}
-      {:name ?name :friend {:name ?fname :friend {:name ?ffname :age ?ffage}}}))
-  ;; => 620.35
-
-  (enc/qb 1e5
-    (pull @conn_ [:name {:friend [:name]}] [:db/id :ivan]))
-  ;; => 229.91
-
-  (enc/qb 1e5
-    (pull @conn_ [{:friend [:name]}] [:db/id :ivan]))
-  ;; => 187.2
-
-  (enc/qb 1e5
-    (pull @conn_ [:name :age :sex] [:db/id :ivan]))
-  ;; => 150.18
-  )
 
 (defn haul
   ([db]   (denormalize db   12))
@@ -1016,21 +920,6 @@
            (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
            (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] (enc/now-udt)))
          (with-meta ~fr {::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt})))))
-
-(comment
-  (let [del? true kw [:a 1]]
-    ^{::fresh? del?}
-    (q [:find ?e :where [?e :name "ivan"]] (create-dx [] {:with-diff? true})))
-  )
-(m/rewrite
-  #:ribelo.doxa{:cache? [:a 1], :delete? :sex, :fresh? true}
-  #:ribelo.doxa{:cache? true}
-  '[:find ?e :where [?e :name "ivan"]]
-  #:ribelo.doxa{:cache? (m/some ?x)}
-  ?x)
-
-
-
 
 ;; * re-frame
 
