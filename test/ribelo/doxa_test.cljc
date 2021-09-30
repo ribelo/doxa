@@ -553,10 +553,12 @@
 (t/deftest gh-7
   ;; https://github.com/ribelo/doxa/issues/7
   (let [entity-id  "6037b7a5-5a77-48a3-a294-8dba786d8e9d"
-        gql-entity {:__typename "release"
-                    :id         entity-id
-                    :created    "2021-05-10T09:39:28"
-                    :release/id entity-id}
+        gql-entity (with-meta
+                     {:__typename "release"
+                      :id         entity-id
+                      :created    "2021-05-10T09:39:28"
+                      :release/id entity-id}
+                     {::dx/entity-key :release/id})
         db         (dx/commit (dx/create-dx) [[:dx/put gql-entity]])]
     (t/is (= {:__typename "release", :created "2021-05-10T09:39:28"}
              (dx/pull db [:__typename :created] [:release/id entity-id])))))
@@ -860,3 +862,20 @@
     (dx/q* [:find (pull [:*] [?table ?e])
             :where [?table ?e :vehicle/brand "Aston Martin"]]
            bond-db)))
+
+(t/deftest gh-23
+  ;; https://github.com/ribelo/doxa/issues/23
+  (let [db (->>
+             ^{::dx/entity-key :person/id}
+             {:id        "10"
+              :person/id "10"
+              :name      "Enzo"
+              :car
+              ^{::dx/entity-key :automobile/id}
+              {:id            "20"      ; << comment this out and pull works
+               :automobile/id "20"
+               :name          "Audi"}}
+             (vector :dx/put)
+             (dx/commit (dx/create-dx)))]
+    (t/is (= {:name "Enzo", :car {:name "Audi"}}
+             (dx/pull db [:name {:car [:autombile/id :name]}] [:person/id "10"])))))
