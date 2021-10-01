@@ -844,7 +844,46 @@
                   '[:where
                     [(adult? ?age)]
                     [?table ?e :age  ?age]
-                    [?table ?e :name "ivan"]])))))))
+                    [?table ?e :name "ivan"]]))))
+      (t/is (true?
+             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 (dx/-last-tx-match-query?
+                  '[:where
+                    [(adult? ?age)]
+                    [?table ?e :age  ?age]
+                    [?table ?e :name "ivan"]]))))
+      (t/is (true?
+             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 (dx/-last-tx-match-query?
+                  '[:in ?table
+                    :where
+                    [?table ?e :age  ?age]
+                    [?table ?e :name "ivan"]]
+                  :db/id))))
+      (t/is (false?
+             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 (dx/-last-tx-match-query?
+                  '[:in ?table
+                    :where
+                    [?table ?e :age  ?age]
+                    [?table ?e :name "ivan"]]
+                  :person/id))))
+      (t/is (true?
+             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 (dx/-last-tx-match-query?
+                  '[:in [?table]
+                    :where
+                    [?table ?e :age  ?age]
+                    [?table ?e :name "ivan"]]
+                  [:db/id :person/id]))))
+      (t/is (false?
+             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 (dx/-last-tx-match-query?
+                  '[:in [?table]
+                    :where
+                    [?table ?e :age  ?age]
+                    [?table ?e :name "ivan"]]
+                  [:person/id :car/id])))))))
 
 (t/deftest cached-query
   (let [conn_ (atom (dx/create-dx [] {::dx/with-diff? true}))]
@@ -852,7 +891,7 @@
     (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
     (t/is (false? (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
     (dx/commit! conn_ [:dx/put [:db/id 2] {:name "ivan"}])
-    (t/is (true? (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))))
+    (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))))
 
 (comment
   (enc/qb 1e4
