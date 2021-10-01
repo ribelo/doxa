@@ -897,7 +897,7 @@
   `(let [t0# (enc/now-udt*)
          r#  (do ~@body)
          t1# (enc/now-udt*)]
-     (enc/catching (vary-meta r# assoc ::execution-time (- t1# t0#)) _ r#)))
+     (enc/catching (vary-meta r# assoc ::execution-time (- t1# t0#)) ~'_ r#)))
 
 (defmacro q [q' db & args]
   (let [env    (meta &form)
@@ -906,29 +906,29 @@
         fresh? `(boolean (::fresh? ~env))
         del?   `(boolean (::delete? ~env))
         cache_ `(::cache_ ~m)
-        cr      (gensym 'cached-result_)
-        fr      (gensym 'fresh-result_)
-        ltt     (gensym 'last-transaction-timestamp_)
-        lqt     (gensym 'last-query-timestamp_)]
+        cr     (gensym 'cached-result_)
+        fr     (gensym 'fresh-result_)
+        ltt    (gensym 'last-transaction-timestamp_)
+        lqt    (gensym 'last-query-timestamp_)]
     `(enc/cond
        ~del?
        (delete-cached-results! ~db ~kw)
        ;;
-       :let [~cr  (with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
+       :let [~cr  ~(with-time-ms `(some-> ~cache_ deref (get-in [~kw ::cached-results])))
              ~lqt (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
              ~ltt (::last-transaction-timestamp ~m)]
        (and (some? ~kw)
             (some? ~cr)
             (or (> ~lqt ~ltt)
                 (not (-last-tx-match-query? ~db (quote ~q')))))
-       (enc/catching (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt) _ ~cr)
+       (enc/catching (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt) ~'_ ~cr)
        ;;
        :else
        (let [~fr (with-time-ms (execute-q ~q' ~db ~@args))]
          (when (and ~kw ~cache_)
            (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
            (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] (enc/now-udt)))
-         (enc/catching (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt) _ ~fr)))))
+         (enc/catching (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt) ~'_ ~fr)))))
 
 ;; * re-frame
 
