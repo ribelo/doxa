@@ -897,7 +897,7 @@
   `(let [t0# (enc/now-udt*)
          r#  (do ~@body)
          t1# (enc/now-udt*)]
-     (when r# (vary-meta r# assoc ::execution-time (- t1# t0#)))))
+     (enc/catching (vary-meta r# assoc ::execution-time (- t1# t0#)) _ r#)))
 
 (defmacro q [q' db & args]
   (let [env    (meta &form)
@@ -921,14 +921,14 @@
             (some? ~cr)
             (or (> ~lqt ~ltt)
                 (not (-last-tx-match-query? ~db (quote ~q')))))
-       (when ~cr (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt))
+       (enc/catching (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt) _ ~cr)
        ;;
        :else
        (let [~fr (with-time-ms (execute-q ~q' ~db ~@args))]
          (when (and ~kw ~cache_)
            (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
            (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] (enc/now-udt)))
-         (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)))))
+         (enc/catching (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt) _ ~fr)))))
 
 ;; * re-frame
 
