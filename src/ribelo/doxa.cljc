@@ -685,7 +685,7 @@
     {:in   [(m/pred symbol? !xs) (m/pred vector? !zs) ..?n]
      :args [!ys !js ..?n]}
     [~(enc/into-all
-      {} (map vector !xs !ys) (build-args-map {:in !zs :args !js}))]
+       {} (map vector !xs !ys) (build-args-map {:in !zs :args !js}))]
     ;;
     {:in   [[(m/pred symbol? !xs)] ...]
      :args [!ys ...]}
@@ -693,6 +693,50 @@
     {:in [[[!xs ...]]]
      :args [[!ys ...]]}
     ~(into [] (map #(build-args-map {:in !xs :args [%]})) !ys)))
+
+(defn rewrite-where [where args-map]
+  (m/rewrite {:where where
+              :args  args-map}
+    {:where [!datoms ...]
+     :args  ?args}
+    (m/cata [[:datom . (m/cata {:datom !datoms :args ?args})] ...])
+    {:datom [!xs ...]
+     :args  ?args}
+    (m/cata [(m/cata {:x !xs :args ?args}) ...])
+    {:x ?x :args {?x ?v}}
+    ?v
+    {:x ?x :args (m/not {?x ?v})}
+    ?x
+    (m/with [%2 [(m/or [:datom . [[_ & :as !datoms] ...]] [:datom . [_ & :as !datoms] ...]) ...]]
+      %2)
+    [!datoms ...]
+    [?table ?e ?attr [:or [!vals ...]]]
+    [[?table ?e ?attr !vals] ...]
+    [?table ?e [:or [!attrs ...]] ?val]
+    [[?table ?e !attrs ?val] ...]
+    [?table [:or [!es ...]] ?attr ?val]
+    [[?table !es ?attr ?val] ...]
+    [[:or [!tables ...]] ?e ?attr ?val]
+    [[!tables ?e ?attr ?val] ...]
+    [?table ?e ?attr ?vals :as ?datom]
+    ?datom
+    [?e ?attr [:or [!vals ...]]]
+    [[?e ?attr !vals] ...]
+    [?e [:or [!attrs ...]] ?val]
+    [[?e !attrs ?val] ...]
+    [[:or [!es ...]] ?attr ?val]
+    [[!es ?attr ?val] ...]
+    [?e ?attr ?val :as ?datom]
+    ?datom
+    [?e [:or [!attrs ...]]]
+    [[?e !attrs] ...]
+    [[:or [!es ...]] ?attr]
+    [[!es ?attr] ...]
+    [?e ?att :as ?datom]
+    ?datom
+    [(?pred & _) :as ?datom]
+    ?datom
+    ?x ?x))
 
 (defn qsymbol? [x]
   (and (symbol? x) (enc/str-starts-with? (name x) "?")))
@@ -730,7 +774,6 @@
     ~(apply list ?f !xs)
     ;; else
     ?x ?x))
-
 
 (defn build-meander-query [m]
   (m/rewrite m
@@ -883,8 +926,10 @@
     (m/scan (m/app (partial -last-tx-match-datom? db) (m/or true ::non-applicable))) true
     _ false))
 
-(defn -last-tx-match-query? [db query]
-  (-last-tx-match-where? db (-> query parse-query :where)))
+(defn -last-tx-match-query? [db query & args]
+  (let [parsed-query (apply parse-query query args)
+        args-map     (build-args-map parsed-query)]
+    (-last-tx-match-where? db (rewrite-where (parsed-query :where) args-map))))
 
 (defn delete-cached-results! [db kw]
   (when-let [subs (some-> (meta db) :subs)]
@@ -920,7 +965,7 @@
        (and (some? ~kw)
             (some? ~cr)
             (or (> ~lqt ~ltt)
-                (not (-last-tx-match-query? ~db (quote ~q')))))
+                (not (-last-tx-match-query? ~db (quote ~q') ~args))))
        (enc/catching (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt) ~'_ ~cr)
        ;;
        :else
