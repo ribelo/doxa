@@ -890,6 +890,15 @@
   (when-let [subs (some-> (meta db) :subs)]
     (enc/do-true (swap! subs dissoc kw))))
 
+(defmacro with-time-ms
+  "macro establishes the execution time of the body and returns a result with
+  attached metadata, with key `execution-time` in milliseconds"
+  [& body]
+  `(let [t0# (enc/now-udt*)
+         r#  (do ~@body)
+         t1# (enc/now-udt*)]
+     (when r# (vary-meta r# assoc ::execution-time (- t1# t0#)))))
+
 (defmacro q [q' db & args]
   (let [env    (meta &form)
         kw     `(m/rewrite ~env {::cache? true} [(quote ~q') ~args] {::cache (m/some ~'?x)} [~'?x ~args])
@@ -905,21 +914,21 @@
        ~del?
        (delete-cached-results! ~db ~kw)
        ;;
-       :let [~cr  (some-> ~cache_ deref (get-in [~kw ::cached-results]))
+       :let [~cr  (with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
              ~lqt (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
              ~ltt (::last-transaction-timestamp ~m)]
        (and (some? ~kw)
             (some? ~cr)
             (or (> ~lqt ~ltt)
                 (not (-last-tx-match-query? ~db (quote ~q')))))
-       (with-meta ~cr {::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt})
+       (when ~cr (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt))
        ;;
        :else
-       (let [~fr (execute-q ~q' ~db ~@args)]
+       (let [~fr (with-time-ms (execute-q ~q' ~db ~@args))]
          (when (and ~kw ~cache_)
            (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
            (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] (enc/now-udt)))
-         (with-meta ~fr {::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt})))))
+         (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)))))
 
 ;; * re-frame
 
