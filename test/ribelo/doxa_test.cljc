@@ -879,3 +879,28 @@
              (dx/commit (dx/create-dx)))]
     (t/is (= {:name "Enzo", :car {:name "Audi"}}
              (dx/pull db [:name {:car [:autombile/id :name]}] [:person/id "10"])))))
+
+(t/deftest gh-24 []
+  (let [db1 (->> [{:id   "10"
+                   :name "Lionel"}
+                  {:id   "20"
+                   :name "Christiano"}]
+                 (vector :dx/put)
+                 (dx/commit (dx/create-dx [] {::dx/with-diff? true}))) ; caching only works if differences are stored during transactions
+        person (fn [db]
+                 (->
+                   ^{::dx/cache ::person}
+                   (dx/q [:find ?name .
+                          :where
+                          [?e :id "20"]
+                          [?e :name ?name]]
+                     db)))
+        _ (Thread/sleep 100)
+        r1 (person db1)
+        db2 (->> [{:id   "20"
+                   :name "Chris"}]
+                 (vector :dx/put)
+                 (dx/commit db1))
+        r2 (person db2)]
+    (t/is (= ["Christiano"] r1))
+    (t/is (= ["Chris"] r2))))
