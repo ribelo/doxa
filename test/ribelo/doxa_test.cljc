@@ -883,7 +883,25 @@
                     :where
                     [?table ?e :age  ?age]
                     [?table ?e :name "ivan"]]
-                  [:person/id :car/id])))))))
+                  [:person/id :car/id]))))
+      (t/is (true?
+             (let [tables [:db/id :person/id]]
+               (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                   (dx/-last-tx-match-query?
+                    '[:in [?table]
+                      :where
+                      [?table ?e :age  ?age]
+                      [?table ?e :name "ivan"]]
+                    tables)))))
+      (t/is (false?
+             (let [tables [:person/id :car/id]]
+               (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                   (dx/-last-tx-match-query?
+                    '[:in [?table]
+                      :where
+                      [?table ?e :age  ?age]
+                      [?table ?e :name "ivan"]]
+                    tables))))))))
 
 (t/deftest cached-query
   (let [conn_ (atom (dx/create-dx [] {::dx/with-diff? true}))]
