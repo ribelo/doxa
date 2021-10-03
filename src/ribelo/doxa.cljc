@@ -3,6 +3,7 @@
   #?(:cljs (:require-macros [ribelo.doxa :refer [q with-dx with-dx! -iter]]))
   (:require
    [meander.epsilon :as m]
+   [meander.strategy.epsilon :as m*]
    [taoensso.encore :as enc]
    [taoensso.timbre :as timbre]
    [editscript.core :as es]
@@ -673,8 +674,8 @@
 
     [] {:args ~(or (vec args) [])}))
 
-(defn build-args-map [{:keys [in args] :as q}]
-  (m/rewrite q
+(defn build-args-map [{:keys [in args] :as pq}]
+  (m/rewrite pq
     {:in nil}
     {}
     ;;
@@ -694,6 +695,27 @@
      :args [[!ys ...]]}
     ~(into [] (map #(build-args-map {:in !xs :args [%]})) !ys)))
 
+(defn qsymbol? [x]
+  (and (symbol? x) (enc/str-starts-with? (name x) "?")))
+
+(defn rewrite-arg [arg]
+  (m/rewrite arg
+    (m/pred qsymbol? ?x)
+    (`quote ?x)
+    (m/symbol _ "_")
+    (`quote ~'_)
+    ((m/symbol _ "unquote") ?x)
+    ?x
+    ((m/symbol _ "quote" & _ :as ?x))
+    ?x
+    (?fn . (m/cata !xs) ...)
+    (?fn . !xs ...)
+    ?x ?x))
+
+(def rewrite-all-args
+  (m*/bottom-up
+   (m*/attempt rewrite-arg)))
+
 (defn rewrite-where [where args-map]
   (m/rewrite {:where where
               :args  args-map}
@@ -707,8 +729,7 @@
     ?v
     {:x ?x :args (m/not {?x ?v})}
     ?x
-    (m/with [%2 [(m/or [:datom . [[_ & :as !datoms] ...]] [:datom . [_ & :as !datoms] ...]) ...]]
-      %2)
+    [(m/or [:datom . [[_ & :as !datoms] ...]] [:datom . [_ & :as !datoms] ...]) ...]
     [!datoms ...]
     [?table ?e ?attr [:or [!vals ...]]]
     [[?table ?e ?attr !vals] ...]
@@ -718,28 +739,25 @@
     [[?table !es ?attr ?val] ...]
     [[:or [!tables ...]] ?e ?attr ?val]
     [[!tables ?e ?attr ?val] ...]
-    [?table ?e ?attr ?vals :as ?datom]
-    ?datom
+    [?table ?e ?attr ?vals]
+    [?table ?e ?attr ?vals]
     [?e ?attr [:or [!vals ...]]]
     [[?e ?attr !vals] ...]
     [?e [:or [!attrs ...]] ?val]
     [[?e !attrs ?val] ...]
     [[:or [!es ...]] ?attr ?val]
     [[!es ?attr ?val] ...]
-    [?e ?attr ?val :as ?datom]
-    ?datom
+    [?e ?attr ?val]
+    [?e ?attr ?val]
     [?e [:or [!attrs ...]]]
     [[?e !attrs] ...]
     [[:or [!es ...]] ?attr]
     [[!es ?attr] ...]
-    [?e ?att :as ?datom]
-    ?datom
-    [(?pred & _) :as ?datom]
-    ?datom
+    [?e ?attr]
+    [?e ?attr]
+    [(?pred . !xs ...)]
+    [(?pred . !xs ...)]
     ?x ?x))
-
-(defn qsymbol? [x]
-  (and (symbol? x) (enc/str-starts-with? (name x) "?")))
 
 (defn- some-value
   ([] `(m/some))
@@ -857,49 +875,68 @@
 (defn comp-some [& fns]
   (apply comp (filter identity fns)))
 
-(defmacro execute-q [q' db & args]
-  (let [{:keys [find first? mapcat? pull keys] :as pq} (apply parse-query q' args)]
-    `(let [data# ~(with-meta `(m/rewrites ~db
-                                ~(query pq) ~find)
-                    (merge {::m/dangerous true} &env (meta &form)))]
-       (into ~(if-not (and (seq pull) first?) [] {})
-             (comp-some
-              ~(when (seq pull)
-                 `(map (fn [elem#]
-                         (let [q#            '~(:q pull)
-                               [?table# ?e#] '~(:ident pull)
-                               args-map#     (zipmap '~find elem#)
-                               table#        (args-map# ?table#)
-                               e#            (args-map# ?e#)]
-                           (pull ~db q# [table# e#])))))
-              ~(when first? `(take 1))
-              ~(when mapcat? `(mapcat identity))
-              ~(when keys `(map (fn [m#] (zipmap '~keys m#)))))
-             data#))))
+(defmacro -execute-q [{:keys [find first? mapcat? pull keys] :as pq} db]
+  `(let [data# (m/rewrites ~db
+                ~(datalog->meander pq) ~find)]
+    (into ~(if-not (and (seq pull) first?) [] {})
+          (comp-some
+           ~(when (seq pull)
+              `(map (fn [elem#]
+                      (let [q#            '~(:q pull)
+                            [?table# ?e#] '~(:ident pull)
+                            args-map#     (zipmap '~find elem#)
+                            table#        (args-map# ?table#)
+                            e#            (args-map# ?e#)]
+                        (pull ~db q# [table# e#])))))
+           ~(when first? `(take 1))
+           ~(when mapcat? `(mapcat identity))
+           ~(when keys `(map (fn [m#] (zipmap '~keys m#)))))
+          data#)))
 
-(defn -tx->datom [tx]
+(defn -tx->datoms [tx]
   (m/rewrite tx
-    [[?table] :+ {?eid {?a ?v}}]
-    [?table ?eid ?a ?v]
-    [[?table] :r {?eid {?a ?v}}]
-    [?table ?eid ?a nil]
-    [[?table ?eid] :+ {?a ?v}]
-    [?table ?eid ?a ?v]
-    [[?table ?eid] :r {?a ?v}]
-    [?table ?eid ?a nil]
+    [[?table] :+ (m/map-of !eids !maps)]
+    (m/cata [(m/cata [:+ ?table !eids !maps]) ...])
+    ;;
+    [:+ ?table ?eid (m/map-of !attrs !vs)]
+    (m/cata [[?table ?eid !attrs !vs] ...])
+    ;;
+    [[?table] :r (m/map-of !eids !maps)]
+    (m/cata [(m/cata [:r ?table !eids !maps]) ...])
+    ;;
+    [:r ?table ?eid (m/map-of !attrs _)]
+    (m/cata [[?table ?eid !attrs nil] ...])
+    ;;
+    [[?table ?eid] :+ (m/map-of !attrs !vs)]
+    (m/cata [[?table ?eid !attrs !vs] ...])
+    ;;
+    [[?table ?eid] :r (m/map-of !attrs _)]
+    (m/cata [[?table ?eid !attrs nil] ...])
+    ;;
     [[?table ?eid ?a] :+ ?v]
-    [?table ?eid ?a ?v]
+    [[?table ?eid ?a ?v]]
+    ;;
     [[?table ?eid ?a] :r ?v]
-    [?table ?eid ?a nil]
+    [[?table ?eid ?a nil]]
+    ;;
     [[?table] :-]
-    [?table nil nil nil]
+    [[?table nil nil nil]]
+    ;;
     [[?table ?eid] :-]
-    [?table ?eid nil nil]
+    [[?table ?eid nil nil]]
+    ;;
     [[?table ?eid ?a] :-]
-    [?table ?eid ?a nil]))
+    [[?table ?eid ?a nil]]
+    ;;
+    (m/with [%1 [_ _ _ _ :as !datoms]
+             %2 (m/or [%2 ...] [%1 ...] %1)]
+      %2)
+    [!datoms ...]
+    ?x ?x
+    _ ~(throw (ex-info "transaction unsupported" {:tx tx}))))
 
 (defn -match-two-datoms [d1 d2]
-  (m/rewrite [d1 d2]
+  (m/rewrite [d2 d1]                    ; TODO reversed args
     [(m/or [?table ?eid ?a ?v] (m/and [?eid ?a ?v] (m/let [?table '_])))
      (m/or
       [(m/or ?table (m/pred symbol?))
@@ -916,20 +953,30 @@
     false))
 
 (defn -tx-match-datom? [tx datom]
-  (-match-two-datoms (ribelo.doxa/-tx->datom tx) datom))
+  (m/rewrite (ribelo.doxa/-tx->datoms tx)
+    (m/scan (m/pred (partial -match-two-datoms datom))) true
+    _ false))
 
 (defn -last-tx-match-datom? [db datom]
   (-tx-match-datom? (-last-tx db) datom))
+
+(defn -last-tx-match-where?* [db datoms]
+  `(m/rewrite ~datoms
+    (m/scan (m/app (partial -last-tx-match-datom? ~db) (m/or true ::non-applicable))) true
+     ~'_ false))
 
 (defn -last-tx-match-where? [db datoms]
   (m/rewrite datoms
     (m/scan (m/app (partial -last-tx-match-datom? db) (m/or true ::non-applicable))) true
     _ false))
 
-(defn -last-tx-match-query? [db query & args]
-  (let [parsed-query (apply parse-query query args)
-        args-map     (build-args-map parsed-query)]
-    (-last-tx-match-where? db (rewrite-where (parsed-query :where) args-map))))
+(defmacro -last-tx-match-query? [db pq]
+  (let [args-map     `(build-args-map ~pq)]
+    `(-last-tx-match-where?* ~db (rewrite-all-args (rewrite-where (:where ~pq) ~args-map)))))
+
+(defn -last-tx-match-raw-query? [db pq]
+  (let [args-map     (build-args-map pq)]
+    (-last-tx-match-where? db (rewrite-where (:where pq) args-map))))
 
 (defn delete-cached-results! [db kw]
   (when-let [subs (some-> (meta db) :subs)]
@@ -946,7 +993,7 @@
 
 (defmacro q [q' db & args]
   (let [env    (meta &form)
-        kw     `(m/rewrite ~env {::cache? true} [(quote ~q') ~args] {::cache (m/some ~'?x)} [~'?x ~args])
+        kw     `(m/rewrite ~env {::cache? true} [(quote ~q') (quote ~args)] {::cache (m/some ~'?x)} ~'?x)
         m      `(meta ~db)
         fresh? `(boolean (::fresh? ~env))
         del?   `(boolean (::delete? ~env))
@@ -954,22 +1001,23 @@
         cr     (gensym 'cached-result_)
         fr     (gensym 'fresh-result_)
         ltt    (gensym 'last-transaction-timestamp_)
-        lqt    (gensym 'last-query-timestamp_)]
+        lqt    (gensym 'last-query-timestamp_)
+        pq     (apply parse-query q' args)]
     `(enc/cond
        ~del?
        (delete-cached-results! ~db ~kw)
        ;;
-       :let [~cr  ~(with-time-ms `(some-> ~cache_ deref (get-in [~kw ::cached-results])))
+       :let [~cr  (with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
              ~lqt (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
              ~ltt (::last-transaction-timestamp ~m)]
        (and (some? ~kw)
             (some? ~cr)
             (or (> ~lqt ~ltt)
-                (not (-last-tx-match-query? ~db (quote ~q') ~args))))
+                (not ~(-last-tx-match-query? db pq))))
        (enc/catching (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt) ~'_ ~cr)
        ;;
        :else
-       (let [~fr (with-time-ms (execute-q ~q' ~db ~@args))]
+       (let [~fr (with-time-ms (-execute-q ~pq ~db))]
          (when (and ~kw ~cache_)
            (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
            (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] (enc/now-udt)))
