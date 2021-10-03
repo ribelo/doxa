@@ -709,8 +709,7 @@
     ((m/symbol _ "quote" & _ :as ?x))
     ?x
     (?fn . (m/cata !xs) ...)
-    #?(:clj  (?f . !xs ...)
-       :cljs (`quote ~'_))
+    (`quote ~'_)
     ?x ?x))
 
 (def rewrite-all-args
