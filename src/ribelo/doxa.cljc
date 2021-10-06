@@ -1000,27 +1000,42 @@
         kw     (gensym 'kw_)
         m      `(meta ~db)
         fresh? `(boolean (::fresh? ~env))
+        ttl    `(::ttl ~m)
         cache_ `(::cache_ ~m)
         cr     (gensym 'cached-result_)
         fr     (gensym 'fresh-result_)
         ltt    (gensym 'last-transaction-timestamp_)
         lqt    (gensym 'last-query-timestamp_)
-        pq     (apply parse-query q' args)]
-    `(let [~kw  (m/rewrite ~env {::cache? true} [(quote ~q') (quote ~args)] {::cache (m/some ~'?x)} ~'?x)
-           ~cr  (with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
-           ~lqt (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
-           ~ltt (::last-transaction-timestamp ~m)]
-       (if (and (some? ~kw)
-                (some? ~cr)
-                (or (> ~lqt ~ltt)
+        pq     (apply parse-query q' args)
+        inst   (gensym 'instant_)]
+    `(let [~kw   (m/rewrite ~env {::cache? true} [(quote ~q') (quote ~args)] {::cache (m/some ~'?x)} ~'?x)
+           ~cr   (with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
+           ~lqt  (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
+           ~ltt  (::last-transaction-timestamp ~m)
+           ~inst (enc/now-udt)]
+       (if (and (some? ~kw) (some? ~cr)
+                (or (not ~ttl) (> ~ttl (- ~inst ~lqt)))
+                (or (and ~lqt (> ~lqt ~ltt))
                     (not ~(-last-tx-match-query? db pq))))
          (if (instance? #?(:clj clojure.lang.IMeta) ~cr)
            (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
            ~cr)
          (let [~fr (with-time-ms (-execute-q ~pq ~db))]
            (when (and ~kw ~cache_)
+             (when (enc/-gc-now?)
+               (swap! ~cache_
+                 (fn [m#]
+                   (persistent!
+                    (reduce-kv
+                     (fn [acc# k# v#]
+                       (let [lqt# (get-in v# ::last-query-timestamp)]
+                         (if-not (> (- ~inst lqt#) ~ttl)
+                           (assoc! acc# k# v#)
+                           acc#)))
+                     (transient {})
+                     m#)))))
              (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
-             (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] (enc/now-udt)))
+             (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] ~inst))
            (if (instance? #?(:clj clojure.lang.IMeta) ~fr)
              (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
              ~fr))))))
