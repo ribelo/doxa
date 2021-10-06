@@ -13,8 +13,7 @@
    :exec-fn    cognitect.test-runner.api/test}
   :build
   {:extra-paths ["build"]
-   :extra-deps {io.github.clojure/tools.build {:git/tag "v0.1.9" :git/sha "6736c83"}
-                slipset/deps-deploy {:mvn/version "RELEASE"}}
+   :extra-deps {io.github.clojure/tools.build {:git/tag "v0.1.9" :git/sha "6736c83"}}
    :exec-fn build/jar}
   :deploy
   {:extra-paths ["build"]

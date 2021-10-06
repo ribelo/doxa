@@ -685,8 +685,7 @@
     ;;
     {:in   [(m/pred symbol? !xs) (m/pred vector? !zs) ..?n]
      :args [!ys !js ..?n]}
-    [~(enc/into-all
-       {} (map vector !xs !ys) (build-args-map {:in !zs :args !js}))]
+    [~(enc/into-all {} (map vector !xs !ys) (build-args-map {:in !zs :args !js}))]
     ;;
     {:in   [[(m/pred symbol? !xs)] ...]
      :args [!ys ...]}
@@ -716,7 +715,7 @@
   (m*/bottom-up
    (m*/attempt rewrite-arg)))
 
-(defn rewrite-where [where args-map]
+(defn simplify-where [where args-map]
   (m/rewrite {:where where
               :args  args-map}
     {:where [!datoms ...]
@@ -876,22 +875,24 @@
   (apply comp (filter identity fns)))
 
 (defmacro -execute-q [{:keys [find first? mapcat? pull keys] :as pq} db]
-  `(let [data# (m/rewrites ~db
-                ~(datalog->meander pq) ~find)]
-    (into ~(if-not (and (seq pull) first?) [] {})
-          (comp-some
-           ~(when (seq pull)
-              `(map (fn [elem#]
-                      (let [q#            '~(:q pull)
-                            [?table# ?e#] '~(:ident pull)
-                            args-map#     (zipmap '~find elem#)
-                            table#        (args-map# ?table#)
-                            e#            (args-map# ?e#)]
-                        (pull ~db q# [table# e#])))))
-           ~(when first? `(take 1))
-           ~(when mapcat? `(mapcat identity))
-           ~(when keys `(map (fn [m#] (zipmap '~keys m#)))))
-          data#)))
+  (let [r (gensym 'meander-result_)]
+    `(let [~r (m/rewrites ~db
+                   ~(datalog->meander pq) ~find)]
+       (into ~(if-not (and (seq pull) first?) [] {})
+             (comp-some
+              ~(when (seq pull)
+                 `(map (fn [elem#]
+                         (let [q#            '~(:q pull)
+                               pull-table#   (nth '~(pull :ident) 0)
+                               pull-eid#     (nth '~(pull :ident) 1)
+                               args-map#     (zipmap '~find elem#)
+                               table#        (args-map# pull-table#)
+                               e#            (args-map# pull-eid#)]
+                           (pull ~db q# [table# e#])))))
+              ~(when first? `(take 1))
+              ~(when mapcat? `(mapcat identity))
+              ~(when keys `(map (fn [m#] (zipmap '~keys m#)))))
+             ~r))))
 
 (defn -tx->datoms [tx]
   (m/rewrite tx
@@ -970,58 +971,59 @@
     (m/scan (m/app (partial -last-tx-match-datom? db) (m/or true ::non-applicable))) true
     _ false))
 
-(defmacro -last-tx-match-query? [db pq]
-  (let [args-map     `(build-args-map ~pq)]
-    `(-last-tx-match-where?* ~db (rewrite-all-args (rewrite-where (:where ~pq) ~args-map)))))
+(defn -last-tx-match-query? [db pq]
+  (let [args-map     (build-args-map pq)]
+    (-last-tx-match-where?* db (rewrite-all-args (simplify-where (:where pq) args-map)))))
 
 (defn -last-tx-match-raw-query? [db pq]
   (let [args-map     (build-args-map pq)]
-    (-last-tx-match-where? db (rewrite-where (:where pq) args-map))))
+    (-last-tx-match-where? db (simplify-where (:where pq) args-map))))
 
 (defn delete-cached-results! [db kw]
-  (when-let [subs (some-> (meta db) :subs)]
+  (when-let [subs (some-> (meta db) ::cache_)]
     (enc/do-true (swap! subs dissoc kw))))
 
 (defmacro with-time-ms
   "macro establishes the execution time of the body and returns a result with
   attached metadata, with key `execution-time` in milliseconds"
   [& body]
-  `(let [t0# (enc/now-udt*)
-         r#  (do ~@body)
-         t1# (enc/now-udt*)]
-     (enc/catching (vary-meta r# assoc ::execution-time (- t1# t0#)) ~'_ r#)))
+  (let [body-result (gensym 'body-result_)]
+    `(let [t0#          (enc/now-udt*)
+           ~body-result (do ~@body)
+           t1#          (enc/now-udt*)]
+       (if (instance? #?(:clj clojure.lang.IMeta :cljs cljs.lang.IMeta) ~body-result)
+         (vary-meta ~body-result assoc ::execution-time (- t1# t0#))
+         ~body-result))))
 
 (defmacro q [q' db & args]
   (let [env    (meta &form)
-        kw     `(m/rewrite ~env {::cache? true} [(quote ~q') (quote ~args)] {::cache (m/some ~'?x)} ~'?x)
+        kw     (gensym 'kw_)
         m      `(meta ~db)
         fresh? `(boolean (::fresh? ~env))
-        del?   `(boolean (::delete? ~env))
         cache_ `(::cache_ ~m)
         cr     (gensym 'cached-result_)
         fr     (gensym 'fresh-result_)
         ltt    (gensym 'last-transaction-timestamp_)
         lqt    (gensym 'last-query-timestamp_)
         pq     (apply parse-query q' args)]
-    `(enc/cond
-       ~del?
-       (delete-cached-results! ~db ~kw)
-       ;;
-       :let [~cr  (with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
-             ~lqt (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
-             ~ltt (::last-transaction-timestamp ~m)]
-       (and (some? ~kw)
-            (some? ~cr)
-            (or (> ~lqt ~ltt)
-                (not ~(-last-tx-match-query? db pq))))
-       (enc/catching (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt) ~'_ ~cr)
-       ;;
-       :else
-       (let [~fr (with-time-ms (-execute-q ~pq ~db))]
-         (when (and ~kw ~cache_)
-           (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
-           (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] (enc/now-udt)))
-         (enc/catching (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt) ~'_ ~fr)))))
+    `(let [~kw  (m/rewrite ~env {::cache? true} [(quote ~q') (quote ~args)] {::cache (m/some ~'?x)} ~'?x)
+           ~cr  (with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
+           ~lqt (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
+           ~ltt (::last-transaction-timestamp ~m)]
+       (if (and (some? ~kw)
+                (some? ~cr)
+                (or (> ~lqt ~ltt)
+                    (not ~(-last-tx-match-query? db pq))))
+         (if (instance? #?(:clj clojure.lang.IMeta) ~cr)
+           (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
+           ~cr)
+         (let [~fr (with-time-ms (-execute-q ~pq ~db))]
+           (when (and ~kw ~cache_)
+             (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
+             (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] (enc/now-udt)))
+           (if (instance? #?(:clj clojure.lang.IMeta) ~fr)
+             (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
+             ~fr))))))
 
 ;; * re-frame
 
