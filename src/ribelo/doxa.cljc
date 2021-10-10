@@ -996,20 +996,23 @@
          ~body-result))))
 
 (defmacro q [q' db & args]
-  (let [env    (meta &form)
-        kw     (gensym 'kw_)
-        m      `(meta ~db)
-        fresh? `(boolean (::fresh? ~env))
-        ttl    `(::ttl ~m)
-        cache_ `(::cache_ ~m)
-        cr     (gensym 'cached-result_)
-        fr     (gensym 'fresh-result_)
-        ltt    (gensym 'last-transaction-timestamp_)
-        lqt    (gensym 'last-query-timestamp_)
-        pq     (apply parse-query q' args)
-        inst   (gensym 'instant_)]
-    `(let [~kw   (m/rewrite ~env {::cache? true} [(quote ~q') (quote ~args)] {::cache (m/some ~'?x)} ~'?x)
-           ~cr   (with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
+  (let [env      (meta &form)
+        kw       (m/rewrite env {::cache? true} [(`quote ~q') (`quote ~args)] {::cache (m/some ?x)} ?x)
+        m        `(meta ~db)
+        fresh?   `(boolean (::fresh? ~env))
+        ttl      `(::ttl ~m)
+        cache_   `(::cache_ ~m)
+        measure? `(::measure? ~m)
+        cr       (gensym 'cached-result_)
+        fr       (gensym 'fresh-result_)
+        ltt      (gensym 'last-transaction-timestamp_)
+        lqt      (gensym 'last-query-timestamp_)
+        pq       (apply parse-query q' args)
+        inst     (gensym 'instant_)]
+    `(let [~'kw   ~kw
+           ~cr   ~(if measure?
+                    `(with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
+                    `(some-> ~cache_ deref (get-in [~kw ::cached-results])))
            ~lqt  (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
            ~ltt  (::last-transaction-timestamp ~m)
            ~inst (enc/now-udt)]
@@ -1020,7 +1023,7 @@
          (if (instance? #?(:clj clojure.lang.IMeta) ~cr)
            (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
            ~cr)
-         (let [~fr (with-time-ms (-execute-q ~pq ~db))]
+         (let [~fr ~(if measure? `(with-time-ms (-execute-q ~pq ~db)) `(-execute-q ~pq ~db))]
            (when (and ~kw ~cache_)
              (when (enc/-gc-now?)
                (swap! ~cache_
