@@ -874,10 +874,10 @@
 (defn comp-some [& fns]
   (apply comp (filter identity fns)))
 
-(defmacro -execute-q [{:keys [find first? mapcat? pull keys] :as pq} db]
+(defmacro -execute-q [{:keys [find first? mapcat? pull keys limit xf] :as pq} db]
   (let [r (gensym 'meander-result_)]
     `(let [~r (m/rewrites ~db
-                   ~(datalog->meander pq) ~find)]
+                ~(datalog->meander pq) ~find)]
        (into ~(if-not (and (seq pull) first?) [] {})
              (comp-some
               ~(when (seq pull)
@@ -889,9 +889,11 @@
                                table#        (args-map# pull-table#)
                                e#            (args-map# pull-eid#)]
                            (pull ~db q# [table# e#])))))
-              ~(when first? `(take 1))
+              ~(when first?  `(take 1))
               ~(when mapcat? `(mapcat identity))
-              ~(when keys `(map (fn [m#] (zipmap '~keys m#)))))
+              ~(when keys    `(map (fn [m#] (zipmap '~keys m#))))
+              ~(when limit   `(take ~(first limit)))
+              ~(when xf      (first xf)))
              ~r))))
 
 (defn -tx->datoms [tx]
@@ -1009,8 +1011,7 @@
         lqt      (gensym 'last-query-timestamp_)
         pq       (apply parse-query q' args)
         inst     (gensym 'instant_)]
-    `(let [~'kw   ~kw
-           ~cr   ~(if measure?
+    `(let [~cr   ~(if measure?
                     `(with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
                     `(some-> ~cache_ deref (get-in [~kw ::cached-results])))
            ~lqt  (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
