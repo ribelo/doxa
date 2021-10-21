@@ -413,7 +413,27 @@
                {_ {?e1 {:name "Ivan"
                         :friend (m/scan [_ ?f])}
                    ?f  {:name (m/some ?fname)}}}
-               [?f ?fname])))))
+               [?f ?fname])))
+    (t/is (= [[1]]
+             (dx/q [:find ?e
+                    :where
+                    [?e :name    "Ivan"]
+                    :limit 1]
+               db)
+             (->> (m/search db
+                    {_ {?e {:name "Ivan"}}}
+                    [?e])
+                  (take 1))))
+    (t/is (= [[1]]
+             (dx/q [:find ?e
+                    :where
+                    [?e :name    "Ivan"]
+                    :xf (comp (take 1))]
+               db)
+             (->> (m/search db
+                    {_ {?e {:name "Ivan"}}}
+                    [?e])
+                  (take 1))))))
 
 (comment
   (def db (dx/db-with [{:db/id 1
