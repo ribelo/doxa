@@ -993,7 +993,9 @@
     `(let [t0#          (enc/now-udt*)
            ~body-result (do ~@body)
            t1#          (enc/now-udt*)]
-       (if (instance? (enc/if-clj clojure.lang.IMeta cljs.core.IMeta) ~body-result)
+       (if (enc/if-clj
+             (instance? clojure.lang.IMeta ~body-result)
+             (satisfies? cljs.core.IMeta ~body-result))
          (vary-meta ~body-result assoc ::execution-time (- t1# t0#))
          ~body-result))))
 
@@ -1021,7 +1023,9 @@
                 (or (not ~ttl) (> ~ttl (- ~inst ~lqt)))
                 (or (and ~lqt (> ~lqt ~ltt))
                     (not ~(-last-tx-match-query? db pq))))
-         (if (instance? (enc/if-clj clojure.lang.IMeta cljs.core.IMeta) ~cr)
+         (if (enc/if-clj
+               (instance? clojure.lang.IMeta ~cr)
+               (satisfies? cljs.core.IMeta ~cr))
            (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
            ~cr)
          (let [~fr ~(if measure? `(with-time-ms (-execute-q ~pq ~db)) `(-execute-q ~pq ~db))]
@@ -1040,7 +1044,9 @@
                      m#)))))
              (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
              (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] ~inst))
-           (if (instance? (enc/if-clj clojure.lang.IMeta cljs.core.IMeta) ~fr)
+           (if (enc/if-clj
+               (instance? clojure.lang.IMeta ~fr)
+               (satisfies? cljs.core.IMeta ~fr))
              (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
              ~fr))))))
 
