@@ -1,4 +1,5 @@
 (ns ribelo.doxa-test
+  #?(:cljs (:require-macros [ribelo.doxa-test :refer [generate-matched-tests]]))
   (:require
    [ribelo.doxa :as dx]
    [clojure.test :as t]
@@ -283,14 +284,18 @@
                           {:db/id {3 {:name ?name}}})
                    {:name ?name :_father [?table ?id]})))
 
-        (t/is (= {:name "Petr" :_father [[:db/id 3] [:db/id 2]]}
-                 (dx/pull db [:name :_father] [:db/id 1])))
+        (t/is (or (= {:name "Petr" :_father [[:db/id 3] [:db/id 2]]}
+                     (dx/pull db [:name :_father] [:db/id 1]))
+                  (= {:name "Petr" :_father [[:db/id 2] [:db/id 3]]}
+                     (dx/pull db [:name :_father] [:db/id 1]))))
 
         (t/is (= {:name "Thomas" :_father {:name "Matthew"}}
                  (dx/pull db [:name {:_father [:name]}] [:db/id 3])))
 
-        (t/is (= {:name "Petr" :_father [{:name "Thomas"} {:name "David"}]}
-                 (dx/pull db [:name {:_father [:name]}] [:db/id 1])))))
+        (t/is (or (= {:name "Petr" :_father [{:name "Thomas"} {:name "David"}]}
+                     (dx/pull db [:name {:_father [:name]}] [:db/id 1]))
+                  (= {:name "Petr" :_father [{:name "David"} {:name "Thomas"}]}
+                     (dx/pull db [:name {:_father [:name]}] [:db/id 1]))))))
 
     (t/testing "test pull component attr"
       (t/is (= {:part-name "Part A.A", :part-of [:db/id 10]}
@@ -325,8 +330,10 @@
                  (dx/pull db [:name {:child [:foo]}] [:db/id 1]))))
 
       (t/testing "Map specs can override component expansion"
-        (t/is (= {:part-name "Part A", :_part-of [{:part-name "Part A.B"} {:part-name "Part A.A"}]}
-                 (dx/pull db [:part-name {:_part-of [:part-name]}] [:db/id 10])))))
+        (t/is (or (= {:part-name "Part A", :_part-of [{:part-name "Part A.B"} {:part-name "Part A.A"}]}
+                  (dx/pull db [:part-name {:_part-of [:part-name]}] [:db/id 10]))
+                  (= {:part-name "Part A", :_part-of [{:part-name "Part A.A"} {:part-name "Part A.B"}]}
+                     (dx/pull db [:part-name {:_part-of [:part-name]}] [:db/id 10]))))))
 
     (t/testing "eql"
       (t/is (= {:name "Petr"}
@@ -619,26 +626,16 @@
                db :person/id "BLUE")))))
 
 (t/deftest gh-14
-  #?(:clj
-     (let [db  (dx/create-dx [{:db/id 1, :name "Ivan" :age 15}
-                              {:db/id 2, :name "Petr" :age 37}])
-           age 15]
-       (dx/q [:find ?name
-              :in ?age
-              :where
-              [?e :name ?name]
-              [?e :age ?age]]
-         db ~age)))
-  )
-
-(comment
-  (m/rewrites
-    db
-    {_
-     {?e
-      {:name (m/some ?name),
-       :age  (m/some (unquote age))}}}
-    [?name]))
+  (let [db  (dx/create-dx [{:db/id 1, :name "Ivan" :age 15}
+                           {:db/id 2, :name "Petr" :age 37}])
+        age 15]
+    (t/is (= [["Ivan"]]
+             (dx/q [:find ?name
+                    :in ?age
+                    :where
+                    [?e :name ?name]
+                    [?e :age ?age]]
+               db ~age)))))
 
 (t/deftest gh-16
   ;; https://github.com/ribelo/doxa/issues/16
