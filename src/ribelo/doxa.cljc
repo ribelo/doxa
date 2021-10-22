@@ -493,10 +493,10 @@
    (create-dx [] {::with-diff? false}))
   ([data]
    (create-dx data {::with-diff? false}))
-  ([data {:keys [with-diff?] :as opts}]
-   (with-meta
-     (if (not-empty data) (db-with data) *empty-map*)
-     (into opts {::last-transaction-timestamp (enc/now-udt) ::tx nil ::cache_ (atom {})}))))
+  ([data opts]
+   (let [meta' (into opts {::last-transaction-timestamp (enc/now-udt) ::tx nil ::cache_ (atom {})})
+         empty-db (with-meta *empty-map* meta')]
+     (if (not-empty data) (db-with empty-db data) empty-db))))
 
 (defn -last-tx [db] (some-> db meta ::tx last))
 
