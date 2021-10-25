@@ -833,9 +833,9 @@
       ~(build-meander-query {:maps !maps :guards !guards :let !lets})
       ;;
       (m/and {:elem [!xs ..?n] :as ?m} (m/guard (= ?n 2)))
-      (m/cata {& ?m :elem ['_ . !xs ... nil]})
+      (m/cata {& ?m :elem [~(gensym '?table_) . !xs ... nil]})
       (m/and {:elem [!xs ..?n] :as ?m} (m/guard (= ?n 3)))
-      (m/cata {& ?m :elem ['_ . !xs ...]})
+      (m/cata {& ?m :elem [~(gensym '?table_) . !xs ...]})
       ;;
       {:args-map ?args-map
        :elem   [(m/app #(parse-query-elem % ?args-map) ?table)
