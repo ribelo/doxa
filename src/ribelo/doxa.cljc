@@ -762,11 +762,16 @@
   ([] `(m/some))
   ([v]
    (m/rewrite v
+     [!vs ...]
+     [(m/cata !vs) ...]
+     ;;
      (m/and ?v (m/not (m/symbol _)))
      ?v
      ;;
      (m/pred qsymbol? ?v)
      ~`(m/some ~?v)
+     ;;
+     '_ '_
      ;;
      (m/symbol _ _ :as ?v)
      ~`(m/some (unquote ~?v))))
@@ -790,6 +795,8 @@
     (?f . (m/cata !xs) ...)
     ~(apply list ?f !xs)
     ;; else
+    [(m/cata !vs) ...]
+    [!vs ...]
     ?x ?x))
 
 (defn build-meander-query [m]
@@ -853,7 +860,7 @@
       [:map {?table {?e {?attr (`m/or . !vs ...)}}}]
       ;; [?e ?k [?ref ?id]]
       {:parsed [?table (m/and ?e (m/not (m/pred list?))) ?attr (m/and ?v [_ _])]}
-      [:map {?table {?e {?attr ~`(m/or ~?v (m/scan ~?v))}}}]
+      [:map {?table {?e {?attr ~`(m/or ~(some-value ?v) (m/scan ~(some-value ?v)))}}}]
       ;; [?e ?k [!vs ...]]
       {:parsed [?table (m/and ?e (m/not (m/pred list?))) ?attr (m/and ?v [!vs ...])]}
       [:map {?table {?e {?attr (`m/or ?v . !vs ...)}}}]
@@ -1045,8 +1052,8 @@
              (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
              (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] ~inst))
            (if (enc/if-clj
-               (instance? clojure.lang.IMeta ~fr)
-               (satisfies? cljs.core.IMeta ~fr))
+                 (instance? clojure.lang.IMeta ~fr)
+                 (satisfies? cljs.core.IMeta ~fr))
              (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
              ~fr))))))
 
