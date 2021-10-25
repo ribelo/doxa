@@ -1,5 +1,5 @@
 (ns ribelo.doxa-test
-  #?(:cljs (:require-macros [ribelo.doxa-test :refer [generate-matched-tests]]))
+  ;; #?(:cljs (:require-macros [ribelo.doxa-test :refer [generate-matched-tests]]))
   (:require
    [ribelo.doxa :as dx]
    [clojure.test :as t]
@@ -103,7 +103,8 @@
                                  [["Ivan" 20]
                                   ["Petr" 30]])
                  (dx/datalog->meander))))
-    (t/is (= `{~'_ {~'?e {:friend (m/or [~'?t ~'?f] (m/scan [~'?t ~'?f]))}
+    (t/is (= `{~'_ {~'?e {:friend (m/or [(m/some ~'?t) (m/some ~'?f)]
+                                        (m/scan [(m/some ~'?t) (m/some ~'?f)]))}
                     ~'?f {:name   (m/some ~'?name)}}}
              (-> (dx/parse-query '[:where
                                    [?e :friend [?t ?f]]
@@ -1013,3 +1014,81 @@
         r2 (people db2)]
     (t/is (= [] r1))
     (t/is (= ["Chris"] r2))))
+
+(defn unmerged-ids-simple
+  "testing fn for reproducing caching bugs"
+  [db [k]]
+  (let [ids
+        ^{::dx/cache k}
+        (dx/q [:find ?id
+               :where
+               [?e :opsUnmergedField/id ?id]]
+          db)]                          ; <------------ db
+    ids))
+
+(let [conn_ (atom (dx/create-dx [] {::dx/with-diff? true}))]
+  (let [r (unmerged-ids-simple @conn_ [::test])]
+    (println :first-query r ::fresh? (::dx/fresh? (meta r)) "\n"))
+  (println :commit)
+  (dx/commit! conn_ [:dx/put {:db/id 1 :opsUnmergedField/id "Ivan"}])
+  (Thread/sleep 10)
+  (let [r (unmerged-ids-simple @conn_ [::test])]
+    (println :second-query r :fresh? (::dx/fresh? (meta r)) "\n"))
+  (let [r (unmerged-ids-simple @conn_ [::test])]
+    (println :third-query r :fresh? (::dx/fresh? (meta r)) "\n"))
+  (println :commit)
+  (dx/commit! conn_ [:dx/put {:db/id 2 :opsUnmergedField/id "Petr"}])
+  (Thread/sleep 10)
+  (let [r (unmerged-ids-simple @conn_ [::test])]
+    (println :fourth-query r :fresh? (::dx/fresh? (meta r)) "\n"))
+  (let [r (unmerged-ids-simple @conn_ [::test])]
+    (println :blabla-query r :fresh? (::dx/fresh? (meta r)) "\n"))
+  (let [r (unmerged-ids-simple @conn_ [::test])]
+    (println :last-query r :fresh? (::dx/fresh? (meta r)) "\n")))
+
+(def re-frame-db (atom {}))
+(def doxa-db (dx/create-dx [] {::dx/with-diff? true}))
+(swap! re-frame-db assoc :doxa/db doxa-db)
+(println (meta (:doxa/db @re-frame-db)))
+(swap! re-frame-db assoc :foo/bar {})
+(println (meta (:doxa/db @re-frame-db)))
+
+(defn unmerged-ids-simple
+  "testing fn for reproducing caching bugs"
+  [db [k]]
+  (println (:doxa/db db))
+  (let [ids
+        ^{::dx/cache k}
+        (dx/q [:find ?id
+               :where
+               [?e :opsUnmergedField/id ?id]]
+              (:doxa/db db))]
+    (map first ids)))
+
+(let [audi-id 20
+      db      (dx/create-dx [{:db/id 1
+                              :name  "Ivan"
+                              :car   {:db/id audi-id
+                                      :name  "Audi"}}
+                             {:db/id 2
+                              :name  "Oleg"
+                              :car   {:db/id audi-id
+                                      :name  "Audi"}}
+                             {:db/id 3
+                              :name  "Petr"
+                              :car   {:db/id 30
+                                      :name  "Tesla"}}])]
+                                        ; return all audi drivers
+  #_(dx/q [:find ?e
+         :in ?car-id
+         :where
+         [?e :car [_ ?car-id]]]
+    db
+    audi-id)
+  (dx/-execute-q
+   {:find  [?e] ,
+    :args  [audi-id] ,
+    :where [[?e :car [_ ?car-id]]] ,
+    :in    [?car-id]}
+   db))
+
