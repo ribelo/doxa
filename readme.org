@@ -888,6 +888,7 @@ categories
      :alias     (vec
                  (repeatedly (rand-int 10) #(rand-nth ["A. C. Q. W." "A. J. Finn" "A.A. Fair" "Aapeli" "Aaron Wolfe" "Abigail Van Buren" "Jeanne Phillips" "Abram Tertz" "Abu Nuwas" "Acton Bell" "Adunis"])))
      :age       (rand-int 100)
+     :sex       (rand-nth [:male :female])
      :salary    (rand-int 100000)
      :friend    {:db/ref-id (rand-int 20000)}})
 
