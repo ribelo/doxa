@@ -841,6 +841,15 @@
     (`m/and . !elems ...)
     {} nil))
 
+(defn rewrite-rule-args [body args]
+  (m/rewrite {:datom body :args args}
+    {:datom [!elem ...] :args ?args}
+    [(m/cata {:elem !elem :args ?args}) ...]
+    {:elem ?elem :args {?elem ?x}}
+    ?x
+    {:elem ?elem :args {(m/not ?elem) _}}
+    ?elem))
+
 (defn datalog->meander [{:keys [where in args] :as q}]
   (let [args-maps (build-args-map q)]
     (m/rewrite {:where where :args-maps args-maps}
@@ -899,7 +908,14 @@
       ;; [(f) ?x]
       {:args-map (m/some ?args-map)
        :elem [(?f . (m/app #(parse-query-elem % ?args-map) !args) ...) ?x]}
-      [:let [?x (?f . !args ...)]])))
+      [:let [?x (?f . !args ...)]]
+      ;; ?rule
+      {:elem (?rule . !args ...)
+       :args-map {?rule {:args ?args
+                         :body [(m/app #(rewrite-rule-args % (zipmap ?args !args)) !elems) ...]}}
+       :as ?m}
+      [& (m/cata {& [?m [:elem !elems]]})]
+      ?x ?x)))
 
 #?(:clj
    (m/defsyntax query [args]
