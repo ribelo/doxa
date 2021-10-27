@@ -43,7 +43,7 @@
     (t/is (= '[{?name "ivan" ?age 20} {?name "petr" ?age 30}]
              (-> (dx/parse-query '[:in [[?name ?age]]] [["ivan" 20] ["petr" 30]])
                  (dx/build-args-map))))
-    (t/is (= '[{?attr :name ?value [:or ["ivan" "petr"]]}]
+    (t/is (= '{?attr :name ?value [:or ["ivan" "petr"]]}
              (-> (dx/parse-query '[:in ?attr [?value]]
                                  :name ["ivan" "petr"])
                  (dx/build-args-map))))))

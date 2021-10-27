@@ -914,8 +914,7 @@
        :args-map {?rule {:args ?args
                          :body [(m/app #(rewrite-rule-args % (zipmap ?args !args)) !elems) ...]}}
        :as ?m}
-      [& (m/cata {& [?m [:elem !elems]]})]
-      ?x ?x)))
+      [& (m/cata {& [?m [:elem !elems]]})])))
 
 #?(:clj
    (m/defsyntax query [args]
