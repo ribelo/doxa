@@ -676,23 +676,27 @@
 
 (defn build-args-map [{:keys [in args] :as pq}]
   (m/rewrite pq
-    {:in nil}
+    (m/or {:in []} {:args []})
     {}
-    ;;
-    {:in   [(m/pred symbol? !xs) ..?n]
-     :args (m/or [!ys ..?n] [[!ys ..?n]])}
-    {& [[!xs !ys] ...]}
-    ;;
-    {:in   [(m/pred symbol? !xs) (m/pred vector? !zs) ..?n]
-     :args [!ys !js ..?n]}
-    [~(enc/into-all {} (map vector !xs !ys) (build-args-map {:in !zs :args !js}))]
-    ;;
-    {:in   [[(m/pred symbol? !xs)] ...]
-     :args [!ys ...]}
-    {& [[!xs [:or !ys]] ...]}
-    {:in [[[!xs ...]]]
-     :args [[!ys ...]]}
-    ~(into [] (map #(build-args-map {:in !xs :args [%]})) !ys)))
+    {:in   [(m/symbol _ (m/not "%") :as ?in) & ?ins]
+     :args [?arg & ?args]}
+    {& [[?in ?arg] & (m/cata {:in ?ins :args ?args})]}
+    {:in   [(m/symbol _ "%" :as ?in) & _ :as ?ins]
+     :args [(m/symbol _ ___ :as ?arg) & ?args]}
+    (m/cata {:in ?ins :args [('quote ~(eval ?arg)) & ?args]})
+    {:in   [(m/symbol _ "%" :as ?in)  & ?ins]
+     :args [('quote [!rules ...]) & ?args]}
+    {& [(m/cata [:rule !rules]) ...
+        & (m/cata {:in ?ins :args ?args})]}
+    {:in   [[[_ & :as  ?ins]]]
+     :args [[[_ & :as !args] ...]]}
+    [(m/cata {:in ?ins :args !args}) ...]
+    {:in   [[(m/symbol _ _ :as  ?in)] &  ?ins]
+     :args [[_ & :as ?arg] & ?args]}
+    {& [[?in [:or ?arg]] & (m/cata {:in ?ins :args ?args})]}
+    [:rule [(?rule . !args ...) & ?body]]
+    {?rule {:args [!args ...]
+            :body ?body}}))
 
 (defn qsymbol? [x]
   (and (symbol? x) (enc/str-starts-with? (name x) "?")))
