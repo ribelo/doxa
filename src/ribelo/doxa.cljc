@@ -799,10 +799,34 @@
     [!vs ...]
     ?x ?x))
 
+(defn -valid-where? [datoms]
+  (m/rewrite {:datoms datoms :ks #{}}
+    {:datoms [(m/and ?datom (m/or [__ __ __ [_ (m/symbol _ _ :as ?e)]]
+                                  [   __ __ [_ (m/symbol _ _ :as ?e)]]))
+              & ?datoms]
+     :ks     (m/and ?ks (m/not (m/scan ?e)))}
+    ~(throw (ex-info (str ?e " must by known befor join, it is probably sufficient to change the order of datoms")
+                     {:datom ?datom :where datoms}))
+    {:datoms [(m/and ?datom
+                     (m/or [__ ?e __ ?v]
+                           [   ?e __ ?v]
+                           [   ?e    ?v]))
+              & ?datoms]
+     :ks     ?ks}
+    (m/cata {:datoms ?datoms
+             :ks #{^& ?ks ?e ?v}})
+    {:datoms (m/not (m/pred seq))}
+    true
+    _
+    true))
+
+(defn- split-merge [xs]
+  (into [] (map (fn [[k m]] {k m})) (reduce enc/nested-merge xs)))
+
 (defn build-meander-query [m]
   (m/rewrite m
     {:maps (m/pred seq [!maps ...]) & ?more}
-    (m/cata [:done [~(reduce enc/nested-merge !maps) & (m/cata ?more)]])
+    (m/cata [:done [& (m/app split-merge [!maps ...]) & (m/cata ?more)]])
     {:let (m/pred seq [!let ...]) & ?more}
     [(`m/let [!let ...]) & (m/cata ?more)]
     {:guards (m/pred seq [!guards ...]) & ?more}
@@ -833,9 +857,9 @@
       ~(build-meander-query {:maps !maps :guards !guards :let !lets})
       ;;
       (m/and {:elem [!xs ..?n] :as ?m} (m/guard (= ?n 2)))
-      (m/cata {& ?m :elem [~(gensym '?table_) . !xs ... nil]})
+      (m/cata {& ?m :elem [~(symbol (str '?table_ (first !xs))) . !xs ... nil]})
       (m/and {:elem [!xs ..?n] :as ?m} (m/guard (= ?n 3)))
-      (m/cata {& ?m :elem [~(gensym '?table_) . !xs ...]})
+      (m/cata {& ?m :elem [~(symbol (str '?table_ (first !xs))) . !xs ...]})
       ;;
       {:args-map ?args-map
        :elem   [(m/app #(parse-query-elem % ?args-map) ?table)
@@ -885,7 +909,7 @@
   (let [r (gensym 'meander-result_)]
     `(let [~r (m/rewrites ~db
                 ~(datalog->meander pq) ~find)]
-       (into ~(if-not (and (seq pull) first?) [] {})
+       (into ~(if-not (and (seq pull) first?) #{} {})
              (comp-some
               ~(when (seq pull)
                  `(map (fn [elem#]
@@ -1020,42 +1044,43 @@
         lqt      (gensym 'last-query-timestamp_)
         pq       (apply parse-query q' args)
         inst     (gensym 'instant_)]
-    `(let [~cr   ~(if measure?
-                    `(with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
-                    `(some-> ~cache_ deref (get-in [~kw ::cached-results])))
-           ~lqt  (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
-           ~ltt  (::last-transaction-timestamp ~m)
-           ~inst (enc/now-udt)]
-       (if (and (some? ~kw) (some? ~cr)
-                (or (not ~ttl) (> ~ttl (- ~inst ~lqt)))
-                (or (and ~lqt (> ~lqt ~ltt))
-                    (not ~(-last-tx-match-query? db pq))))
-         (if (enc/if-clj
-               (instance? clojure.lang.IMeta ~cr)
-               (satisfies? cljs.core.IMeta ~cr))
-           (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
-           ~cr)
-         (let [~fr ~(if measure? `(with-time-ms (-execute-q ~pq ~db)) `(-execute-q ~pq ~db))]
-           (when (and ~kw ~cache_)
-             (when (enc/-gc-now?)
-               (swap! ~cache_
-                 (fn [m#]
-                   (persistent!
-                    (reduce-kv
-                     (fn [acc# k# v#]
-                       (let [lqt# (get-in v# ::last-query-timestamp)]
-                         (if-not (> (- ~inst lqt#) ~ttl)
-                           (assoc! acc# k# v#)
-                           acc#)))
-                     (transient {})
-                     m#)))))
-             (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
-             (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] ~inst))
+    (when (-valid-where? (:where pq))
+      `(let [~cr   ~(if measure?
+                      `(with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
+                      `(some-> ~cache_ deref (get-in [~kw ::cached-results])))
+             ~lqt  (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
+             ~ltt  (::last-transaction-timestamp ~m)
+             ~inst (enc/now-udt)]
+         (if (and (some? ~kw) (some? ~cr)
+                  (or (not ~ttl) (> ~ttl (- ~inst ~lqt)))
+                  (or (and ~lqt (> ~lqt ~ltt))
+                      (not ~(-last-tx-match-query? db pq))))
            (if (enc/if-clj
-                 (instance? clojure.lang.IMeta ~fr)
-                 (satisfies? cljs.core.IMeta ~fr))
-             (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
-             ~fr))))))
+                 (instance? clojure.lang.IMeta ~cr)
+                 (satisfies? cljs.core.IMeta ~cr))
+             (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
+             ~cr)
+           (let [~fr ~(if measure? `(with-time-ms (-execute-q ~pq ~db)) `(-execute-q ~pq ~db))]
+             (when (and ~kw ~cache_)
+               (when (enc/-gc-now?)
+                 (swap! ~cache_
+                   (fn [m#]
+                     (persistent!
+                      (reduce-kv
+                       (fn [acc# k# v#]
+                         (let [lqt# (get-in v# ::last-query-timestamp)]
+                           (if-not (> (- ~inst lqt#) ~ttl)
+                             (assoc! acc# k# v#)
+                             acc#)))
+                       (transient {})
+                       m#)))))
+               (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
+               (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] ~inst))
+             (if (enc/if-clj
+                   (instance? clojure.lang.IMeta ~fr)
+                   (satisfies? cljs.core.IMeta ~fr))
+               (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
+               ~fr)))))))
 
 ;; * re-frame
 
