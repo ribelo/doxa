@@ -803,23 +803,24 @@
     [!vs ...]
     ?x ?x))
 
-(defn -valid-where? [datoms]
-  (m/rewrite {:datoms datoms :ks #{}}
-    {:datoms [(m/and ?datom (m/or [__ __ __ [_ (m/symbol _ _ :as ?e)]]
-                                  [   __ __ [_ (m/symbol _ _ :as ?e)]]))
-              & ?datoms]
-     :ks     (m/and ?ks (m/not (m/scan ?e)))}
+(defn -valid-query? [pq]
+  (m/rewrite (assoc pq :ks #{})
+    {:where [(m/and ?datom (m/or [__ __ __ [_ (m/symbol _ _ :as ?e)]]
+                                 [__ __ [_ (m/symbol _ _ :as ?e)]]))
+             & (m/and ?datoms (m/$ ?e))]
+     :ks     (m/and ?ks (m/not (m/scan ?e)))
+     :in     (m/not (m/scan ?e))}
     ~(throw (ex-info (str ?e " must by known befor join, it is probably sufficient to change the order of datoms")
-                     {:datom ?datom :where datoms}))
-    {:datoms [(m/and ?datom
-                     (m/or [__ ?e __ ?v]
-                           [   ?e __ ?v]
-                           [   ?e    ?v]))
-              & ?datoms]
-     :ks     ?ks}
-    (m/cata {:datoms ?datoms
-             :ks #{^& ?ks ?e ?v}})
-    {:datoms (m/not (m/pred seq))}
+                     {:datom ?datom :where (:where pq)}))
+    {:where [(m/and ?datom
+                    (m/or [__ ?e __ ?v]
+                          [   ?e __ ?v]
+                          [   ?e    ?v]))
+             & ?datoms]
+     :ks     ?ks
+     :as     ?m}
+    (m/cata {& ?m :where ?datoms :ks #{^& ?ks ?e ?v}})
+    {:where (m/not (m/pred seq))}
     true
     _
     true))
@@ -1063,7 +1064,7 @@
         lqt      (gensym 'last-query-timestamp_)
         pq       (apply parse-query q' args)
         inst     (gensym 'instant_)]
-    (when (-valid-where? (:where pq))
+    (when (-valid-query? pq)
       `(let [~cr   ~(if measure?
                       `(with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
                       `(some-> ~cache_ deref (get-in [~kw ::cached-results])))
