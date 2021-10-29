@@ -406,6 +406,19 @@
              (dx/q [:find ?e
                     :where
                     [?e :name    "Ivan"]
+                    [?e :friend  [_ ?f]]]
+               db)))
+    (t/is (= #{[1]}
+             (dx/q [:find ?e
+                    :in ?f
+                    :where
+                    [?e :name    "Ivan"]
+                    [?e :friend  [_ ?f]]]
+               db 3)))
+    (t/is (= #{[1]}
+             (dx/q [:find ?e
+                    :where
+                    [?e :name    "Ivan"]
                     :limit 1]
                db)))
     (t/is (= #{[1]}
