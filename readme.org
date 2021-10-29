@@ -30,10 +30,10 @@ and check each individual map, leaf and node.
 =doxa= is an attempt to create a normalized db based on a simple =hashmap=, that
 allows you to edit data both using =clojure.core= functions like =assoc=, =assoc-in=,
 and using transactions similar to =datascript=. in addition, it offers the ability
-to use =datalog= and =pull/eql= queries, as well as =clojure.core= =filter=, =map=, =keep=,
-=take= and all the data processing features we love. due to being built around 3
-nested maps, pretending to be a =triplestore=, it allows to use the whole =clojure=
-ecosystem operating around maps, like =malli=, =spec=, =specter=, =meander= etc.
+to use =datalog= and =pull/eql= queries, as well as =clojure.core= =filter=, =map=,
+=keep=, =take= and all the data processing features we love. due to being built
+around 3 nested maps, pretending to be a =quadruplestore=, it allows to use the whole
+=clojure= ecosystem operating around maps, like =malli=, =spec=, =specter=, =meander= etc.
 
 * db structure
 :PROPERTIES:
@@ -92,13 +92,11 @@ an entity. examples in [[https://github.com/ribelo/doxa#with-metadata][metadata]
 
 =doxa= tries to use the full potential of =meander= and be as forgiving as possible
 with the data it receives. =commit= can accept either a single =transaction= or any
-collection of =transtactions= that is =sequable?=.
-
-the reference of =transaction= can be a =map= or =lookup-ref=, the arguments can be a
-=key-value pair=, where the value can be anything, a =map=, a =variable=, a =collection
-of anything=, a lookup-ref etc. Arguments can be mixed and mangled. data
-automatically normalizes, adds and is converted into =lookup-ref= or =collection of
-lookup-refs= if needed and required.
+collection of =transtactions= that is =sequable?=. the reference of =transaction= can
+be a =map= or =lookup-ref=, the arguments can be a =key-value pair=, where the value
+can be anything, a =map=, a =variable=, a =collection of anything=, a lookup-ref etc.
+arguments can be mixed and mangled. data automatically normalizes, adds and is
+converted into =lookup-ref= or =collection of lookup-refs= if needed and required.
 
 *** put
 
@@ -397,6 +395,15 @@ also allowing you to split the data in a way that makes =q= queries [[https://gi
    {:db/id 9, :name "Rebecca"}])
 
 (def db (dx/create-dx people-docs))
+;; #:db{:id {7 {:db/id 7, :name "Eunan",     :friend #{[:db/id 8]},     :enemy #{[:db/id 4]}}
+;;           1 {:db/id 1, :name "Petr",      :aka    ["Devil" "Tupen"], :child #{[:db/id 3] [:db/id 2]}}
+;;           4 {:db/id 4, :name "Lucy",      :friend #{[:db/id 5]},     :enemy #{[:db/id 6]}}
+;;           6 {:db/id 6, :name "Matthew",   :father #{[:db/id 3]},     :friend #{[:db/id 7]}, :enemy #{[:db/id 8]}}
+;;           3 {:db/id 3, :name "Thomas",    :father #{[:db/id 1]}}
+;;           2 {:db/id 2, :name "David",     :father #{[:db/id 1]}}
+;;           9 {:db/id 9, :name "Rebecca"}
+;;           5 {:db/id 5, :name "Elizabeth", :friend #{[:db/id 6]}, :enemy #{[:db/id 7]}}
+;;           8 {:db/id 8, :name "Kerri"}}}
 
 #+end_src
 
@@ -517,8 +524,7 @@ also allowing you to split the data in a way that makes =q= queries [[https://gi
 
 *** joins
 
-unlike everything else, =doxa= does not return a set, but a =vector=, which has
-far-reaching consequences
+exactly as in datascript and datomic, =q= returns =set=
 
 #+begin_src clojure :results silent :exports code
 
@@ -532,19 +538,16 @@ db
 (dx/q [:find ?e
        :where [?e :name]]
   db)
-;; => [[1] [2] [3]]
+;; => #{[3] [2] [1]}
 
 (dx/q [:find ?e ?v
        :where
        [?e :name "Ivan"]
        [?e :age ?v]]
   db)
-;; => [[1 15] [3 37]]
+;; => #{[1 15] [3 37]}
 
 #+end_src
-
-each element is checked once, so the result in a normal =datalog= engine would be =[[1 1]
-[1 3] [3 3]]=
 
 #+begin_src clojure :results silent :exports code
 
@@ -558,7 +561,7 @@ db
        :where
        [?e1 :name ?n]
        [?e2 :name ?n]] db)
-;; => [[1 3] [3 1]]
+;; => #{[2 2] [3 3] [1 1] [1 3] [3 1]}
 
 (dx/q [:find ?e1 ?e2 ?n
        :where
@@ -567,7 +570,7 @@ db
        [?e2 :age ?a]
        [?e2 :name ?n]]
   db)
-;; => [[3 2 "Petr"]]
+;; => #{[1 1 "Ivan"] [3 3 "Ivan"] [3 2 "Petr"]}
 
 #+end_src
 
@@ -592,7 +595,7 @@ db
        [?e1 :name ?n1]
        [?e2 :name ?n2]]
   db)
-;; => [["Ivan" "Petr"] ["Petr" "Ivan"]]
+;; => #{["Ivan" "Petr"] ["Petr" "Ivan"] ["Petr" "Petr"] ["Ivan" "Ivan"]}
 #+end_src
 
 **** in
@@ -608,20 +611,19 @@ db
        :in ?attr ?value
        :where [?e ?attr ?value]]
   db :name "Ivan")
-;; => [[1] [3]]
+;; => #{[3] [1]}
 
 (dx/q [:find ?e
        :in ?attr [?value]
        :where [?e ?attr ?value]]
   db :name ["Ivan" "Petr"])
-;; => [[1] [2] [3]]
+;; => #{[3] [2] [1]}
 
 (dx/q [:find ?e
        :in ?attr ?value
        :where [?e ?attr ?value]]
   db :age 37)
-;; => [[2] [3]]
-
+;; => #{[3] [2]}
 #+end_src
 
 **** relation binding
@@ -637,13 +639,13 @@ db
   db
   [["Ivan" "ivan@mail.ru"]
    ["Petr" "petr@gmail.com"]])
-;; => [[1 "ivan@mail.ru"] [2 "petr@gmail.com"] [3 "ivan@mail.ru"]]
+;; => #{[1 "ivan@mail.ru"] [2 "petr@gmail.com"] [3 "ivan@mail.ru"]}
 
 #+end_src
 
 **** joins with idents
 
-unfortunately, but using links in the form of =[?table ?id]= also entails
+unfortunately, but using ref links in the form of =[?table ?id]= also entails
 disadvantages and difficulties.
 
 #+begin_src clojure :results silent :exports code
@@ -660,7 +662,7 @@ db
 ;;          3 {:db/id 3, :name "Oleg"}
 ;;          1 {:db/id 1,
 ;;             :name "Ivan",
-;;             :friend [[:db/id 2] [:db/id 3]]}}}
+;;             :friend #{[:db/id 2] [:db/id 3]}}}}
 
 #+end_src
 
@@ -673,7 +675,7 @@ references are always =vector= and must be treated as such
        [?e :name "Ivan"]
        [?e :friend ?friends]]
   db)
-;; => [[[:db/id 2] [:db/id 3]]]
+;; => #{#{[:db/id 3] [:db/id 2]}}
 
 #+end_src
 
@@ -687,7 +689,7 @@ if we try to do a simple join we get nothing =:(=
        [?e :friend ?friends]
        [?friends :name ?fname]]
   db)
-;; => []
+;; => #{}
 
 #+end_src
 
@@ -697,11 +699,11 @@ but knowing what a reference looks like, we can get around this
 
 (dx/q [:find ?fname ...
        :where
+       [?friend :name ?fname]
        [?e :name "Ivan"]
-       [?e :friend [_ ?friend]]
-       [?friend :name ?fname]]
+       [?e :friend [_ ?friend]]]
   db)
-;; => ["Petr" "Oleg"]
+;; => #{"Petr" "Oleg"}
 
 #+end_src
 
@@ -744,50 +746,26 @@ than not to run it when you need to
 ;; => [[:db/id] :+ {1 {:name "ivan", :db/id 1}}]
 
 (-> (dx/-last-tx @conn_)
-    (dx/-tx->datom))
-;; => [:db/id 1 :name "ivan"]
+    (dx/-tx->datoms))
+;; => [[:db/id 1 :name "ivan"] [:db/id 1 :db/id 1]]
 
-(-> (dx/-last-tx-match-query?
-     @conn_
-     '[:find ?e
-       :where
-       [?e ?attr ?v]]))
+(-> (dx/-last-tx-match-where? @conn_ '[[?e ?attr ?v]]))
 ;; => true
 
 ;; meander allows to match after each element of the datom
-(-> (dx/-last-tx-match-query?
-     @conn_
-     '[:find ?e
-       :where
-       [:db/id ?e ?attr ?v]]))
+(-> (dx/-last-tx-match-where? @conn_ '[[:db/id ?e ?attr ?v]]))
 ;; => true
 
-(-> (dx/-last-tx-match-query?
-     @conn_
-     '[:find ?e
-       :where
-       [:db/id 1 ?attr ?v]]))
+(-> (dx/-last-tx-match-where? @conn_ '[[:db/id 1 ?attr ?v]]))
 ;; => true
 
-(-> (dx/-last-tx-match-query?
-     @conn_
-     '[:find ?e
-       :where
-       [:db/id 2 ?attr ?v]]))
+(-> (dx/-last-tx-match-where? @conn_ '[[:db/id 2 ?attr ?v]]))
 ;; => false
 
-(-> (dx/-last-tx-match-query?
-     @conn_
-     '[:find ?e
-       :where
-       [?e ?attr "ivan"]]))
+(-> (dx/-last-tx-match-where? @conn_ '[[?e ?attr "ivan"]]))
 ;; => true
 
-(-> (dx/-last-tx-match-query?
-     @conn_
-     '[:find ?e
-       :where
-       [?e ?attr "petr"]]))
+(-> (dx/-last-tx-match-where? @conn_ '[[?e ?attr "petr"]]))
 ;; => false
 #+end_src
 

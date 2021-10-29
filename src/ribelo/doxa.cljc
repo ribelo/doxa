@@ -37,6 +37,10 @@
   conjv (fnil conj []))
 
 (def
+  ^{:doc "returns a set even if the argument is nil"}
+  conjs (fnil conj #{}))
+
+(def
   ^{:doc "returns a map even if the argument is nil"}
   into-map (fnil into {}))
 
@@ -57,7 +61,7 @@
 
 (defn- idents? [xs]
   (m/rewrite xs
-    [(m/pred ident?) ...] true
+    (m/seqable (m/pred ident?) ...) true
     _ false))
 
 (defn- entity? [^clojure.lang.IPersistentMap m]
@@ -119,12 +123,15 @@
         (recur (assoc! m k (entity-id v)) (into r (normalize v)) id)
         ;;
         (entities? v)
-        (recur (assoc! m k (mapv entity-id v))
+        (recur (assoc! m k (into #{} (map entity-id) v))
                (reduce (fn [acc m'] (into acc (normalize m'))) r v)
                id)
         ;;
         (ident? v)
         (recur (assoc! m k v) r id)
+        ;;
+        (and (seqable? v) (enc/revery? ident? v))
+        (recur (assoc! m k (into #{} v)) r id)
         ;;
         :else
         (recur (assoc! m k v) r id)))))
@@ -184,14 +191,14 @@
     ;; put [?tid ?eid] ?k [?entity ...]
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) [(m/pred entity? !vs) ...]]
     (let [itx (-iter !vs)]
-      (loop [acc db]
+      (loop [acc (assoc-in db [?tid ?eid ?k] #{})]
         (enc/cond
           :if-not (.hasNext itx) acc
           :let    [?v  (.next itx)
                    xs  (normalize ?v)
                    ity (-iter xs)]
           (recur
-           (loop [acc (update-in acc [?tid ?eid ?k] conjv (entity-id ?v))]
+           (loop [acc (update-in acc [?tid ?eid ?k] conjs (entity-id ?v))]
              (enc/cond
                (not (.hasNext ity)) acc
                :let                 [[ks m] (.next ity)]
@@ -283,20 +290,21 @@
       :let         [xs (get-in db [?tid ?eid ?k])]
       (ident?  xs) (assoc-in db [?tid ?eid ?k] [xs ?v])
       (vector? xs) (assoc-in db [?tid ?eid ?k] (conj xs ?v))
+      (set?    xs) (assoc-in db [?tid ?eid ?k] (conj xs ?v))
       (some?   xs) (assoc-in db [?tid ?eid ?k] [xs ?v])
       :else        (assoc-in db [?tid ?eid ?k] [?v]))
-    ;; conj [?tid ?eid] ?k ?m
+    ;; conj [?tid ?eid] ?k ?entity
     [:dx/conj [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred entity? ?v)]
-    (-> (update-in db [?tid ?eid ?k] conjv (entity-id ?v))
+    (-> (update-in db [?tid ?eid ?k] conjs (entity-id ?v))
         (-submit-commit [:dx/put ?v]))
-    ;; conj [?tid ?eid] ?k [?m ...]
+    ;; conj [?tid ?eid] ?k [!entites ...]
     [:dx/conj [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) [(m/pred entity? !vs) ...]]
     (let [it (-iter !vs)]
       (loop [acc db]
         (enc/cond
           :if-not (.hasNext it) acc
           :let    [v    (.next it)
-                   acc' (-> (update-in acc [?tid ?eid ?k] conjv (entity-id v))
+                   acc' (-> (update-in acc [?tid ?eid ?k] conjs (entity-id v))
                             (-submit-commit [:dx/put v]))]
           :else   (recur acc'))))
     ;; merge [?tid ?eid] ?m
@@ -589,7 +597,7 @@
            ;;
            (and (some? id) (idents? ref') (not rev?))
            (recur (enc/assoc-some r (ffirst elem)
-                                  (into [] (comp (map (partial pull* db (second (first elem)))) (remove empty?)) ref'))
+                                  (not-empty (into #{} (comp (map (partial pull* db (second (first elem)))) (remove empty?)) ref')))
                   id)
            (and (some? id) (idents? ref') rev?)
            (recur (enc/assoc-some r (ffirst elem)
@@ -784,7 +792,7 @@
      [(m/symbol _ _ :as ?s) (m/and ?v (m/not (m/symbol _)))]
      ~`(m/and ~?s ~?v)
      ;;
-     [(m/symbol _ _ :as ?s) (m/symbol _ _ :as ?v)]
+     [(m/symbol _ (m/not "_") :as ?s) (m/symbol _ (m/not "_") :as ?v)]
      ~`(m/some (unquote ~?v))
      _ ~v)))
 
@@ -846,10 +854,12 @@
   (m/rewrite {:datom body :args args}
     {:datom [!elem ...] :args ?args}
     [(m/cata {:elem !elem :args ?args}) ...]
-    {:elem ?elem :args {?elem ?x}}
+    {:elem (m/and ?elem (m/not [_ &])) :args {?elem ?x}}
     ?x
-    {:elem ?elem :args {(m/not ?elem) _}}
-    ?elem))
+    {:elem (m/and ?elem (m/not [_ &])) :args {(m/not ?elem) _}}
+    ?elem
+    {:elem [?t ?e] :as ?m}
+    [(m/cata {& ?m :elem ?t}) (m/cata {& ?m :elem ?e})]))
 
 (defn datalog->meander [{:keys [where in args] :as q}]
   (let [args-maps (build-args-map q)]

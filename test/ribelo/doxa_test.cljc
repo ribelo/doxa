@@ -105,10 +105,10 @@
                                  [["Ivan" 20]
                                   ["Petr" 30]])
                  (dx/datalog->meander))))
-    (t/is (= '(meander.epsilon/and
-               {?table_?e {?e {:friend (meander.epsilon/or [(meander.epsilon/some ?t) (meander.epsilon/some ?f)]
-                                                           (meander.epsilon/scan [(meander.epsilon/some ?t) (meander.epsilon/some ?f)]))}}}
-               {?table_?f {?f {:name (meander.epsilon/some ?name)}}})
+    (t/is (= '(meander.epsilon/and {?table_?e {?e {:friend (meander.epsilon/or
+                                                            [(meander.epsilon/some ?t) (meander.epsilon/some ?f)]
+                                                            (meander.epsilon/scan [(meander.epsilon/some ?t) (meander.epsilon/some ?f)]))}}}
+                                   {?table_?f {?f {:name (meander.epsilon/some ?name)}}})
              (-> (dx/parse-query '[:where
                                    [?e :friend [?t ?f]]
                                    [?f :name ?name]])
@@ -130,7 +130,7 @@
                (dx/commit db [[:dx/put [:db/id 1] :name "David"]])))
       (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Tupen"]}}}
                (dx/commit db [[:dx/put [:db/id 1] :aka ["Tupen"]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend [[:db/id 2] [:db/id 3]]}
+      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend #{[:db/id 2] [:db/id 3]}}
                          2 {:db/id 2, :name "Ivan"}
                          3 {:db/id 3, :name "Lucy"}}}
                (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
@@ -138,7 +138,7 @@
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2}]])))
       (t/is (= #:db{:id {1 {:a [:db/id 2]}, 2 {:b 1, :c 2, :db/id 2}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2 :db/id 2}]])))
-      (t/is (= #:db{:id {1 {:a [[:db/id 2] [:db/id 3]]}, 2 {:b 1, :c 2, :db/id 2}, 3 {:b 3, :c 4, :db/id 3}}}
+      (t/is (= #:db{:id {1 {:a #{[:db/id 2] [:db/id 3]}}, 2 {:b 1, :c 2, :db/id 2}, 3 {:b 3, :c 4, :db/id 3}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a [{:b 1 :c 2 :db/id 2}
                                                       {:b 3 :c 4 :db/id 3}]]]))))
 
@@ -162,10 +162,10 @@
                (dx/commit db [[:dx/conj [:db/id 1] :aka "Tupen"]])))
       (t/is (= #:db{:id {1 {:db/id 1 :name ["Petr" "Ivan"], :aka ["Devil"]}}}
                (dx/commit db [[:dx/conj [:db/id 1] :name "Ivan"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend [[:db/id 2]]}
+      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend #{[:db/id 2]}}
                          2 {:db/id 2, :name "Ivan"}}}
                (dx/commit db [[:dx/conj [:db/id 1] :friend {:db/id 2 :name "Ivan"}]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend [[:db/id 2] [:db/id 3]]}
+      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend #{[:db/id 2] [:db/id 3]}}
                          2 {:db/id 2, :name "Ivan"}
                          3 {:db/id 3, :name "Lucy"}}}
                (dx/commit db [[:dx/conj [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
@@ -235,58 +235,30 @@
   (let [db (dx/commit {} (into [] (map (fn [tx] [:dx/put tx])) (into people-docs part-docs)))]
     (t/testing "test pull attr"
       (t/is (= {:name "Petr" :aka ["Devil" "Tupen"]}
-               (dx/pull db [:name :aka] [:db/id 1])
-               (m/find db
-                 {:db/id {1 {:name ?name :aka ?aka}}}
-                 {:name ?name :aka ?aka})))
+               (dx/pull db [:name :aka] [:db/id 1])))
 
       (t/is (= {:name "Matthew" :father [:db/id 3] :db/id 6}
-               (dx/pull db [:name :father :db/id] [:db/id 6])
-               (m/find db
-                 {:db/id {6 {:name ?name :father ?father}}}
-                 {:name ?name :father ?father :db/id 6})))
+               (dx/pull db [:name :father :db/id] [:db/id 6])))
 
       (t/is (= {:name "Matthew" :father {:name "Thomas"} :db/id 6}
-               (dx/pull db [:name :db/id {:father [:name]}] [:db/id 6])
-               (m/find db
-                 (m/and {:db/id {6 {:name ?name :father [?table ?id]}}}
-                        {?table {?id {:name ?father-name}}})
-                 {:name ?name :father {:name ?father-name} :db/id 6})))
+               (dx/pull db [:name :db/id {:father [:name]}] [:db/id 6])))
 
       (t/is (= [{:name "Petr"}
                 {:name "Elizabeth"}
                 {:name "Eunan"}
                 {:name "Rebecca"}]
-               (dx/pull db [:name] [[:db/id 1] [:db/id 5] [:db/id 7] [:db/id 9]])
-               (mapv (fn [[table id]]
-                       (m/find db
-                         {~table {~id {:name ?name}}}
-                         {:name ?name}))
-                     [[:db/id 1] [:db/id 5] [:db/id 7] [:db/id 9]]))))
+               (dx/pull db [:name] [[:db/id 1] [:db/id 5] [:db/id 7] [:db/id 9]]))))
 
     (t/testing "test pull reverse attr"
       (t/is (= {:name "David" :_child [:db/id 1]}
-               (dx/pull db [:name :_child] [:db/id 2])
-               (m/find db
-                 (m/and {?table {?id {:child (m/or [:db/id 2] (m/scan [:db/id 2]))}}}
-                        {:db/id {2 {:name ?name}}})
-                 {:name ?name :_child [?table ?id]})))
+               (dx/pull db [:name :_child] [:db/id 2])))
 
       (t/is (= {:name "David" :_child {:name "Petr"}}
-               (dx/pull db [:name {:_child [:name]}] [:db/id 2])
-               (m/find db
-                 (m/and {?table {?id {:name  ?name1
-                                      :child (m/or [:db/id 2] (m/scan [:db/id 2]))}}}
-                        {:db/id {2 {:name ?name2}}})
-                 {:name ?name2 :_child {:name ?name1}})))
+               (dx/pull db [:name {:_child [:name]}] [:db/id 2])))
 
       (t/testing "reverse non-component references yield collections"
         (t/is (= {:name "Thomas" :_father [:db/id 6]}
-                 (dx/pull db [:name :_father] [:db/id 3])
-                 (m/find db
-                   (m/and {?table {?id {:father (m/or [:db/id 3] (m/scan [:db/id 3]))}}}
-                          {:db/id {3 {:name ?name}}})
-                   {:name ?name :_father [?table ?id]})))
+                 (dx/pull db [:name :_father] [:db/id 3])))
 
         (t/is (or (= {:name "Petr" :_father [[:db/id 3] [:db/id 2]]}
                      (dx/pull db [:name :_father] [:db/id 1]))
@@ -310,7 +282,7 @@
                (dx/pull db [:part-name {:part-of [:part-name]}] [:db/id 11]))))
 
     (t/testing "test-pull-wildcard"
-      (t/is (= {:db/id 1 :name "Petr" :aka ["Devil" "Tupen"] :child [[:db/id 2] [:db/id 3]]}
+      (t/is (= {:db/id 1 :name "Petr" :aka ["Devil" "Tupen"] :child #{[:db/id 2] [:db/id 3]}}
                (dx/pull db [:*] [:db/id 1])))
       (t/is (= {:db/id 2 :name "David" :_child [:db/id 1] :father [:db/id 1]}
                (dx/pull db [:* :_child] [:db/id 2]))))
@@ -321,8 +293,8 @@
                  (dx/pull db [:name {:father [:name]}] [:db/id 6]))))
 
       (t/testing "Multi attrs yield a collection of maps"
-        (t/is (= {:name "Petr" :child [{:name "David"}
-                                       {:name "Thomas"}]}
+        (t/is (= {:name "Petr" :child #{{:name "David"}
+                                        {:name "Thomas"}}}
                  (dx/pull db [:name {:child [:name]}] [:db/id 1]))))
 
       (t/testing "Missing attrs are dropped"
@@ -330,7 +302,7 @@
                  (dx/pull db [:name {:child [:name]}] [:db/id 2]))))
 
       (t/testing "Non matching results are removed from collections"
-        (t/is (= {:name "Petr" :child []}
+        (t/is (= {:name "Petr"}
                  (dx/pull db [:name {:child [:foo]}] [:db/id 1]))))
 
       (t/testing "Map specs can override component expansion"
@@ -507,6 +479,70 @@
                     [?e :email ?email]]
                db)))))
 
+(comment
+  (def db (dx/db-with
+            [{:db/id 1 :follow [:db/id 2]}
+             {:db/id 2 :follow [[:db/id 3] [:db/id 4]]}
+             {:db/id 3 :follow [:db/id 4]}
+             {:db/id 4 :follow [:db/id 6]}
+             {:db/id 5 :follow [:db/id 3]}])))
+
+(t/deftest test-q-rules
+  (let [db (dx/db-with
+            [{:db/id 1 :follow [:db/id 2]}
+             {:db/id 2 :follow [[:db/id 3] [:db/id 4]]}
+             {:db/id 3 :follow [:db/id 4]}
+             {:db/id 4 :follow [:db/id 6]}
+             {:db/id 5 :follow [:db/id 3]}])]
+    (t/is (= #{[1 2] [2 3] [3 4] [2 4] [5 3] [4 6]}
+             (dx/q [:find ?e1 ?e2
+                    :in %
+                    :where (follow ?e1 ?e2)]
+               db
+               '[[(follow ?x ?y)
+                  [?x :follow [_ ?y]]]])))
+    (t/is (= #{[3 2] [6 4] [4 2]}
+             (dx/q [:find ?y ?x
+                    :in %
+                    :where
+                    [_ _ ?x]
+                    (rule ?x ?y)
+                    [(even? ?x)]]
+               db
+               '[[(rule ?a ?b)
+                  [?a :follow [_ ?b]]]])))
+    (t/is (= #{[:db/id] [:follow]}
+             (dx/q [:find ?x
+                    :in %
+                    :where
+                    [?e _ _]
+                    (rule ?x)]
+               db
+               '[[(rule ?e)
+                  [_ ?e _]]])))
+    #_(t/is (= #{[2] [3] [4]}
+               (dx/q [:find ?e2
+                      :in ?e1 %
+                      :where (follow ?e1 ?e2)]
+                 db
+                 1
+                 '[[(follow ?e2 ?e1)
+                    [?e2 :follow ?e1]]
+                   [(follow ?e2 ?e1)
+                    [?e2 :follow ?t]
+                    [?t :follow ?e1]]])))
+    #_(t/is (= #{[2] [3] [4] [6]}
+             (dx/q [:find ?e2
+                    :in ?e1 %
+                    :where (follow ?e1 ?e2)]
+             db
+             1
+             '[[(follow ?e1 ?e2)
+                [?e1 :follow ?e2]]
+               [(follow ?e1 ?e2)
+                [?e1 :follow ?t]
+                (follow ?t ?e2)]])))))
+
 ;; crux
 
 #?(:clj
@@ -599,9 +635,9 @@
                                                         {:db/id 11 :name "ferrari"}]}
                           {:db/id 2 :name "petr" :cars [{:db/id 10 :name "peugot"}]}
                           {:db/id 3 :name "mike" :cars []}])]
-    (t/is (vector? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 1])))
-          "pull returns vector when N entities in join")
-    (t/is (vector? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 2])))
+    (t/is (set? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 1])))
+          "pull returns set when N entities in join")
+    (t/is (set? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 2])))
           "pull returns vector when 1 entity in join")))
 
 (t/deftest gh-17
