@@ -105,9 +105,7 @@
                                  [["Ivan" 20]
                                   ["Petr" 30]])
                  (dx/datalog->meander))))
-    (t/is (= '(meander.epsilon/and {?table_?e {?e {:friend (meander.epsilon/or
-                                                            [(meander.epsilon/some ?t) (meander.epsilon/some ?f)]
-                                                            (meander.epsilon/scan [(meander.epsilon/some ?t) (meander.epsilon/some ?f)]))}}}
+    (t/is (= '(meander.epsilon/and {?table_?e {?e {:friend (meander.epsilon/scan [(meander.epsilon/some ?t) (meander.epsilon/some ?f)])}}}
                                    {?table_?f {?f {:name (meander.epsilon/some ?name)}}})
              (-> (dx/parse-query '[:where
                                    [?e :friend [?t ?f]]
@@ -282,7 +280,7 @@
                (dx/pull db [:part-name {:part-of [:part-name]}] [:db/id 11]))))
 
     (t/testing "test-pull-wildcard"
-      (t/is (= {:db/id 1 :name "Petr" :aka ["Devil" "Tupen"] :child #{[:db/id 2] [:db/id 3]}}
+      (t/is (= {:db/id 1 :name "Petr" :aka ["Devil" "Tupen"] :child [[:db/id 2] [:db/id 3]]}
                (dx/pull db [:*] [:db/id 1])))
       (t/is (= {:db/id 2 :name "David" :_child [:db/id 1] :father [:db/id 1]}
                (dx/pull db [:* :_child] [:db/id 2]))))
@@ -634,7 +632,8 @@
   (let [db (dx/create-dx [{:db/id 1 :name "ivan" :cars [{:db/id 10 :name "tesla"}
                                                         {:db/id 11 :name "ferrari"}]}
                           {:db/id 2 :name "petr" :cars [{:db/id 10 :name "peugot"}]}
-                          {:db/id 3 :name "mike" :cars []}])]
+                          {:db/id 3 :name "mike" :cars {:db/id 10 :name "peugot"}}
+                          {:db/id 4 :name "mike" :cars []}])]
     (t/is (set? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 1])))
           "pull returns set when N entities in join")
     (t/is (set? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 2])))

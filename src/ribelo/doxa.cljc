@@ -120,7 +120,7 @@
         (recur (assoc! m k v) r [k v])
         ;;
         (entity? v)
-        (recur (assoc! m k (entity-id v)) (into r (normalize v)) id)
+        (recur (assoc! m k (with-meta [(entity-id v)] {::one? true})) (into r (normalize v)) id)
         ;;
         (entities? v)
         (recur (assoc! m k (into #{} (map entity-id) v))
@@ -128,10 +128,10 @@
                id)
         ;;
         (ident? v)
-        (recur (assoc! m k v) r id)
+        (recur (assoc! m k (with-meta [v] {::one? true})) r id)
         ;;
-        (and (seqable? v) (enc/revery? ident? v))
-        (recur (assoc! m k (into #{} v)) r id)
+        (and (vector? v) (enc/revery? ident? v))
+        (recur (assoc! m k v) r id)
         ;;
         :else
         (recur (assoc! m k v) r id)))))
@@ -574,7 +574,10 @@
             id)
            ;;
            (and (some? id) (keyword? elem) (not (-rev-keyword? elem)))
-           (recur (enc/assoc-some r elem (get-in db (conj id elem))) id)
+           (let [v (get-in db (conj id elem))
+                 one? (some-> (meta v) ::one?)
+                 v' (if one? (nth v 0) v)]
+             (recur (enc/assoc-some r elem v') id))
            (and (some? id) (keyword? elem) (-rev-keyword? elem))
            (let [k (-rev->keyword elem)]
              (recur
@@ -586,14 +589,16 @@
               id))
            ;; join
            :when (and (some? id) (map? elem)) ;; {:friend [:name]}
-           :let  [k    (ffirst elem)
-                  rev? (-rev-keyword? k)
-                  ref' (if-not rev?
-                         (get-in db (conj parent k))
-                         (reverse-search db (-rev->keyword k) id))]
+           :let  [k     (ffirst elem)
+                  rev?  (-rev-keyword? k)
+                  ref'  (if-not rev?
+                          (get-in db (conj parent k))
+                          (reverse-search db (-rev->keyword k) id))
+                  one?  (some-> (meta ref') ::one?)
+                  ref'' (if one? (nth ref' 0) ref')]
            ;;
-           (and (some? id) (ident? ref'))
-           (recur (enc/assoc-some r k (pull* db (second (first elem)) ref')) id)
+           (and (some? id) (or one? (ident? ref')))
+           (recur (enc/assoc-some r k (pull* db (second (first elem)) ref'')) id)
            ;;
            (and (some? id) (idents? ref') (not rev?))
            (recur (enc/assoc-some r (ffirst elem)
@@ -908,7 +913,7 @@
       [:map {?table {?e {?attr (`m/or . !vs ...)}}}]
       ;; [?e ?k [?ref ?id]]
       {:parsed [?table (m/and ?e (m/not (m/pred list?))) ?attr (m/and ?v [_ _])]}
-      [:map {?table {?e {?attr ~`(m/or ~(some-value ?v) (m/scan ~(some-value ?v)))}}}]
+      [:map {?table {?e {?attr ~`(m/scan ~(some-value ?v))}}}]
       ;; [?e ?k [!vs ...]]
       {:parsed [?table (m/and ?e (m/not (m/pred list?))) ?attr (m/and ?v [!vs ...])]}
       [:map {?table {?e {?attr (`m/or ?v . !vs ...)}}}]
