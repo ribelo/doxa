@@ -52,17 +52,20 @@
   (m/rewrite k
     :id                                                true
     (m/keyword _ (m/pred #(contains? *id-sufixes* %))) true
-    _ false))
+    _
+    false))
 
 (defn- ident? [x]
   (m/rewrite x
     [(m/pred key-id?) (m/pred eid?)] true
-    _ false))
+    _
+    false))
 
 (defn- idents? [xs]
   (m/rewrite xs
     (m/seqable (m/pred ident?) ...) true
-    _ false))
+    _
+    false))
 
 (defn- entity? [^clojure.lang.IPersistentMap m]
   (m/rewrite [m (meta m)]
@@ -78,7 +81,8 @@
 (defn- entities? [^clojure.lang.IPersistentVector xs]
   (m/rewrite xs
     [(m/pred entity?) ...] true
-    _ false))
+    _
+    false))
 
 (def ^:private not-entities? (complement (some-fn entity? entities?)))
 
@@ -90,7 +94,8 @@
     [:id ?eid]
     [(m/scan [(m/pred key-id? ?k) ?v]) _]
     [?k ?v]
-    _ false))
+    _
+    false))
 
 (defn normalize
   "turns a nested map into a flat collection with references."
