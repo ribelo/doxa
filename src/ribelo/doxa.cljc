@@ -24,13 +24,13 @@
   [xs]
   `(enc/if-clj (clojure.lang.RT/iter ~xs) (cljs.core/iter ~xs)))
 
-(defmacro ^:private -first-key
+(defn ^:private -first-key
   [xs]
-  `(first (keys ~xs)))
+  (first (keys ~xs)))
 
-(defmacro ^:private -first-val
+(defn ^:private -first-val
   [xs]
-  `(first (vals ~xs)))
+  (first (vals ~xs)))
 
 (def
   ^{:doc "returns a vector even if the argument is nil"}
