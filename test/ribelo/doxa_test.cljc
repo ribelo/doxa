@@ -291,8 +291,8 @@
                  (dx/pull db [:name {:father [:name]}] [:db/id 6]))))
 
       (t/testing "Multi attrs yield a collection of maps"
-        (t/is (= {:name "Petr" :child #{{:name "David"}
-                                        {:name "Thomas"}}}
+        (t/is (= {:name "Petr" :child [{:name "David"}
+                                       {:name "Thomas"}]}
                  (dx/pull db [:name {:child [:name]}] [:db/id 1]))))
 
       (t/testing "Missing attrs are dropped"
@@ -305,14 +305,41 @@
 
       (t/testing "Map specs can override component expansion"
         (t/is (or (= {:part-name "Part A", :_part-of [{:part-name "Part A.B"} {:part-name "Part A.A"}]}
-                  (dx/pull db [:part-name {:_part-of [:part-name]}] [:db/id 10]))
+                     (dx/pull db [:part-name {:_part-of [:part-name]}] [:db/id 10]))
                   (= {:part-name "Part A", :_part-of [{:part-name "Part A.A"} {:part-name "Part A.B"}]}
                      (dx/pull db [:part-name {:_part-of [:part-name]}] [:db/id 10]))))))
 
     (t/testing "eql"
       (t/is (= {:name "Petr"}
                (dx/pull db {[:db/id 1] [:name]})
-               (dx/pull db [:name] [:db/id 1]))))))
+               (dx/pull db [:name] [:db/id 1]))))
+
+    (t/testing "union"
+      (let [tx {:chat/id 0
+                :chat/entries
+                [{:message/id           0
+                  :message/text         "foo"
+                  :chat.entry/timestamp "1234"}
+                 {:message/id           1
+                  :message/text         "bar"
+                  :chat.entry/timestamp "1235"}
+                 {:audio/id             0
+                  :audio/url            "audio://asdf.jkl"
+                  :audio/duration       1234
+                  :chat.entry/timestamp "4567"}
+                 {:photo/id             0
+                  :photo/url            "photo://asdf_10x10.jkl"
+                  :photo/height         10
+                  :photo/width          10
+                  :chat.entry/timestamp "7890"}]}
+            db (dx/db-with [tx])]
+        (t/is (= {:chat/entries
+                  [{:photo/id 0, :photo/url "photo://asdf_10x10.jkl" :photo/width 10, :photo/height 10, :chat.entry/timestamp "7890"}
+                   {:message/id 1, :message/text "bar" :chat.entry/timestamp "1235"}
+                   {:message/id 0, :message/text "foo" :chat.entry/timestamp "1234"}]}
+                 (dx/pull db [{:chat/entries {:message/id [:message/id :message/text :chat.entry/timestamp]
+                                              :photo/id   [:photo/id :photo/url :photo/width :photo/height :chat.entry/timestamp]}}]
+                          [:chat/id 0])))))))
 
 ;; * query
 
@@ -634,9 +661,8 @@
                           {:db/id 2 :name "petr" :cars [{:db/id 10 :name "peugot"}]}
                           {:db/id 3 :name "mike" :cars {:db/id 10 :name "peugot"}}
                           {:db/id 4 :name "mike" :cars []}])]
-    (t/is (set? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 1])))
-          "pull returns set when N entities in join")
-    (t/is (set? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 2])))
+    (dx/pull db [:name {:cars [:name]}] [:db/id 1])
+    (t/is (vector? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 2])))
           "pull returns vector when 1 entity in join")))
 
 (t/deftest gh-17
