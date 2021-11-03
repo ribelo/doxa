@@ -24,21 +24,17 @@
   [xs]
   `(enc/if-clj (clojure.lang.RT/iter ~xs) (cljs.core/iter ~xs)))
 
-(defn ^:private -first-key
+(defn ^:private first-key
   [xs]
-  (first (keys ~xs)))
+  (first (keys xs)))
 
-(defn ^:private -first-val
+(defn ^:private first-val
   [xs]
-  (first (vals ~xs)))
+  (first (vals xs)))
 
 (def
   ^{:doc "returns a vector even if the argument is nil"}
   conjv (fnil conj []))
-
-(def
-  ^{:doc "returns a set even if the argument is nil"}
-  conjs (fnil conj #{}))
 
 (def
   ^{:doc "returns a map even if the argument is nil"}
@@ -49,26 +45,26 @@
 (def ^:private eid?           (some-fn simple-eid? compound-eid?))
 
 (defn- key-id? [k]
-  (m/rewrite k
+  (m/match k
     :id                                                true
     (m/keyword _ (m/pred #(contains? *id-sufixes* %))) true
     _
     false))
 
 (defn- ident? [x]
-  (m/rewrite x
+  (m/match x
     [(m/pred key-id?) (m/pred eid?)] true
     _
     false))
 
 (defn- idents? [xs]
-  (m/rewrite xs
+  (m/match xs
     (m/seqable (m/pred ident?) ...) true
     _
     false))
 
 (defn- entity? [^clojure.lang.IPersistentMap m]
-  (m/rewrite [m (meta m)]
+  (m/find [m (meta m)]
     [_ {::entity-key (m/some)}]
     true
     [{:id (m/pred eid?)} _]
@@ -79,7 +75,7 @@
     false))
 
 (defn- entities? [^clojure.lang.IPersistentVector xs]
-  (m/rewrite xs
+  (m/match xs
     [(m/pred entity?) ...] true
     _
     false))
@@ -87,7 +83,7 @@
 (def ^:private not-entities? (complement (some-fn entity? entities?)))
 
 (defn- entity-id [^clojure.lang.IPersistentMap m]
-  (m/rewrite [m (meta m)]
+  (m/find [m (meta m)]
     [{?eid ?v} {::entity-key ?eid}]
     [?eid ?v]
     [{:id (m/pred eid? ?eid)} _]
@@ -135,7 +131,7 @@
         (ident? v)
         (recur (assoc! m k (with-meta [v] {::one? true})) r id)
         ;;
-        (and (vector? v) (enc/revery? ident? v))
+        (and (vector? v) (idents? v))
         (recur (assoc! m k v) r id)
         ;;
         :else
@@ -190,7 +186,7 @@
           it (-iter xs)]
       (loop [db' (assoc-in db [?tid ?eid ?k] (entity-id ?v))]
         (enc/cond
-          :if-not (.hasNext it) db'
+          (not (.hasNext it)) db'
           :let [[ks m] (.next it)]
           (recur (assoc-in db' ks m)))))
     ;; put [?tid ?eid] ?k [?entity ...]
@@ -198,12 +194,12 @@
     (let [itx (-iter !vs)]
       (loop [acc (assoc-in db [?tid ?eid ?k] #{})]
         (enc/cond
-          :if-not (.hasNext itx) acc
+          (not (.hasNext itx)) acc
           :let    [?v  (.next itx)
                    xs  (normalize ?v)
                    ity (-iter xs)]
           (recur
-           (loop [acc (update-in acc [?tid ?eid ?k] conjs (entity-id ?v))]
+           (loop [acc (update-in acc [?tid ?eid ?k] conjv (entity-id ?v))]
              (enc/cond
                (not (.hasNext ity)) acc
                :let                 [[ks m] (.next ity)]
@@ -219,7 +215,7 @@
           it (-iter xs)]
       (loop [acc db]
         (enc/cond
-          :if-not (.hasNext it) acc
+          (not (.hasNext it)) acc
           :let    [[ks m] (.next it)]
           (recur (assoc-in acc ks m)))))
     ;; put [m ...]
@@ -227,7 +223,7 @@
     (let [itx (-iter ?vs)]
       (loop [acc db]
         (enc/cond
-          :if-not (.hasNext itx) acc
+          (not (.hasNext itx)) acc
           :let    [?m  (.next itx)
                    xs  (normalize ?m)
                    ity (-iter xs)]
@@ -235,7 +231,7 @@
           (recur
            (loop [acc' acc]
              (enc/cond
-               :if-not (.hasNext ity) acc'
+               (not (.hasNext ity)) acc'
                :let    [[ks m] (.next ity)]
                (recur  (assoc-in acc' ks m))))))))
     ;; put [?tid ?eid] m
@@ -244,7 +240,7 @@
           it (-iter xs)]
       (loop [acc db]
         (enc/cond
-          :if-not (.hasNext it) acc
+          (not (.hasNext it)) acc
           :let    [[ks m] (.next it)]
           (recur  (update-in acc ks enc/merge m)))))
     ;; put [?tid ?eid] . !ks !vs ...
@@ -254,7 +250,7 @@
           vit (-iter !vs)]
       (loop [db' db]
         (enc/cond
-          :if-not (.hasNext kit) db'
+          (not (.hasNext kit)) db'
           :let [k (.next kit)
                 v (.next vit)]
           (recur (-submit-commit db [:dx/put [?tid ?eid] k v])))))
@@ -270,7 +266,7 @@
                       (= n 1) (dissoc db ?tid))]
       (loop [acc db']
         (enc/cond
-          :if-not (.hasNext it) acc
+          (not (.hasNext it)) acc
           :let    [[tid eid k] (.next it)]
           (recur  (-submit-commit acc [:dx/delete [tid eid] k ?ident])))))
     ;; delete [?tid ?eid] ?k
@@ -300,16 +296,16 @@
       :else        (assoc-in db [?tid ?eid ?k] [?v]))
     ;; conj [?tid ?eid] ?k ?entity
     [:dx/conj [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred entity? ?v)]
-    (-> (update-in db [?tid ?eid ?k] conjs (entity-id ?v))
+    (-> (update-in db [?tid ?eid ?k] conjv (entity-id ?v))
         (-submit-commit [:dx/put ?v]))
     ;; conj [?tid ?eid] ?k [!entites ...]
     [:dx/conj [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) [(m/pred entity? !vs) ...]]
     (let [it (-iter !vs)]
       (loop [acc db]
         (enc/cond
-          :if-not (.hasNext it) acc
+          (not (.hasNext it)) acc
           :let    [v    (.next it)
-                   acc' (-> (update-in acc [?tid ?eid ?k] conjs (entity-id v))
+                   acc' (-> (update-in acc [?tid ?eid ?k] conjv (entity-id v))
                             (-submit-commit [:dx/put v]))]
           :else   (recur acc'))))
     ;; merge [?tid ?eid] ?m
@@ -366,7 +362,7 @@
                  (let [it (-iter txs)]
                    (loop [acc db match? true]
                      (enc/cond
-                       :if-not (.hasNext it)
+                       (not (.hasNext it))
                        acc
                        :let [tx   (.next it)
                              kind (first tx)]
@@ -557,8 +553,8 @@
            r
            ;;
            :let  [elem (.next qit)]
-           (and (map? elem) (ident? (ffirst elem)))
-           (recur (pull* db (second (first elem)) (ffirst elem)) id)
+           (and (map? elem) (ident? (first-key elem)))
+           (recur (pull* db (first-val elem) (first-key elem)) id)
            ;; prop
            (and (some? id) (#{:*} elem))
            (recur
@@ -620,7 +616,7 @@
                  (recur acc))))
            ;; join
            :when (and (some? id) (map? elem)) ;; {:friend [:name]}
-           :let  [k     (ffirst elem)
+           :let  [k     (first-key elem)
                   rev?  (-rev-keyword? k)
                   ref'  (if-not rev?
                           (get-in db (conj parent k))
@@ -629,38 +625,38 @@
                   ref' (if one? (nth ref' 0) ref')]
            ;;
            (and (some? id) (or one? (ident? ref')))
-           (recur (enc/assoc-some r k (pull* db (second (first elem)) ref')) id)
+           (recur (enc/assoc-some r k (pull* db (first-val elem) ref')) id)
            ;;
            (and (some? id) (idents? ref') (not rev?))
            (let [rit (-iter ref')]
              (loop [acc (transient [])]
                (enc/cond
                  (not (.hasNext rit))
-                 (enc/assoc-some r (ffirst elem) (not-empty (persistent! acc)))
+                 (enc/assoc-some r (first-key elem) (not-empty (persistent! acc)))
                  ;;
                  :let [ref' (.next rit)
                        k (nth ref' 0)
-                       x (second (first elem))]
+                       v (first-val elem)]
                  ;;
-                 (map? x)
-                 (let [q (get x k)]
+                 (map? v)
+                 (let [q (get v k)]
                    (recur
                     (if q
                       (conj! acc (pull* db q ref'))
                       acc)))
-                 (vector? x)
+                 (vector? v)
                  (recur
-                  (let [r (pull* db x ref')]
+                  (let [r (pull* db v ref')]
                     (if (not-empty r) (conj! acc r) acc))))))
            ;;
            (and (some? id) (idents? ref') rev?)
-           (recur (enc/assoc-some r (ffirst elem)
+           (recur (enc/assoc-some r (first-key elem)
                                   (enc/cond
-                                    :let [xs (mapv (partial pull* db (second (first elem))) ref')
+                                    :let [xs (mapv (partial pull* db (first-val elem)) ref')
                                           n  (count xs)]
                                     ;;
                                     (> n 1)
-                                    (into [] (comp (map not-empty) (remove nil?)) xs)
+                                    (into [] (filter not-empty) xs)
                                     ;;
                                     (= n 1)
                                     (not-empty (first xs))))
@@ -671,7 +667,7 @@
 
 (defn pull
   ([db query]
-   (pull db (second (first query)) (ffirst query)))
+   (pull db (first-val query) (first-key query)))
   ([db query id]
    (enc/cond
      (ident?  id)                (pull* db query id )
@@ -679,7 +675,7 @@
 
 (defn pull-one
   ([db query]
-   (-> (pull db (second (first query)) (ffirst query)) vals first))
+   (-> (pull db (first-val query) (first-key query)) vals first))
   ([db query id]
    (enc/cond
      (ident?  id)                (-> (pull* db query id)  vals first)

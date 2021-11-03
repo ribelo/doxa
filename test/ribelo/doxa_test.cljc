@@ -160,10 +160,10 @@
                (dx/commit db [[:dx/conj [:db/id 1] :aka "Tupen"]])))
       (t/is (= #:db{:id {1 {:db/id 1 :name ["Petr" "Ivan"], :aka ["Devil"]}}}
                (dx/commit db [[:dx/conj [:db/id 1] :name "Ivan"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend #{[:db/id 2]}}
+      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend [[:db/id 2]]}
                          2 {:db/id 2, :name "Ivan"}}}
                (dx/commit db [[:dx/conj [:db/id 1] :friend {:db/id 2 :name "Ivan"}]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend #{[:db/id 2] [:db/id 3]}}
+      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend [[:db/id 2] [:db/id 3]]}
                          2 {:db/id 2, :name "Ivan"}
                          3 {:db/id 3, :name "Lucy"}}}
                (dx/commit db [[:dx/conj [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
