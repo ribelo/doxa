@@ -17,6 +17,41 @@
 (def ^:dynamic *atom-fn* atom)
 (def ^:dynamic *id-sufixes* #{"id" "by-id" "list"})
 
+(defprotocol ITransactions
+  (-next-id      [_    ])
+  (-txs          [_    ])
+  (-prepend!     [_  tx])
+  (-ltt          [_    ])
+  (-datoms-since [_ udt]))
+
+(deftype Transaction  [^long id ^long udt edits datoms])
+
+(deftype Transactions [^long id ^long max-size ^:unsynchronized-mutable txs_]
+  ITransactions
+  (-next-id [_]
+    (inc id))
+  (-txs [_]
+    txs_)
+  (-prepend! [_ tx]
+    (set! txs_ (into [tx] (take (dec max-size)) txs_)))
+  (-ltt [_]
+    (if-let [tx (first txs_)]
+      (.-udt ^Transaction tx)
+      0))
+  (-datoms-since [_ udt]
+    (into []
+          (comp
+           (keep (fn [^Transaction tx]
+                   (let [t (.-udt tx)]
+                     (when (>= t udt)
+                       (.-datoms tx)))))
+           (mapcat identity))
+          txs_)))
+
+(deftype BaseCache [cache_ ^long cache-size tick_ ^long ttl-ms])
+
+(deftype TickedCacheEntry [delay ^long udt ^long tick-lru ^long tick-lfu ^long lqt])
+
 (defmacro ^:private -iter
   "returns an iterator for both clj and cljs.
   while there is an iter function in cljs, there isn't and there won't be one in
