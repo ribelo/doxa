@@ -1191,7 +1191,7 @@
 (defn comp-some [& fns]
   (apply comp (filter identity fns)))
 
-(defmacro -execute-q [{:keys [find first? mapcat? pull keys limit xf] :as pq} db]
+(defmacro -q [{:keys [find first? mapcat? pull keys limit xf] :as pq} db]
   (let [r (gensym 'meander-result_)]
     `(let [~r (m/rewrites ~db
                 ~(datalog->meander pq) ~find)]
