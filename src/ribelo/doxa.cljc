@@ -2,6 +2,7 @@
   (:refer-clojure  :exclude [ident? -next])
   #?(:cljs (:require-macros [ribelo.doxa :refer [q with-dx with-dx! -iter]]))
   (:require
+   [clojure.set :as set]
    [meander.epsilon :as m]
    [meander.strategy.epsilon :as m*]
    [taoensso.encore :as enc]
@@ -11,7 +12,7 @@
 
 #?(:clj (set! *warn-on-reflection* true))
 
-(declare reverse-search)
+(declare reverse-search pull -pull)
 
 (def ^:dynamic *empty-map* (hash-map))
 (def ^:dynamic *atom-fn* atom)
@@ -642,195 +643,6 @@
          empty-db (with-meta *empty-map* meta')]
      (if (not-empty data) (db-with empty-db data) empty-db))))
 
-(defn -last-tx [db] (some-> db meta ::tx last))
-
-;; pull
-
-(defn- -rev-keyword? [k]
-  (let [name' (name k)]
-    (and (enc/str-starts-with? name' "_")
-         (not (enc/str-starts-with? name' "__")))))
-
-(def ^:private -forward-keyword?
-  (complement -rev-keyword?))
-
-(defn- -rev->keyword [k]
-  (cond
-    (qualified-keyword? k)
-    (let [[ns k] (enc/explode-keyword k)]
-      (enc/merge-keywords [ns (enc/substr k 1)]))
-    ;;
-    (keyword? k)
-    (keyword (enc/substr (name k) 1))))
-
-(defn reverse-search
-  ([db id]
-   (vec
-    ^::m/dangerous
-    (m/search db {?pid {?eid {?k (m/or ~id (m/scan ~id))}}} [?pid ?eid ?k])))
-  ([db k id]
-   (vec
-    ^::m/dangerous
-    (m/search db {?pid {?eid {~k (m/or ~id (m/scan ~id))}}} [?pid ?eid]))))
-
-(defn pull*
-  ([db query]
-   (pull* db query nil))
-  ([db query parent]
-   (enc/cond
-     (= [:*] query)
-     (get-in db parent)
-     :else
-     (let [qit (-iter query)]
-       (loop [r {} id parent]
-         (enc/cond
-           (not (.hasNext qit))
-           r
-           ;;
-           :let  [elem (.next qit)]
-           (and (map? elem) (ident? (first-key elem)))
-           (recur (pull* db (first-val elem) (first-key elem)) id)
-           ;; prop
-           (and (some? id) (#{:*} elem))
-           (recur
-            (let [m  (get-in db id)
-                  mit (-iter m)]
-              (loop [acc (transient {})]
-                (enc/cond
-                  (not (.hasNext mit))
-                  (persistent! acc)
-                  ;;
-                  :let [elem (.next mit)
-                        k    (nth elem 0)
-                        v    (nth elem 1)]
-                  ;;
-                  (and (idents? v) (= 1 (count v)))
-                  (recur (assoc! acc k (nth v 0)))
-                  ;;
-                  :else
-                  (recur (assoc! acc k v)))))
-            id)
-           ;;
-           (and (some? id) (keyword? elem) (not (-rev-keyword? elem)))
-           (let [v (get-in db (conj id elem))
-                 one? (some-> (meta v) ::one?)
-                 v' (if one? (nth v 0) v)]
-             (recur (enc/assoc-some r elem v') id))
-           ;;
-           (and (some? id) (keyword? elem) (-rev-keyword? elem))
-           (let [k (-rev->keyword elem)]
-             (recur
-              (enc/assoc-some r elem (enc/cond
-                                       :let  [v (reverse-search db k id)]
-                                       (and (idents? v) (= (count v) 1))
-                                       (nth v 0)
-                                       :else v))
-              id))
-           ;;
-           (and (some? id) (and (seq elem) (second elem) (enc/revery? keyword? (second elem))))
-           (let [k   (nth elem 0)
-                 eit (-iter (nth elem 1))]
-             (loop [acc (transient {})]
-               (enc/cond
-                 (not (.hasNext eit))
-                 (persistent! acc)
-                 ;;
-                 :let [kk (.next eit)]
-                 (-rev-keyword? k)
-                 (let [rk (-rev->keyword elem)]
-                   (recur
-                    (enc/assoc-some acc k (enc/cond
-                                            :let  [v (reverse-search db rk id)]
-                                            (and (idents? v) (= (count v) 1))
-                                            (nth v 0)
-                                            :else v))))
-                 :let [v' (get-in db (conj id kk))]
-                 (some? v')
-                 (recur (assoc! acc kk v'))
-                 :else
-                 (recur acc))))
-           ;; join
-           :when (and (some? id) (map? elem)) ;; {:friend [:name]}
-           :let  [k     (first-key elem)
-                  rev?  (-rev-keyword? k)
-                  ref'  (if-not rev?
-                          (get-in db (conj parent k))
-                          (reverse-search db (-rev->keyword k) id))
-                  one?  (some-> (meta ref') ::one?)
-                  ref' (if one? (nth ref' 0) ref')]
-           ;;
-           (and (some? id) (or one? (ident? ref')))
-           (recur (enc/assoc-some r k (pull* db (first-val elem) ref')) id)
-           ;;
-           (and (some? id) (idents? ref') (not rev?))
-           (let [rit (-iter ref')]
-             (loop [acc (transient [])]
-               (enc/cond
-                 (not (.hasNext rit))
-                 (enc/assoc-some r (first-key elem) (not-empty (persistent! acc)))
-                 ;;
-                 :let [ref' (.next rit)
-                       k (nth ref' 0)
-                       v (first-val elem)]
-                 ;;
-                 (map? v)
-                 (let [q (get v k)]
-                   (recur
-                    (if q
-                      (conj! acc (pull* db q ref'))
-                      acc)))
-                 (vector? v)
-                 (recur
-                  (let [r (pull* db v ref')]
-                    (if (not-empty r) (conj! acc r) acc))))))
-           ;;
-           (and (some? id) (idents? ref') rev?)
-           (recur (enc/assoc-some r (first-key elem)
-                                  (enc/cond
-                                    :let [xs (mapv (partial pull* db (first-val elem)) ref')
-                                          n  (count xs)]
-                                    ;;
-                                    (> n 1)
-                                    (into [] (filter not-empty) xs)
-                                    ;;
-                                    (= n 1)
-                                    (not-empty (first xs))))
-                  id)
-           ;;
-           (some? id)
-           (recur r id)))))))
-
-(defn pull
-  ([db query]
-   (pull db (first-val query) (first-key query)))
-  ([db query id]
-   (enc/cond
-     (ident?  id)                (pull* db query id )
-     (idents? id) (mapv (fn [id'] (pull* db query id')) id))))
-
-(defn pull-one
-  ([db query]
-   (-> (pull db (first-val query) (first-key query)) vals first))
-  ([db query id]
-   (enc/cond
-     (ident?  id)                (-> (pull* db query id)  vals first)
-     (idents? id) (mapv (fn [id'] (-> (pull* db query id') vals first)) id))))
-
-(defn haul
-  ([db]   (denormalize db   12))
-  ([db x] (haul        db x 12))
-  ([db x max-level]
-   (enc/cond
-     (keyword? x)
-     (denormalize db (db x) max-level)
-     ;;
-     (vector? x)
-     (denormalize db (get-in db x) max-level)
-     ;;
-     (map? x)
-     (denormalize db x max-level)
-     )))
-
 ;; * datalog
 
 (defn parse-find [args]                 ;TODO
@@ -1205,7 +1017,7 @@
                                args-map#     (zipmap '~find elem#)
                                table#        (args-map# pull-table#)
                                e#            (args-map# pull-eid#)]
-                           (pull ~db q# [table# e#])))))
+                           (-pull ~db q# [table# e#])))))
               ~(when first?  `(take 1))
               ~(when mapcat? `(mapcat identity))
               ~(when keys    `(map (fn [m#] (zipmap '~keys m#))))
@@ -1262,57 +1074,364 @@
          (vary-meta ~body-result assoc ::execution-time (- t1# t0#))
          ~body-result))))
 
-(defmacro q [q' db & args]
-  (let [env      (meta &form)
-        kw       (m/rewrite env {::cache? true} [(`quote ~q') (`quote ~args)] {::cache (m/some ?x)} ?x)
-        m        `(meta ~db)
-        fresh?   `(boolean (::fresh? ~env))
-        ttl      `(::ttl ~m)
-        cache_   `(::cache_ ~m)
-        measure? `(::measure? ~m)
-        cr       (gensym 'cached-result_)
-        fr       (gensym 'fresh-result_)
-        ltt      (gensym 'last-transaction-timestamp_)
-        lqt      (gensym 'last-query-timestamp_)
-        pq       (apply parse-query q' args)
-        inst     (gensym 'instant_)]
-    (when (-valid-query? pq)
-      `(let [~cr   ~(if measure?
-                      `(with-time-ms (some-> ~cache_ deref (get-in [~kw ::cached-results])))
-                      `(some-> ~cache_ deref (get-in [~kw ::cached-results])))
-             ~lqt  (some-> ~cache_ deref (get-in [~kw ::last-query-timestamp]))
-             ~ltt  (::last-transaction-timestamp ~m)
-             ~inst (enc/now-udt)]
-         (if (and (some? ~kw) (some? ~cr)
-                  (or (not ~ttl) (> ~ttl (- ~inst ~lqt)))
-                  (or (and ~lqt (> ~lqt ~ltt))
-                      (not ~(-last-tx-match-query? db pq))))
+(defn -->cache-kw [query id env]
+  (m/rewrite env {::cache? true} [~query ~id] {::cache (m/some ?x)} ?x))
+
+(defmacro q
+  ([q' db & args]
+   (let [env      (meta &form)
+         kw       (gensym 'cache-keyword_)
+         m        (gensym 'db-meta_)
+         fresh?   (gensym 'force-fresh?_)
+         cache    (gensym 'cache_)
+         cache_   (gensym 'cache_data)
+         ttl-ms   (gensym 'ttl-ms_)
+         txs      (gensym 'txs_)
+         measure? (gensym 'measure_)
+         tick_    (gensym 'tick_)
+         e        (gensym 'cache-entry_)
+         r        (gensym 'result_)
+         ltt      (gensym 'last-transaction-time_)
+         lqt      (gensym 'last-query-timestamp_)
+         pq       (apply parse-query q' args)
+         instant  (gensym 'instant_)]
+     (when (-valid-query? pq)
+       `(let [~kw       (-->cache-kw '~q' '~args ~env)
+              ~measure? ~(env ::measure?)
+              ~instant  (enc/now-udt)]
+          (if (some? ~kw)
+            (let [~m      (meta ~db)
+                  ~fresh? ~(boolean (env ::fresh?))
+                  ~cache  (~m ::cache)
+                  ~cache_ (.-cache_ ~(with-meta cache {:tag `BaseCache}))
+                  ~ttl-ms (.-ttl-ms ~(with-meta cache {:tag `BaseCache}))
+                  ~txs    (~m ::txs)
+                  ~tick_  (.-tick_ ~(with-meta cache {:tag `BaseCache}))
+                  ~e      (@~cache_ ~kw)
+                  ~lqt    (if (some? ~e) (.-lqt ~(with-meta e {:tag `TickedCacheEntry})) 0)
+                  ~ltt    (-ltt ~txs)]
+              (if (and (not ~fresh?) (some? ~e)
+                       (or (not ~ttl-ms) (> ~ttl-ms (- ~instant (.-udt ~(with-meta e {:tag `TickedCacheEntry})))))
+                       (or (and ~lqt (> ~lqt ~ltt))
+                           (not (-datoms-match-query? (-datoms-since ~txs ~lqt) '~pq))))
+                (let [~e (enc/-swap-val! ~cache_ ~kw
+                           (fn [~'?e]
+                             (let [~'e ~(with-meta '?e {:tag `TickedCacheEntry})]
+                               (TickedCacheEntry. (.-delay ~'e) (.-udt ~'e) @~tick_ (inc (.-tick-lfu ~'e)) ~instant))))
+                      ~r (if ~measure?
+                           (with-time-ms @(.-delay ~(with-meta e {:tag `TickedCacheEntry})))
+                           (deref (.-delay ~(with-meta e {:tag `TickedCacheEntry}))))]
+                  (if (enc/if-clj
+                        (instance? clojure.lang.IMeta ~r)
+                        (satisfies? cljs.core.IMeta ~r))
+                    (vary-meta ~r assoc ::fresh? false)
+                    ~r))
+                (let [tick# (swap! ~tick_ (fn [^long n#] (inc n#)))
+                      ~r    (if ~measure?
+                              (delay (with-time-ms (-q ~pq ~db)))
+                              (delay (-q ~pq ~db)))]
+                  (enc/-swap-val! ~cache_ ~kw
+                    (fn [~'?e]
+                      (if (or (nil? ~'?e) ~fresh?
+                              (> (- ~instant (.-udt ~(with-meta '?e {:tag `TickedCacheEntry}))) ~ttl-ms))
+                        (TickedCacheEntry. ~r ~instant tick# 1 ~instant)
+                        (let [e# ~(with-meta '?e {:tag `TickedCacheEntry})]
+                          (TickedCacheEntry. (.-delay e#) (.-udt e#)
+                                             tick# (inc (.-tick-lfu e#))
+                                             ~instant)))))
+                  (let [v# (deref ~r)]
+                    (if (enc/if-clj
+                          (instance? clojure.lang.IMeta v#)
+                          (satisfies? cljs.core.IMeta v#))
+                      (vary-meta v# assoc ::fresh? true)
+                      v#)))))
+            ;; else
+            (let [~r (if ~measure?
+                       (with-time-ms (-q ~pq ~db))
+                       (-q ~pq ~db))]
+              (if (enc/if-clj
+                    (instance? clojure.lang.IMeta ~r)
+                    (satisfies? cljs.core.IMeta ~r))
+                (vary-meta ~r assoc ::fresh? true)
+                ~r))))))))
+
+;; pull
+
+(defn- -rev-keyword? [k]
+  (let [name' (name k)]
+    (and (enc/str-starts-with? name' "_")
+         (not (enc/str-starts-with? name' "__")))))
+
+(def ^:private -forward-keyword?
+  (complement -rev-keyword?))
+
+(defn- -rev->keyword [k]
+  (cond
+    (qualified-keyword? k)
+    (let [[ns k] (enc/explode-keyword k)]
+      (enc/merge-keywords [ns (enc/substr k 1)]))
+    ;;
+    (keyword? k)
+    (keyword (enc/substr (name k) 1))))
+
+(defn reverse-search
+  ([db id]
+   (vec
+    ^::m/dangerous
+    (m/search db {?pid {?eid {?k (m/or ~id (m/scan ~id))}}} [?pid ?eid ?k])))
+  ([db k id]
+   (vec
+    ^::m/dangerous
+    (m/search db {?pid {?eid {~k (m/or ~id (m/scan ~id))}}} [?pid ?eid]))))
+
+(defn pull->datalog [query ids]
+  (->> (m/rewrite {:query query :ids ids}
+         {:ids (m/or [_ _ :as ?ref] (m/symbol _ _ :as ?ref)) :as ?m}
+         (m/cata {& [?m {:ids [?ref]}]})
+         {:query [!elems ...] :ids [[_ _] ... :as ?ids]}
+         (m/cata [(m/cata {:elem !elems :ids ?ids}) ...])
+         {:elem (m/keyword _ _ :as ?k) :ids (m/or [[!t !e] ...] (m/let [!t '_ !e '_]))}
+         [[!t !e ?k '_] ...]
+         {:elem {!ks !elems} :ids ?ids}
+         [(m/cata {:elem !ks :ids ?ids}) ... (m/cata {:elem !elems}) ...]
+         {:elem [!elems ...] :ids ?ids}
+         [(m/cata {:elem !elems :ids ?ids}) ...]
+         (m/with [%1 [_ _ _ _ :as !datoms]
+                  %2 (m/or [%2 ...] [%1 ...] %1)]
+           %2)
+         [!datoms ...])
+       (into [] (distinct))))
+
+(defn -pull
+  ([db query]
+   (-pull db query nil nil))
+  ([db query parent]
+   (-pull db query parent nil))
+  ([db query parent env]
+   (enc/cond
+     (-idents? parent)
+     (mapv #(pull db query % env) parent)
+     (= [:*] query)
+     (get-in db parent)
+     :else
+     (let [qit (-iter query)]
+       (loop [r {} id parent]
+         (enc/cond
+           (not (.hasNext qit))
+           r
+           ;;
+           :let  [elem (.next qit)]
+           (and (map? elem) (-ident? (first-key elem)))
+           (recur (pull db (first-val elem) (first-key elem) env) id)
+           ;; prop
+           (and (some? id) (#{:*} elem))
+           (recur
+            (let [m  (get-in db id)
+                  mit (-iter m)]
+              (loop [acc (transient {})]
+                (enc/cond
+                  (not (.hasNext mit))
+                  (persistent! acc)
+                  ;;
+                  :let [elem (.next mit)
+                        k    (nth elem 0)
+                        v    (nth elem 1)]
+                  ;;
+                  (and (-idents? v) (= 1 (count v)))
+                  (recur (assoc! acc k (nth v 0)))
+                  ;;
+                  :else
+                  (recur (assoc! acc k v)))))
+            id)
+           ;;
+           (and (some? id) (keyword? elem) (not (-rev-keyword? elem)))
+           (let [v (get-in db (conj id elem))
+                 one? (some-> (meta v) ::one?)
+                 v' (if one? (nth v 0) v)]
+             (recur (enc/assoc-some r elem v') id))
+           ;;
+           (and (some? id) (keyword? elem) (-rev-keyword? elem))
+           (let [k (-rev->keyword elem)]
+             (recur
+              (enc/assoc-some r elem (enc/cond
+                                       :let  [v (reverse-search db k id)]
+                                       (and (-idents? v) (= (count v) 1))
+                                       (nth v 0)
+                                       :else v))
+              id))
+           ;;
+           (and (some? id) (and (seq elem) (second elem) (enc/revery? keyword? (second elem))))
+           (let [k   (nth elem 0)
+                 eit (-iter (nth elem 1))]
+             (loop [acc (transient {})]
+               (enc/cond
+                 (not (.hasNext eit))
+                 (persistent! acc)
+                 ;;
+                 :let [kk (.next eit)]
+                 (-rev-keyword? k)
+                 (let [rk (-rev->keyword elem)]
+                   (recur
+                    (enc/assoc-some acc k (enc/cond
+                                            :let  [v (reverse-search db rk id)]
+                                            (and (-idents? v) (= (count v) 1))
+                                            (nth v 0)
+                                            :else v))))
+                 :let [v' (get-in db (conj id kk))]
+                 (some? v')
+                 (recur (assoc! acc kk v'))
+                 :else
+                 (recur acc))))
+           ;; join
+           :when (and (some? id) (map? elem)) ;; {:friend [:name]}
+           :let  [k     (first-key elem)
+                  rev?  (-rev-keyword? k)
+                  ref'  (if-not rev?
+                          (get-in db (conj parent k))
+                          (reverse-search db (-rev->keyword k) id))
+                  one?  (some-> (meta ref') ::one?)
+                  ref' (if one? (nth ref' 0) ref')]
+           ;;
+           (and (some? id) (or one? (-ident? ref')))
+           (recur (enc/assoc-some r k (pull db (first-val elem) ref' env)) id)
+           ;;
+           (and (some? id) (-idents? ref') (not rev?))
+           (let [rit (-iter ref')]
+             (loop [acc (transient [])]
+               (enc/cond
+                 (not (.hasNext rit))
+                 (enc/assoc-some r (first-key elem) (not-empty (persistent! acc)))
+                 ;;
+                 :let [ref' (.next rit)
+                       k (nth ref' 0)
+                       v (first-val elem)]
+                 ;;
+                 (map? v)
+                 (let [q (get v k)]
+                   (recur
+                    (if q
+                      (conj! acc (pull db q ref' env))
+                      acc)))
+                 (vector? v)
+                 (recur
+                  (let [r (pull db v ref' env)]
+                    (if (not-empty r) (conj! acc r) acc))))))
+           ;;
+           (and (some? id) (-idents? ref') rev?)
+           (recur (enc/assoc-some r (first-key elem)
+                                  (enc/cond
+                                    :let [xs (mapv #(pull db (first-val elem) % env) ref')
+                                          n  (count xs)]
+                                    ;;
+                                    (> n 1)
+                                    (into [] (filter not-empty) xs)
+                                    ;;
+                                    (= n 1)
+                                    (not-empty (first xs))))
+                  id)
+           ;;
+           (some? id)
+           (recur r id)))))))
+
+(defmacro pull
+  ([db query id]
+   `(pull ~db ~query ~id ~(meta &form)))
+  ([db query id env]
+   (let [kw       (gensym 'cache-keyword_)
+         m        (gensym 'db-meta_)
+         fresh?   (gensym 'force-fresh?_)
+         cache    (gensym 'cache_)
+         cache_   (gensym 'cache_data)
+         ttl-ms   (gensym 'ttl-ms_)
+         txs      (gensym 'txs_)
+         measure? (gensym 'measure_)
+         tick_    (gensym 'tick_)
+         e        (gensym 'cache-entry_)
+         r        (gensym 'result_)
+         ltt      (gensym 'last-transaction-time_)
+         lqt     (gensym 'last-query-timestamp_)
+         instant  (gensym 'instant_)]
+     `(let [~kw       (-->cache-kw '~query '~id ~env)
+           ~measure? ~(env ::measure?)
+           ~instant  (enc/now-udt)]
+       (if (some? ~kw)
+         (let [~m      (meta ~db)
+               ~fresh? ~(boolean (env ::fresh?))
+               ~cache  (~m ::cache)
+               ~cache_ (.-cache_ ~(with-meta cache {:tag `BaseCache}))
+               ~ttl-ms (.-ttl-ms ~(with-meta cache {:tag `BaseCache}))
+               ~txs    (~m ::txs)
+               ~tick_  (.-tick_ ~(with-meta cache {:tag `BaseCache}))
+               ~e      (@~cache_ ~kw)
+               ~lqt    (if (some? ~e) (.-lqt ~(with-meta e {:tag `TickedCacheEntry})) 0)
+               ~ltt    (-ltt ~txs)]
+           (if (and (not ~fresh?) (some? ~e)
+                    (or (not ~ttl-ms) (> ~ttl-ms (- ~instant (.-udt ~(with-meta e {:tag `TickedCacheEntry})))))
+                    (or (and ~lqt (> ~lqt ~ltt))
+                        (not (-datoms-match-query? (-datoms-since ~txs ~lqt) (pull->datalog ~query ~id)))))
+             (let [~e (enc/-swap-val! ~cache_ ~kw
+                        (fn [~'?e]
+                          (let [~'e ~(with-meta '?e {:tag `TickedCacheEntry})]
+                            (TickedCacheEntry. (.-delay ~'e) (.-udt ~'e) @~tick_ (inc (.-tick-lfu ~'e)) ~instant))))
+                   ~r (if ~measure?
+                        (with-time-ms @(.-delay ~(with-meta e {:tag `TickedCacheEntry})))
+                        (deref (.-delay ~(with-meta e {:tag `TickedCacheEntry}))))]
+               (if (enc/if-clj
+                     (instance? clojure.lang.IMeta ~r)
+                     (satisfies? cljs.core.IMeta ~r))
+                 (vary-meta ~r assoc ::fresh? false)
+                 ~r))
+             (let [tick# (swap! ~tick_ (fn [^long n#] (inc n#)))
+                   ~r    (if ~measure?
+                           (delay (with-time-ms (-pull ~db ~query ~id ~env)))
+                           (delay (-pull ~db ~query ~id ~env)))]
+               (enc/-swap-val! ~cache_ ~kw
+                 (fn [~'?e]
+                   (if (or (nil? ~'?e) ~fresh?
+                           (> (- ~instant (.-udt ~(with-meta '?e {:tag `TickedCacheEntry}))) ~ttl-ms))
+                     (TickedCacheEntry. ~r ~instant tick# 1 ~instant)
+                     (let [e# ~(with-meta '?e {:tag `TickedCacheEntry})]
+                       (TickedCacheEntry. (.-delay e#) (.-udt e#)
+                                          tick# (inc (.-tick-lfu e#))
+                                          ~instant)))))
+               (let [v# (deref ~r)]
+                 (if (enc/if-clj
+                       (instance? clojure.lang.IMeta v#)
+                       (satisfies? cljs.core.IMeta v#))
+                   (vary-meta v# assoc ::fresh? true)
+                   v#)))))
+         (let [~r (if ~measure?
+                    (with-time-ms (-pull ~db ~query ~id ~env))
+                    (-pull ~db ~query ~id ~env))]
            (if (enc/if-clj
-                 (instance? clojure.lang.IMeta ~cr)
-                 (satisfies? cljs.core.IMeta ~cr))
-             (vary-meta ~cr assoc ::fresh? false ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
-             ~cr)
-           (let [~fr ~(if measure? `(with-time-ms (-execute-q ~pq ~db)) `(-execute-q ~pq ~db))]
-             (when (and ~kw ~cache_)
-               (when (enc/-gc-now?)
-                 (swap! ~cache_
-                   (fn [m#]
-                     (persistent!
-                      (reduce-kv
-                       (fn [acc# k# v#]
-                         (let [lqt# (get-in v# ::last-query-timestamp)]
-                           (if-not (> (- ~inst lqt#) ~ttl)
-                             (assoc! acc# k# v#)
-                             acc#)))
-                       (transient {})
-                       m#)))))
-               (swap! ~cache_ assoc-in [~kw ::cached-results] ~fr)
-               (swap! ~cache_ assoc-in [~kw ::last-query-timestamp] ~inst))
-             (if (enc/if-clj
-                   (instance? clojure.lang.IMeta ~fr)
-                   (satisfies? cljs.core.IMeta ~fr))
-               (vary-meta ~fr assoc ::fresh? true ::last-query-timestamp ~lqt ::last-transaction-timestamp ~ltt)
-               ~fr)))))))
+                 (instance? clojure.lang.IMeta ~r)
+                 (satisfies? cljs.core.IMeta ~r))
+             (vary-meta ~r assoc ::fresh? true)
+             ~r)))))))
+
+(defn pull-one
+  ([db query]
+   (-> (pull db (first-val query) (first-key query)) vals first))
+  ([db query id]
+   (enc/cond
+     (-ident?  id)                (-> (-pull db query id)  vals first)
+     (-idents? id) (mapv (fn [id'] (-> (-pull db query id') vals first)) id))))
+
+(defn haul
+  ([db]   (denormalize db   12))
+  ([db x] (haul        db x 12))
+  ([db x max-level]
+   (enc/cond
+     (keyword? x)
+     (denormalize db (db x) max-level)
+     ;;
+     (vector? x)
+     (denormalize db (get-in db x) max-level)
+     ;;
+     (map? x)
+     (denormalize db x max-level)
+     )))
+
 
 ;; * re-frame
 
