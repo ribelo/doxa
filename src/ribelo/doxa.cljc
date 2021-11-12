@@ -784,6 +784,17 @@
 
     [] {:args ~(or (vec args) [])}))
 
+(defn join-rules [rules]
+  (m/rewrite {:in rules :out {}}
+    {:in [{?rule {:args ?args :body ?body :as ?m}} & ?more]
+     :out {?rule {:args ?args :body ?or-body} :as ?out}}
+    (m/cata {:in ?more :out {& [?out {?rule {:args ?args :body [('or ('and . & ?body) ('and . & ?or-body))]}}]}})
+    {:in [{?rule {:args ?args :body ?body :as ?m}} & ?more]
+     :out ?out}
+    (m/cata {:in ?more :out {& [?out [?rule ?m]]}})
+    {:out ?out}
+    ?out))
+
 (defn build-args-map [{:keys [in args] :as pq}]
   (m/rewrite pq
     (m/or {:in []} {:args []})
@@ -799,7 +810,7 @@
     ;;
     {:in   [(m/symbol _ "%" :as ?in)  & ?ins]
      :args [('quote [!rules ...]) & ?args]}
-    {& [(m/cata [:rule !rules]) ...
+    {& [(m/cata [:join-rules [(m/cata [:rule !rules]) ...]])
         & (m/cata {:in ?ins :args ?args})]}
     ;;
     {:in   [[[_ & :as  ?ins]]]
@@ -812,7 +823,9 @@
     ;;
     [:rule [(?rule . !args ...) & ?body]]
     {?rule {:args [!args ...]
-            :body ?body}}))
+            :body ?body}}
+    [:join-rules [!maps ...]]
+    ~(join-rules !maps)))
 
 (defn qsymbol? [x]
   (and (symbol? x) (enc/str-starts-with? (name x) "?")))
@@ -834,6 +847,12 @@
 (def rewrite-all-args
   (m*/bottom-up
    (m*/attempt rewrite-arg)))
+
+(defn replace-all-args [body args]
+  ((m*/bottom-up
+    (m*/attempt
+     (fn [x] (args x x))))
+   body))
 
 (defn simplify-where [where args-map]
   (m/rewrite {:where where
@@ -944,30 +963,67 @@
 (defn- split-merge [xs]
   (into [] (map (fn [[k m]] {k m})) (reduce enc/nested-merge xs)))
 
+(defn collect-args [xs]
+  (into #{}
+        (m/search xs
+          (m/$ (m/pred qsymbol? ?x)) ?x)))
+
+(defn wrap-or-args-with-let [xs]
+  (m/rewrite {:xs xs :all-args (collect-args xs)}
+    {:xs (m/some (m/seqable !xs ...)) :all-args (m/some ?all-args)}
+    [(m/cata {:body !xs :all-args ?all-args}) ...]
+    (m/and {:body (m/and ?body (m/app collect-args ?args)) :all-args ?all-args}
+           (m/let [?diff (not-empty (set/difference ?all-args ?args))])
+           (m/guard (some? ?diff)))
+    (`m/let [& ~(interleave ?diff (repeat (count ?diff) nil))] . ?body)
+    (m/and {:body (m/and ?body (m/app collect-args ?args)) :all-args ?all-args}
+           (m/let [?diff (not-empty (set/difference ?all-args ?args))])
+           (m/guard (not ?diff)))
+    ?body
+    ?x ?x))
+
 (defn build-meander-query [m]
   (m/rewrite m
-    {:maps (m/pred seq [!maps ...]) & ?more}
-    (m/cata [:done [& (m/app split-merge [!maps ...]) & (m/cata ?more)]])
+    {:maps [!maps ...] :fn `m/and & ?more}
+    (m/cata [:done [& (m/app split-merge [!maps ...]) & (m/cata ?more)] :fn `m/and])
+    ;;
+    {:maps [!maps ...] :fn `m/or & ?more}
+    (m/cata [:done [& [!maps ...] & (m/cata ?more)] :fn `m/or])
+    ;;
+    {:meander [!maps ...] & ?more}
+    [!maps ... & (m/cata ?more)]
+    ;;
+    (m/and {:and (m/pred seq [!elems ..?n]) & ?more} (m/guard (= ?n 1)))
+    [!elems ... & (m/cata ?more)]
+    ;;
+    (m/and {:and (m/pred seq [!elems ..?n]) & ?more} (m/guard (> ?n 1)))
+    [(`m/and . !elems ...) ... & (m/cata ?more)]
+    ;;
+    (m/and {:or (m/pred seq [!elems ..?n]) & ?more} (m/guard (= ?n 1)))
+    [!elems ... & (m/cata ?more)]
+    ;;
+    (m/and {:or (m/pred seq [!elems ..?n]) & ?more} (m/guard (> ?n 1)))
+    [(`m/or . !elems ...) & (m/cata ?more)]
+    ;;
     {:let (m/pred seq [!let ...]) & ?more}
     [(`m/let [!let ...]) & (m/cata ?more)]
+    ;;
     {:guards (m/pred seq [!guards ...]) & ?more}
     [(`m/guard !guards) ... & (m/cata ?more)]
-    (m/and [:done [!elems ..?n :as ?m]] (m/guard (= ?n 1)))
+    ;;
+    (m/and [:done [{:as !elems} ..?n :as ?m] :fn ?fn] (m/guard (= ?n 1)))
     {& [!elems ...]}
-    (m/and [:done [!elems ..?n]] (m/guard (> ?n 1)))
-    (`m/and . !elems ...)
+    ;;
+    (m/and [:done [!elems ..?n :as ?m] :fn ?fn] (m/guard (= ?n 1)))
+    !elems
+    ;;
+    (m/and [:done [!elems ..?n] :fn `m/or] (m/guard (> ?n 1)))
+    (`m/or . & ~(wrap-or-args-with-let !elems))
+    ;;
+    (m/and [:done [!elems ..?n] :fn ?fn] (m/guard (> ?n 1)))
+    (?fn . !elems ...)
+    ;;
     {} nil))
-
-(defn rewrite-rule-args [body args]
-  (m/rewrite {:datom body :args args}
-    {:datom [!elem ...] :args ?args}
-    [(m/cata {:elem !elem :args ?args}) ...]
-    {:elem (m/and ?elem (m/not [_ &])) :args {?elem ?x}}
-    ?x
-    {:elem (m/and ?elem (m/not [_ &])) :args {(m/not ?elem) _}}
-    ?elem
-    {:elem [?t ?e] :as ?m}
-    [(m/cata {& ?m :elem ?t}) (m/cata {& ?m :elem ?e})]))
 
 (defn datalog->meander [{:keys [where in args] :as q}]
   (let [args-maps (build-args-map q)]
@@ -979,18 +1035,27 @@
       (m/cata {:where ?where :args-map ?map})
       ;;
       {:where [!elems ...] :args-map (m/some ?args-map)}
-      (m/cata [:done . (m/cata {:elem !elems :args-map ?args-map}) ...])
+      (m/cata [:done . (m/cata {:elem !elems :args-map ?args-map}) ... :fn `m/and])
       ;;
-      (m/with [%map   [:map !maps]
-               %guard [:guard !guards]
-               %let   [:let [!lets ...]]
-               %seq   [:done . (m/or %map %guard %let) ...]]
+      (m/with [%meander [:meander !meander]
+               %map     [:map !maps]
+               %or      [:or !ors]
+               %guard   [:guard !guards]
+               %let     [:let [!lets ...]]
+               %chose   (m/or %meander %map %or %guard %let)
+               %seq     [:done . (m/or %chose [%chose ...]) ... :fn ?fn]]
         %seq)
-      ~(build-meander-query {:maps !maps :guards !guards :let !lets})
+      ~(build-meander-query {:maps !maps :or !ors :guards !guards :let !lets :meander !meander :fn ?fn})
+      ;; and
+      {:elem ('and . !elems ...) :as ?m}
+      [:meander (m/cata [:done . (m/cata {& ?m :elem !elems}) ... :fn `m/and])]
+      ;; or
+      {:elem ('or . !elems ...) :as ?m}
+      [:or (m/cata [:done . (m/cata {& ?m :elem !elems}) ... :fn `m/or])]
       ;;
-      (m/and {:elem [!xs ..?n] :as ?m} (m/guard (= ?n 2)))
+      (m/and {:elem [(m/pred (complement list?) !xs) ..?n] :parsed (m/not (m/some)) :as ?m} (m/guard (= ?n 2)))
       (m/cata {& ?m :elem [~(symbol (str '?table_ (first !xs))) . !xs ... nil]})
-      (m/and {:elem [!xs ..?n] :as ?m} (m/guard (= ?n 3)))
+      (m/and {:elem [!xs ..?n] :parsed (m/not (m/some)) :as ?m} (m/guard (= ?n 3)))
       (m/cata {& ?m :elem [~(symbol (str '?table_ (first !xs))) . !xs ...]})
       ;;
       {:args-map ?args-map
@@ -1031,9 +1096,9 @@
       ;; ?rule
       {:elem (?rule . !args ...)
        :args-map {?rule {:args ?args
-                         :body [(m/app #(rewrite-rule-args % (zipmap ?args !args)) !elems) ...]}}
+                         :body [(m/app #(replace-all-args % (zipmap ?args !args)) !body) ...]}}
        :as ?m}
-      [& (m/cata {& [?m [:elem !elems]]})])))
+      [(m/cata {& [?m [:elem !body]]}) ...])))
 
 #?(:clj
    (m/defsyntax query [args]
