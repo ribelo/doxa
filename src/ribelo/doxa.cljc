@@ -600,7 +600,11 @@
   ([data]
    (create-dx data {::with-diff? false}))
   ([data opts]
-   (let [meta' (into opts {::last-transaction-timestamp (enc/now-udt) ::tx nil ::cache_ (atom {})})
+   (let [meta'    (cond-> (dissoc opts ::max-txs-count)
+                    (opts ::with-diff?)
+                    (assoc ::txs (Transactions. -1 (opts ::max-txs-count 64) [])
+                           ::cache (BaseCache. (atom {}) (opts ::cache-size 4096) (atom 0)
+                                               (opts ::ttl-ms (enc/ms :mins 5)))))
          empty-db (with-meta *empty-map* meta')]
      (if (not-empty data) (db-with empty-db data) empty-db))))
 
