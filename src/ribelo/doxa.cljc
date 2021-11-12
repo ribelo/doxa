@@ -207,6 +207,7 @@
   ([db data          ] (-denormalize db   data 12        0))
   ([db data max-level] (-denormalize db   data max-level 0)))
 
+
 (defn -submit-commit
   "apply transactions to db."
   [db tx]
@@ -494,7 +495,7 @@
       key fn
       [:dx/match [:person/id :ivan] :salary #(> % 10000)]
   "
-  ([db txs]         (commit  db txs nil))
+  ([db txs]         (-commit db txs nil))
   ([db txs tx-meta] (-commit db txs tx-meta)))
 
 (defn commit!
