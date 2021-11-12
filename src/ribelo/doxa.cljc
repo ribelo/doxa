@@ -1126,7 +1126,7 @@
                         (satisfies? cljs.core.IMeta ~r))
                     (vary-meta ~r assoc ::fresh? false)
                     ~r))
-                (let [tick# (swap! ~tick_ (fn [^long n#] (inc n#)))
+                (let [tick# (swap! ~tick_ (fn [~'n] (inc ~(with-meta 'n {:tag 'long}))))
                       ~r    (if ~measure?
                               (delay (with-time-ms (-q ~pq ~db)))
                               (delay (-q ~pq ~db)))]
