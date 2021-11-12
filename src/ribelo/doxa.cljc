@@ -1208,130 +1208,131 @@
   ([db query parent]
    (-pull db query parent nil))
   ([db query parent env]
-   (enc/cond
-     (-idents? parent)
-     (mapv #(pull db query % env) parent)
-     (= [:*] query)
-     (get-in db parent)
-     :else
-     (let [qit (-iter query)]
-       (loop [r {} id parent]
-         (enc/cond
-           (not (.hasNext qit))
-           r
-           ;;
-           :let  [elem (.next qit)]
-           (and (map? elem) (-ident? (first-key elem)))
-           (recur (pull db (first-val elem) (first-key elem) env) id)
-           ;; prop
-           (and (some? id) (#{:*} elem))
-           (recur
-            (let [m  (get-in db id)
-                  mit (-iter m)]
-              (loop [acc (transient {})]
-                (enc/cond
-                  (not (.hasNext mit))
-                  (persistent! acc)
-                  ;;
-                  :let [elem (.next mit)
-                        k    (nth elem 0)
-                        v    (nth elem 1)]
-                  ;;
-                  (and (-idents? v) (= 1 (count v)))
-                  (recur (assoc! acc k (nth v 0)))
-                  ;;
-                  :else
-                  (recur (assoc! acc k v)))))
-            id)
-           ;;
-           (and (some? id) (keyword? elem) (not (-rev-keyword? elem)))
-           (let [v (get-in db (conj id elem))
-                 one? (some-> (meta v) ::one?)
-                 v' (if one? (nth v 0) v)]
-             (recur (enc/assoc-some r elem v') id))
-           ;;
-           (and (some? id) (keyword? elem) (-rev-keyword? elem))
-           (let [k (-rev->keyword elem)]
+   (let [env (cond-> env (some? (::cache env)) (-> (dissoc ::cache) (assoc ::cache? true)))]
+     (enc/cond
+       (-idents? parent)
+       (mapv #(pull db query % env) parent)
+       (= [:*] query)
+       (get-in db parent)
+       :else
+       (let [qit (-iter query)]
+         (loop [r {} id parent]
+           (enc/cond
+             (not (.hasNext qit))
+             r
+             ;;
+             :let  [elem (.next qit)]
+             (and (map? elem) (-ident? (first-key elem)))
+             (recur (pull db (first-val elem) (first-key elem) env) id)
+             ;; prop
+             (and (some? id) (#{:*} elem))
              (recur
-              (enc/assoc-some r elem (enc/cond
-                                       :let  [v (reverse-search db k id)]
-                                       (and (-idents? v) (= (count v) 1))
-                                       (nth v 0)
-                                       :else v))
-              id))
-           ;;
-           (and (some? id) (and (seq elem) (second elem) (enc/revery? keyword? (second elem))))
-           (let [k   (nth elem 0)
-                 eit (-iter (nth elem 1))]
-             (loop [acc (transient {})]
-               (enc/cond
-                 (not (.hasNext eit))
-                 (persistent! acc)
-                 ;;
-                 :let [kk (.next eit)]
-                 (-rev-keyword? k)
-                 (let [rk (-rev->keyword elem)]
+              (let [m  (get-in db id)
+                    mit (-iter m)]
+                (loop [acc (transient {})]
+                  (enc/cond
+                    (not (.hasNext mit))
+                    (persistent! acc)
+                    ;;
+                    :let [elem (.next mit)
+                          k    (nth elem 0)
+                          v    (nth elem 1)]
+                    ;;
+                    (and (-idents? v) (= 1 (count v)))
+                    (recur (assoc! acc k (nth v 0)))
+                    ;;
+                    :else
+                    (recur (assoc! acc k v)))))
+              id)
+             ;;
+             (and (some? id) (keyword? elem) (not (-rev-keyword? elem)))
+             (let [v (get-in db (conj id elem))
+                   one? (some-> (meta v) ::one?)
+                   v' (if one? (nth v 0) v)]
+               (recur (enc/assoc-some r elem v') id))
+             ;;
+             (and (some? id) (keyword? elem) (-rev-keyword? elem))
+             (let [k (-rev->keyword elem)]
+               (recur
+                (enc/assoc-some r elem (enc/cond
+                                         :let  [v (reverse-search db k id)]
+                                         (and (-idents? v) (= (count v) 1))
+                                         (nth v 0)
+                                         :else v))
+                id))
+             ;;
+             (and (some? id) (and (seq elem) (second elem) (enc/revery? keyword? (second elem))))
+             (let [k   (nth elem 0)
+                   eit (-iter (nth elem 1))]
+               (loop [acc (transient {})]
+                 (enc/cond
+                   (not (.hasNext eit))
+                   (persistent! acc)
+                   ;;
+                   :let [kk (.next eit)]
+                   (-rev-keyword? k)
+                   (let [rk (-rev->keyword elem)]
+                     (recur
+                      (enc/assoc-some acc k (enc/cond
+                                              :let  [v (reverse-search db rk id)]
+                                              (and (-idents? v) (= (count v) 1))
+                                              (nth v 0)
+                                              :else v))))
+                   :let [v' (get-in db (conj id kk))]
+                   (some? v')
+                   (recur (assoc! acc kk v'))
+                   :else
+                   (recur acc))))
+             ;; join
+             :when (and (some? id) (map? elem)) ;; {:friend [:name]}
+             :let  [k     (first-key elem)
+                    rev?  (-rev-keyword? k)
+                    ref'  (if-not rev?
+                            (get-in db (conj parent k))
+                            (reverse-search db (-rev->keyword k) id))
+                    one?  (some-> (meta ref') ::one?)
+                    ref' (if one? (nth ref' 0) ref')]
+             ;;
+             (and (some? id) (or one? (-ident? ref')))
+             (recur (enc/assoc-some r k (pull db (first-val elem) ref' env)) id)
+             ;;
+             (and (some? id) (-idents? ref') (not rev?))
+             (let [rit (-iter ref')]
+               (loop [acc (transient [])]
+                 (enc/cond
+                   (not (.hasNext rit))
+                   (enc/assoc-some r (first-key elem) (not-empty (persistent! acc)))
+                   ;;
+                   :let [ref' (.next rit)
+                         k (nth ref' 0)
+                         v (first-val elem)]
+                   ;;
+                   (map? v)
+                   (let [q (get v k)]
+                     (recur
+                      (if q
+                        (conj! acc (pull db q ref' env))
+                        acc)))
+                   (vector? v)
                    (recur
-                    (enc/assoc-some acc k (enc/cond
-                                            :let  [v (reverse-search db rk id)]
-                                            (and (-idents? v) (= (count v) 1))
-                                            (nth v 0)
-                                            :else v))))
-                 :let [v' (get-in db (conj id kk))]
-                 (some? v')
-                 (recur (assoc! acc kk v'))
-                 :else
-                 (recur acc))))
-           ;; join
-           :when (and (some? id) (map? elem)) ;; {:friend [:name]}
-           :let  [k     (first-key elem)
-                  rev?  (-rev-keyword? k)
-                  ref'  (if-not rev?
-                          (get-in db (conj parent k))
-                          (reverse-search db (-rev->keyword k) id))
-                  one?  (some-> (meta ref') ::one?)
-                  ref' (if one? (nth ref' 0) ref')]
-           ;;
-           (and (some? id) (or one? (-ident? ref')))
-           (recur (enc/assoc-some r k (pull db (first-val elem) ref' env)) id)
-           ;;
-           (and (some? id) (-idents? ref') (not rev?))
-           (let [rit (-iter ref')]
-             (loop [acc (transient [])]
-               (enc/cond
-                 (not (.hasNext rit))
-                 (enc/assoc-some r (first-key elem) (not-empty (persistent! acc)))
-                 ;;
-                 :let [ref' (.next rit)
-                       k (nth ref' 0)
-                       v (first-val elem)]
-                 ;;
-                 (map? v)
-                 (let [q (get v k)]
-                   (recur
-                    (if q
-                      (conj! acc (pull db q ref' env))
-                      acc)))
-                 (vector? v)
-                 (recur
-                  (let [r (pull db v ref' env)]
-                    (if (not-empty r) (conj! acc r) acc))))))
-           ;;
-           (and (some? id) (-idents? ref') rev?)
-           (recur (enc/assoc-some r (first-key elem)
-                                  (enc/cond
-                                    :let [xs (mapv #(pull db (first-val elem) % env) ref')
-                                          n  (count xs)]
-                                    ;;
-                                    (> n 1)
-                                    (into [] (filter not-empty) xs)
-                                    ;;
-                                    (= n 1)
-                                    (not-empty (first xs))))
-                  id)
-           ;;
-           (some? id)
-           (recur r id)))))))
+                    (let [r (pull db v ref' env)]
+                      (if (not-empty r) (conj! acc r) acc))))))
+             ;;
+             (and (some? id) (-idents? ref') rev?)
+             (recur (enc/assoc-some r (first-key elem)
+                                    (enc/cond
+                                      :let [xs (mapv #(pull db (first-val elem) % env) ref')
+                                            n  (count xs)]
+                                      ;;
+                                      (> n 1)
+                                      (into [] (filter not-empty) xs)
+                                      ;;
+                                      (= n 1)
+                                      (not-empty (first xs))))
+                    id)
+             ;;
+             (some? id)
+             (recur r id))))))))
 
 (defmacro pull
   ([db query id]
