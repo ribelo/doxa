@@ -498,6 +498,20 @@
   ([db txs]         (-commit db txs nil))
   ([db txs tx-meta] (-commit db txs tx-meta)))
 
+(defn with-commit [db txs]
+  (enc/if-let [?txs (some-> ^Transactions (::txs (meta db)) -txs)
+               ?id  (some-> ^Transactions (::txs (meta db)) .-id)
+               ?max-size (some-> ^Transactions (::txs (meta db)) .-max-size)
+               ?cache (some-> ^BaseCache (::cache (meta db)))
+               ?cache_ (.-cache_ ?cache)
+               ?cache-size (.-cache-size ?cache)
+               ?tick (atom @(.-tick_ ?cache))
+               ?ttl-ms (.-ttl-ms ?cache)
+               db' (enc/merge-meta db {::txs (Transactions. ?id ?max-size ?txs)
+                                       ::cache (BaseCache. ?cache_ ?cache-size ?tick ?ttl-ms)})]
+    (-commit db' txs)
+    (-commit db txs)))
+
 (defn commit!
   "accepts an atom with db, see `commit`"
   ([db_ txs] (commit! db_ txs nil))
