@@ -179,7 +179,7 @@
        (enc/cond
          (> level max-level)
          (timbre/warnf "maximum nesting level %s for %s has been exceeded" max-level (entity-id data))
-         (and (not (.hasNext it)))
+         (not (.hasNext it))
          m
          ;;
          :let [^clojure.lang.MapEntry me (.next it)
