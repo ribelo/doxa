@@ -213,8 +213,10 @@
   (m/find tx
     ;; put [?tid ?eid] ?k ?v
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)]
-     (m/pred keyword? ?k) (m/pred (complement (some-fn entity? entities? ident?)) ?v)]
-    (assoc-in db [?tid ?eid ?k] ?v)
+     (m/pred keyword? ?k) (m/pred (complement (some-fn entity? entities? -ident?)) ?v)]
+    (if (get-in db [?tid ?eid])
+      (assoc-in db [?tid ?eid ?k] ?v)
+      (assoc-in db [?tid ?eid] {?tid ?eid ?k ?v}))
     ;; put [?tid ?eid] ?k ?entity
     [:dx/put [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred entity? ?v)]
     (let [xs (normalize ?v)
