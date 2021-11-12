@@ -128,6 +128,51 @@
     _
     false))
 
+;; TODO rewrite to state machine with m/with
+(defn -edits->datoms [edits]
+  (m/rewrite edits
+    [[?table] :+ (m/map-of !eids !maps)]
+    (m/cata [(m/cata [:+ ?table !eids !maps]) ...])
+    ;;
+    [:+ ?table ?eid (m/map-of !attrs !vs)]
+    (m/cata [[?table ?eid !attrs !vs] ...])
+    ;;
+    [[?table] :r (m/map-of !eids !maps)]
+    (m/cata [(m/cata [:r ?table !eids !maps]) ...])
+    ;;
+    [:r ?table ?eid (m/map-of !attrs _)]
+    (m/cata [[?table ?eid !attrs nil] ...])
+    ;;
+    [[?table ?eid] :+ (m/map-of !attrs !vs)]
+    (m/cata [[?table ?eid !attrs !vs] ...])
+    ;;
+    [[?table ?eid] :r (m/map-of !attrs _)]
+    (m/cata [[?table ?eid !attrs nil] ...])
+    ;;
+    [[?table ?eid ?a] :+ ?v]
+    [[?table ?eid ?a ?v]]
+    ;;
+    [[?table ?eid ?a] :r ?v]
+    [[?table ?eid ?a nil]]
+    ;;
+    [[?table] :-]
+    [[?table nil nil nil]]
+    ;;
+    [[?table ?eid] :-]
+    [[?table ?eid nil nil]]
+    ;;
+    [[?table ?eid ?a] :-]
+    [[?table ?eid ?a nil]]
+    ;;
+    (m/with [%1 [_ _ _ _ :as !datoms]
+             %2 (m/or [%2 ...] [%1 ...] %1)]
+      %2)
+    [!datoms ...]
+    [!elems ...]
+    (m/cata [(m/cata !elems) ...])
+    _ ~(throw (ex-info "transaction unsupported" {:tx edits}))))
+
+
 (defn normalize
   "turns a nested map into a flat collection with references."
   [data]
@@ -1130,48 +1175,6 @@
               ~(when xf      (first xf)))
              ~r))))
 
-(defn -tx->datoms [tx]
-  (m/rewrite tx
-    [[?table] :+ (m/map-of !eids !maps)]
-    (m/cata [(m/cata [:+ ?table !eids !maps]) ...])
-    ;;
-    [:+ ?table ?eid (m/map-of !attrs !vs)]
-    (m/cata [[?table ?eid !attrs !vs] ...])
-    ;;
-    [[?table] :r (m/map-of !eids !maps)]
-    (m/cata [(m/cata [:r ?table !eids !maps]) ...])
-    ;;
-    [:r ?table ?eid (m/map-of !attrs _)]
-    (m/cata [[?table ?eid !attrs nil] ...])
-    ;;
-    [[?table ?eid] :+ (m/map-of !attrs !vs)]
-    (m/cata [[?table ?eid !attrs !vs] ...])
-    ;;
-    [[?table ?eid] :r (m/map-of !attrs _)]
-    (m/cata [[?table ?eid !attrs nil] ...])
-    ;;
-    [[?table ?eid ?a] :+ ?v]
-    [[?table ?eid ?a ?v]]
-    ;;
-    [[?table ?eid ?a] :r ?v]
-    [[?table ?eid ?a nil]]
-    ;;
-    [[?table] :-]
-    [[?table nil nil nil]]
-    ;;
-    [[?table ?eid] :-]
-    [[?table ?eid nil nil]]
-    ;;
-    [[?table ?eid ?a] :-]
-    [[?table ?eid ?a nil]]
-    ;;
-    (m/with [%1 [_ _ _ _ :as !datoms]
-             %2 (m/or [%2 ...] [%1 ...] %1)]
-      %2)
-    [!datoms ...]
-    ?x ?x
-    _ ~(throw (ex-info "transaction unsupported" {:tx tx}))))
-
 (defn -match-two-datoms [d1 d2]
   (m/rewrite [d2 d1]                    ; TODO reversed args
     [(m/or [?table ?eid ?a ?v] (m/and [?eid ?a ?v] (m/let [?table '_])))
@@ -1189,31 +1192,19 @@
     _
     false))
 
-(defn -tx-match-datom? [tx datom]
-  (m/rewrite (ribelo.doxa/-tx->datoms tx)
+(defn -datoms-match-datom? [txs-datoms datom]
+  (m/rewrite txs-datoms
     (m/scan (m/pred (partial -match-two-datoms datom))) true
     _ false))
 
-(defn -last-tx-match-datom? [db datom]
-  (-tx-match-datom? (-last-tx db) datom))
-
-(defn -last-tx-match-where?* [db datoms]
-  `(m/rewrite ~datoms
-    (m/scan (m/app (partial -last-tx-match-datom? ~db) (m/or true ::non-applicable))) true
-     ~'_ false))
-
-(defn -last-tx-match-where? [db datoms]
+(defn -datoms-match-where? [txs-datoms datoms]
   (m/rewrite datoms
-    (m/scan (m/app (partial -last-tx-match-datom? db) (m/or true ::non-applicable))) true
+    (m/scan (m/app (partial -datoms-match-datom? txs-datoms) (m/or true ::non-applicable))) true
     _ false))
 
-(defn -last-tx-match-query? [db pq]
+(defn -datoms-match-query? [txs-datoms pq]
   (let [args-map     (build-args-map pq)]
-    (-last-tx-match-where?* db (rewrite-all-args (simplify-where (:where pq) args-map)))))
-
-(defn -last-tx-match-raw-query? [db pq]
-  (let [args-map     (build-args-map pq)]
-    (-last-tx-match-where? db (simplify-where (:where pq) args-map))))
+    (-datoms-match-where? txs-datoms (simplify-where (:where pq) args-map))))
 
 (defn delete-cached-results! [db kw]
   (when-let [subs (some-> (meta db) ::cache_)]
