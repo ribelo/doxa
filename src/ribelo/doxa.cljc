@@ -440,33 +440,67 @@
 (defn- -commit
   ([db txs] (-commit db txs nil))
   ([db txs tx-meta]
-   (let [db'   (enc/cond
-                 (vector? (first txs))
-                 (let [it (-iter txs)]
-                   (loop [acc db match? true]
-                     (enc/cond
-                       (not (.hasNext it))
-                       acc
-                       :let [tx   (.next it)
-                             kind (first tx)]
-                       (enc/kw-identical? kind :dx/match)
-                       (recur acc (-submit-commit acc tx))
-                       ;;
-                       match?
-                       (recur (-submit-commit acc tx) match?)
-                       ;;
-                       (not match?)
-                       (recur acc match?))))
-                 ;;
-                 (keyword? (first txs))
-                 (-submit-commit db txs))
-         meta' (meta db')]
-     (cond-> (vary-meta db' assoc ::last-transaction-timestamp (enc/now-udt))
-       (::with-diff? meta')
-       (vary-meta assoc
-                  ::tx (ese/get-edits (es/diff db db' {:algo :quick}))
-                  ::h  (hash db'))
-       ;;
+   (let [db'        (enc/cond
+                      (vector? (first txs))
+                      (let [it (-iter txs)]
+                        (loop [acc db match? true]
+                          (enc/cond
+                            (not (.hasNext it))
+                            acc
+                            :let [tx   (.next it)
+                                  kind (first tx)]
+                            (enc/kw-identical? kind :dx/match)
+                            (recur acc (-submit-commit acc tx))
+                            ;;
+                            match?
+                            (recur (-submit-commit acc tx) match?)
+                            ;;
+                            (not match?)
+                            (recur acc match?))))
+                      ;;
+                      (keyword? (first txs))
+                      (-submit-commit db txs))
+         meta'      (meta db')
+         cache      (some-> meta' ::cache)
+         cache_     (some-> ^BaseCache cache .-cache_)
+         cache-size (some-> ^BaseCache cache .-cache-size)
+         ttl-ms     (some-> ^BaseCache cache .-ttl-ms)
+         ttl?       (or (not ttl-ms) (not (zero? ttl-ms)))
+         instant    (enc/now-udt)]
+     (when (::with-diff? meta')
+       (let [txs    (meta' ::txs)
+             edits  (ese/get-edits (es/diff db db' {:algo :quick}))
+             datoms (-edits->datoms edits)
+             tx     (Transaction. (-next-id txs) instant edits datoms)]
+         (-prepend! txs tx)))
+     (when (and (some? cache) (enc/-gc-now?))
+       (when ttl?
+         (swap! cache_
+           (fn [m]
+             (persistent!
+              (reduce-kv
+               (fn [acc k ^TickedCacheEntry e]
+                 (if (> (- instant (.-udt e)) ttl-ms)
+                   (dissoc! acc k)
+                   acc))
+               (transient (or m {}))
+               m)))))
+       (let [snapshot @cache_
+             n-to-gc  (- (count snapshot) cache-size)]
+         (when (> n-to-gc 64)
+           (let [ks-to-gc
+                 (enc/top n-to-gc
+                          (fn [k]
+                            (let [e ^TickedCacheEntry (snapshot k)]
+                              (+ (.-tick-lru e) (.-tick-lfu e))))
+                          (keys snapshot))]
+
+             (swap! cache_
+               (fn [m]
+                 (persistent!
+                  (reduce (fn [acc in] (dissoc! acc in))
+                          (transient (or m {})) ks-to-gc))))))))
+     (cond-> db'
        tx-meta
        (vary-meta assoc :tx-meta tx-meta)))))
 
