@@ -51,15 +51,15 @@
     _
     false))
 
-(defn- ident? [x]
+(defn -ident? [x]
   (m/match x
     [(m/pred key-id?) (m/pred eid?)] true
     _
     false))
 
-(defn- idents? [xs]
+(defn -idents?[xs]
   (m/match xs
-    (m/seqable (m/pred ident?) ...) true
+    (m/seqable (m/pred -ident?) ...) true
     _
     false))
 
@@ -103,7 +103,7 @@
       (enc/cond
         (and (not (.hasNext it)) (nil? id))
         nil
-        ;; 
+        ;;
         (and (not (.hasNext it)) (enc/some? id))
         (conj r [id (persistent! m)])
         ;;
@@ -128,10 +128,10 @@
                (reduce (fn [acc m'] (into acc (normalize m'))) r v)
                id)
         ;;
-        (ident? v)
+        (-ident? v)
         (recur (assoc! m k (with-meta [v] {::one? true})) r id)
         ;;
-        (and (vector? v) (idents? v))
+        (and (vector? v) (-idents? v))
         (recur (assoc! m k v) r id)
         ;;
         :else
@@ -153,11 +153,11 @@
          (map? v)
          (recur (assoc m k (-denormalize db v max-level (inc level))))
          ;;
-         (ident? v)
+         (-ident? v)
          (recur (assoc m k (let [m (or (get-in m v)
                                        (-denormalize db (get-in db v) max-level (inc level)))]
                              m)))
-         (idents? v)
+         (-idents? v)
          (recur (assoc m k (let [xs (mapv (fn [ident] (or (get-in m ident)
                                                          (-denormalize db (get-in db ident) max-level (inc level)))) v)]
                              xs)))
@@ -281,15 +281,15 @@
     [:dx/delete [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred some? ?v)]
     (enc/cond
       :if-not                                        [v (get-in db [?tid ?eid ?k])] db
-      (and (seq v) (> (count v) 1) (not (ident? v))) (update-in db [?tid ?eid ?k] #(into [] (remove #{?v}) %))
-      (or (and (seq v) (= (count v) 1)) (ident? v))  (enc/dissoc-in db [?tid ?eid] ?k)
+      (and (seq v) (> (count v) 1) (not (-ident? v))) (update-in db [?tid ?eid ?k] #(into [] (remove #{?v}) %))
+      (or (and (seq v) (= (count v) 1)) (-ident? v))  (enc/dissoc-in db [?tid ?eid] ?k)
       (and v (not (vector? v)))                      (throw (ex-info (enc/format "%s is not a vector" [?tid ?eid ?k]) {:v v}))
       (throw (ex-info "invalid commit" {:tx tx})))
     ;; conj [?tid ?eid] ?k ?v
     [:dx/conj [(m/pred keyword? ?tid) (m/pred eid? ?eid)] (m/pred keyword? ?k) (m/pred not-entities? ?v)]
     (enc/cond
       :let         [xs (get-in db [?tid ?eid ?k])]
-      (ident?  xs) (assoc-in db [?tid ?eid ?k] [xs ?v])
+      (-ident?  xs) (assoc-in db [?tid ?eid ?k] [xs ?v])
       (vector? xs) (assoc-in db [?tid ?eid ?k] (conj xs ?v))
       (set?    xs) (assoc-in db [?tid ?eid ?k] (conj xs ?v))
       (some?   xs) (assoc-in db [?tid ?eid ?k] [xs ?v])
@@ -1170,7 +1170,7 @@
 
 ;; * re-frame
 
-(def dxs_ (atom {}))
+(def dxs_ #?(:clj (atom {}) :cljs (volatile! {})))
 
 (defn valid-id? [id]
   (or (keyword? id) (and (vector? id) (enc/revery? keyword? id))))
