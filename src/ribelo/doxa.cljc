@@ -518,9 +518,9 @@
   ([db_ txs tx-meta]
    (swap! db_ (fn [db] (commit db txs tx-meta)))
    (when-let [it (some-> (meta db_) :listeners deref -iter)]
-       (while #?(:clj (.hasNext it) :cljs ^cljs (.hasNext it))
-         (let [[_k cb] (.next it)]
-           (cb @db_))))))
+     (while #?(:clj (.hasNext it) :cljs ^cljs (.hasNext it))
+       (let [[_k cb] (.next it)]
+         (cb @db_))))))
 
 (defn patch
   "patch db using ediscript edits"
