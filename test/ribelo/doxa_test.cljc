@@ -112,6 +112,25 @@
                                    [?f :name ?name]])
                  (dx/datalog->meander))))))
 
+;;
+
+(comment
+  (def db (-> (reduce
+               (fn [acc i] (dx/commit acc [:dx/put {:db/id i :name "David" :age (rand-int 100)}]))
+               (dx/create-dx [] {::dx/with-diff? true ::dx/max-txs-count 32})
+               (range 100)))))
+
+(t/deftest db-metadata
+  (let [db (-> (reduce
+                (fn [acc i] (dx/commit acc [:dx/put {:db/id i :name "David"}]))
+                (dx/create-dx [] {::dx/with-diff? true ::dx/max-txs-count 32})
+                (range 100)))]
+    (t/is (some? (some-> db meta ::dx/with-diff?)))
+    (t/is (some-> db meta ::dx/txs))
+    ;; TODO
+    ;; (t/is (some-> db meta ::dx/txs .-txs_))
+    ))
+
 ;; * apply tx
 
 (comment
@@ -122,6 +141,8 @@
     (t/testing "testing put"
       (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
                (dx/commit {} [[:dx/put {:db/id 1 :name "David" :aka ["Devil"]}]])))
+      (t/is (= #:db{:id {1 {:db/id 1 :aka ["Tupen"]}}}
+               (dx/commit {} [[:dx/put [:db/id 1] :aka ["Tupen"]]])))
       (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
                (dx/commit {} [[:dx/put [:db/id 1] {:name "David" :aka ["Devil"]}]])))
       (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
@@ -132,7 +153,7 @@
                          2 {:db/id 2, :name "Ivan"}
                          3 {:db/id 3, :name "Lucy"}}}
                (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
-      (t/is (= #:db{:id {1 {:a {:b 1, :c 2}}}}
+      (t/is (= #:db{:id {1 {:db/id 1 :a {:b 1, :c 2}}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2}]])))
       (t/is (= #:db{:id {1 {:a [:db/id 2]}, 2 {:b 1, :c 2, :db/id 2}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2 :db/id 2}]])))
@@ -227,7 +248,9 @@
 ;; ** pull
 
 (comment
-  (def db (dx/commit {} (into [] (map (fn [tx] [:dx/put tx]))  (into people-docs part-docs)))))
+  (def db (dx/commit {} (into [] (map (fn [tx] [:dx/put tx]))  (into people-docs part-docs))))
+  (def db2 (dx/commit (dx/create-dx [] {::dx/with-diff? true})
+                      (into [] (map (fn [tx] [:dx/put tx]))  (into people-docs part-docs)))))
 
 (t/deftest test-pull
   (let [db (dx/commit {} (into [] (map (fn [tx] [:dx/put tx])) (into people-docs part-docs)))]
@@ -252,24 +275,24 @@
                (dx/pull db [:name :_child] [:db/id 2])))
 
       (t/is (= {:name "David" :_child {:name "Petr"}}
-               (dx/pull db [:name {:_child [:name]}] [:db/id 2])))
+               (dx/pull db [:name {:_child [:name]}] [:db/id 2]))))
 
-      (t/testing "reverse non-component references yield collections"
-        (t/is (= {:name "Thomas" :_father [:db/id 6]}
-                 (dx/pull db [:name :_father] [:db/id 3])))
+    (t/testing "reverse non-component references yield collections"
+      (t/is (= {:name "Thomas" :_father [:db/id 6]}
+               (dx/pull db [:name :_father] [:db/id 3])))
 
-        (t/is (or (= {:name "Petr" :_father [[:db/id 3] [:db/id 2]]}
-                     (dx/pull db [:name :_father] [:db/id 1]))
-                  (= {:name "Petr" :_father [[:db/id 2] [:db/id 3]]}
-                     (dx/pull db [:name :_father] [:db/id 1]))))
+      (t/is (or (= {:name "Petr" :_father [[:db/id 3] [:db/id 2]]}
+                   (dx/pull db [:name :_father] [:db/id 1]))
+                (= {:name "Petr" :_father [[:db/id 2] [:db/id 3]]}
+                   (dx/pull db [:name :_father] [:db/id 1]))))
 
-        (t/is (= {:name "Thomas" :_father {:name "Matthew"}}
-                 (dx/pull db [:name {:_father [:name]}] [:db/id 3])))
+      (t/is (= {:name "Thomas" :_father {:name "Matthew"}}
+               (dx/pull db [:name {:_father [:name]}] [:db/id 3])))
 
-        (t/is (or (= {:name "Petr" :_father [{:name "Thomas"} {:name "David"}]}
-                     (dx/pull db [:name {:_father [:name]}] [:db/id 1]))
-                  (= {:name "Petr" :_father [{:name "David"} {:name "Thomas"}]}
-                     (dx/pull db [:name {:_father [:name]}] [:db/id 1]))))))
+      (t/is (or (= {:name "Petr" :_father [{:name "Thomas"} {:name "David"}]}
+                   (dx/pull db [:name {:_father [:name]}] [:db/id 1]))
+                (= {:name "Petr" :_father [{:name "David"} {:name "Thomas"}]}
+                   (dx/pull db [:name {:_father [:name]}] [:db/id 1])))))
 
     (t/testing "test pull component attr"
       (t/is (= {:part-name "Part A.A", :part-of [:db/id 10]}
@@ -309,10 +332,10 @@
                   (= {:part-name "Part A", :_part-of [{:part-name "Part A.A"} {:part-name "Part A.B"}]}
                      (dx/pull db [:part-name {:_part-of [:part-name]}] [:db/id 10]))))))
 
-    (t/testing "eql"
-      (t/is (= {:name "Petr"}
-               (dx/pull db {[:db/id 1] [:name]})
-               (dx/pull db [:name] [:db/id 1]))))
+    ;; (t/testing "eql"
+    ;;   (t/is (= {:name "Petr"}
+    ;;            (dx/pull db {[:db/id 1] [:name]})
+    ;;            (dx/pull db [:name] [:db/id 1]))))
 
     (t/testing "union"
       (let [tx {:chat/id 0
@@ -427,11 +450,11 @@
 
 (comment
   (def db (dx/db-with [{:db/id 1
-                         :name  "Ivan"
+                        :name  "Ivan"
                         :aka   ["ivolga" "pi"]}
-                        {:db/id 2
-                         :name  "Petr"
-                         :aka   ["porosenok" "pi"]}])))
+                       {:db/id 2
+                        :name  "Petr"
+                        :aka   ["porosenok" "pi"]}])))
 
 (t/deftest test-q-many
   (let [db (dx/db-with [{:db/id 1
@@ -545,28 +568,97 @@
                db
                '[[(rule ?e)
                   [_ ?e _]]])))
-    #_(t/is (= #{[2] [3] [4]}
+    (t/is (= #{[2] [3] [4]}
+             (dx/q [:find ?e2
+                    :in ?e1 %
+                    :where (follow ?e1 ?e2)]
+               db
+               1
+               '[[(follow ?e2 ?e1)
+                  [?e2 :follow [_ ?e1]]]
+                 [(follow ?e2 ?e1)
+                  [?e2 :follow [_ ?t]]
+                  [?t :follow [_ ?e1]]]])))
+    #_(t/is (= #{[2] [3] [4] [6]}
                (dx/q [:find ?e2
                       :in ?e1 %
                       :where (follow ?e1 ?e2)]
                  db
                  1
-                 '[[(follow ?e2 ?e1)
-                    [?e2 :follow ?e1]]
-                   [(follow ?e2 ?e1)
-                    [?e2 :follow ?t]
-                    [?t :follow ?e1]]])))
-    #_(t/is (= #{[2] [3] [4] [6]}
-             (dx/q [:find ?e2
-                    :in ?e1 %
-                    :where (follow ?e1 ?e2)]
-             db
-             1
-             '[[(follow ?e1 ?e2)
-                [?e1 :follow ?e2]]
-               [(follow ?e1 ?e2)
-                [?e1 :follow ?t]
-                (follow ?t ?e2)]])))))
+                 '[[(follow ?e1 ?e2)
+                    [?e1 :follow ?e2]]
+                   [(follow ?e1 ?e2)
+                    [?e1 :follow ?t]
+                    (follow ?t ?e2)]])))))
+
+(comment
+  (def db (dx/db-with [{:db/id 1 :name "Ivan" :age 10}
+                       {:db/id 2 :name "Ivan" :age 20}
+                       {:db/id 3 :name "Oleg" :age 10}
+                       {:db/id 4 :name "Oleg" :age 20}
+                       {:db/id 5 :name "Ivan" :age 10}
+                       {:db/id 6 :name "Ivan" :age 20}])))
+
+(t/deftest test-q-or
+  (let [db (dx/db-with [{:db/id 1 :name "Ivan" :age 10}
+                        {:db/id 2 :name "Ivan" :age 20}
+                        {:db/id 3 :name "Oleg" :age 10}
+                        {:db/id 4 :name "Oleg" :age 20}
+                        {:db/id 5 :name "Ivan" :age 10}
+                        {:db/id 6 :name "Ivan" :age 20}])]
+    (t/is (= #{[4] [3] [5] [1]}
+             (dx/q [:find ?e
+                    :where
+                    (or [?e :name "Oleg"]
+                        [?e :age 10])]
+               db)))
+    (t/is (= #{[4] [3]}
+             (dx/q [:find ?e
+                    :where
+                    (or [?e :name "Oleg"]
+                        [?e :age 30])]
+               db)))
+    (t/is (= #{}
+             (dx/q [:find ?e
+                    :where
+                    (or [?e :name "Petr"]
+                        [?e :age 30])]
+               db)))
+    (t/is (= #{[5] [1]}
+             (dx/q [:find ?e
+                    :where
+                    [?e :name "Ivan"]
+                    (or [?e :name "Oleg"]
+                        [?e :age 10])]
+               db)))
+    (t/is (= #{[5] [1] [4]}
+             (dx/q [:find ?e
+                    :where
+                    [?e :age ?a]
+                    (or (and [?e :name "Ivan"]
+                             [1 :age ?a])
+                        (and [?e :name "Oleg"]
+                             [2 :age ?a]))]
+               db)))
+    (t/is (= #{[5] [1] [4]}
+             (dx/q [:find ?e
+                    :where
+                    (or (and [?e :name "Ivan"]
+                             [1 :age ?a])
+                        (and [?e :name "Oleg"]
+                             [2 :age ?a]))
+                    [?e :age ?a]]
+               db)))
+    ;; diffrent order
+    (t/is (= #{[5] [1] [4]}
+             (dx/q [:find ?e
+                    :where
+                    (or (and [1 :age ?a]
+                             [?e :name "Ivan"])
+                        (and [?e :name "Oleg"]
+                             [2 :age ?a]))
+                    [?e :age ?a]]
+               db)))))
 
 ;; crux
 
@@ -661,14 +753,14 @@
                           {:db/id 2 :name "petr" :cars [{:db/id 10 :name "peugot"}]}
                           {:db/id 3 :name "mike" :cars {:db/id 10 :name "peugot"}}
                           {:db/id 4 :name "mike" :cars []}])]
-    (dx/pull db [:name {:cars [:name]}] [:db/id 1])
+
     (t/is (vector? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 2])))
           "pull returns vector when 1 entity in join")))
 
 (t/deftest gh-17
   ;; https://github.com/ribelo/doxa/issues/17
   (let [db (dx/create-dx [{:db/id 1 :name "ivan" :car {:db/id 10 :name "tesla"}}])]
-    (t/is (map? (:car (dx/pull db [:name {:car [:name]}] [:db/id 1]))))))
+    (dx/pull db [:name {:car [:name]}] [:db/id 1])))
 
 (defmacro generate-matched-tests [datom]
   (m/rewrite datom
@@ -683,40 +775,40 @@
        (m/or (m/and ?a     (m/not (m/pred dx/qsymbol?))) (m/let [?a        :a]))
        (m/or (m/and ?v     (m/not (m/pred dx/qsymbol?))) (m/let [?v         1]))]))
     (do (t/is (true?
-               (dx/-tx-match-datom?
-                [[~?table] :+ {~?e {~?a ~?v}}]
+               (dx/-datoms-match-datom?
+                (dx/-edits->datoms [[~?table] :+ {~?e {~?a ~?v}}])
                 ~datom)))
         (t/is (true?
-               (dx/-tx-match-datom?
-                [[~?table] :r {~?e {~?a ~?v}}]
+               (dx/-datoms-match-datom?
+                (dx/-edits->datoms  [[~?table] :r {~?e {~?a ~?v}}])
                 ~datom)))
         (t/is (true?
-               (dx/-tx-match-datom?
-                [[~?table ~?e] :+ {~?a ~?v}]
+               (dx/-datoms-match-datom?
+                (dx/-edits->datoms  [[~?table ~?e] :+ {~?a ~?v}])
                 ~datom)))
         (t/is (true?
-               (dx/-tx-match-datom?
-                [[~?table ~?e] :r {~?a ~?v}]
+               (dx/-datoms-match-datom?
+                (dx/-edits->datoms  [[~?table ~?e] :r {~?a ~?v}])
                 ~datom)))
         (t/is (true?
-               (dx/-tx-match-datom?
-                [[~?table ~?e ~?a] :+ ~?v]
+               (dx/-datoms-match-datom?
+                (dx/-edits->datoms  [[~?table ~?e ~?a] :+ ~?v])
                 ~datom)))
         (t/is (true?
-               (dx/-tx-match-datom?
-                [[~?table ~?e ~?a] :r ~?v]
+               (dx/-datoms-match-datom?
+                (dx/-edits->datoms  [[~?table ~?e ~?a] :r ~?v])
                 ~datom)))
         (t/is (true?
-               (dx/-tx-match-datom?
-                [[~?table] :-]
+               (dx/-datoms-match-datom?
+                (dx/-edits->datoms  [[~?table] :-])
                 ~datom)))
         (t/is (true?
-               (dx/-tx-match-datom?
-                [[~?table ~?e] :-]
+               (dx/-datoms-match-datom?
+                (dx/-edits->datoms  [[~?table ~?e] :-])
                 ~datom)))
         (t/is (true?
-               (dx/-tx-match-datom?
-                [[~?table ~?e ~?a] :-]
+               (dx/-datoms-match-datom?
+                (dx/-edits->datoms  [[~?table ~?e ~?a] :-])
                 ~datom))))))
 
 (comment
@@ -733,199 +825,295 @@
 
     (t/testing "match-datom"
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-datom?
-                  ['?table '?e '?a 'v]))))
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-where?
+                  '[[?table ?e ?a v]]))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-datom?
-                  '[:db/id ?e ?a ?v]))))
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-where?
+                  '[[:db/id ?e ?a ?v]]))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-datom?
-                  '[?table ?e ?a "ivan"]))))
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-where?
+                  '[[?table ?e ?a "ivan"]]))))
       (t/is (false?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-datom?
-                  '[?table ?e ?a "petr"]))))
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-where?
+                  '[[?table ?e ?a "petr"]]))))
       (t/is (true?
-             (-> (dx/commit db [[:dx/put    [:db/id 1] :name "ivan"]
-                                [:dx/put    [:db/id 2] :name "petr"]])
-                 (dx/commit    [:dx/delete [:db/id 1] :name])
-                 (dx/-last-tx-match-datom?
-                  '[?table ?e ?a "ivan"]))))
+             (-> (dx/with-commit db [[:dx/put    [:db/id 1] :name "ivan"]
+                                     [:dx/put    [:db/id 2] :name "petr"]])
+                 (dx/with-commit    [:dx/delete [:db/id 1] :name])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-where?
+                  '[[?table ?e ?a "ivan"]]))))
       (t/is (true?
-             (-> (dx/commit db [[:dx/put    [:db/id 1] :name "ivan"]
-                                [:dx/put    [:db/id 2] :name "petr"]])
-                 (dx/commit    [:dx/delete [:db/id 1] :name])
-                 (dx/-last-tx-match-datom?
-                  '[?table ?e ?a "petr"]))))
+             (-> (dx/with-commit db [[:dx/put    [:db/id 1] :name "ivan"]
+                                     [:dx/put    [:db/id 2] :name "petr"]])
+                 (dx/with-commit    [:dx/delete [:db/id 1] :name])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-where?
+                  '[[?table ?e ?a "petr"]]))))
       (t/is (true?
-             (-> (dx/commit db [[:dx/put    [:db/id 1] :name "ivan"]
-                                [:dx/put    [:db/id 2] :name "petr"]])
-                 (dx/commit    [:dx/delete [:db/id 1] :name])
-                 (dx/-last-tx-match-datom?
-                  '[:db/id ?e ?a ?v]))))
+             (-> (dx/with-commit db [[:dx/put    [:db/id 1] :name "ivan"]
+                                     [:dx/put    [:db/id 2] :name "petr"]])
+                 (dx/with-commit    [:dx/delete [:db/id 1] :name])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-where?
+                  '[[:db/id ?e ?a ?v]]))))
       (t/is (false?
-             (-> (dx/commit db [[:dx/put    [:db/id 1] :name "ivan"]
-                                [:dx/put    [:db/id 2] :name "petr"]])
-                 (dx/commit    [:dx/delete [:db/id 1] :name])
-                 (dx/-last-tx-match-datom?
-                  '[:person/id ?e ?a ?v]))))
+             (-> (dx/with-commit db [[:dx/put    [:db/id 1] :name "ivan"]
+                                     [:dx/put    [:db/id 2] :name "petr"]])
+                 (dx/with-commit    [:dx/delete [:db/id 1] :name])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-where?
+                  '[[:person/id ?e ?a ?v]]))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put    [:db/id 1] :name "ivan"])
-                 (dx/commit    [:dx/delete [:db/id 1] :name])
-                 (dx/-last-tx-match-datom?
-                  '[?ta ?e ?a ?v])))))
+             (-> (dx/with-commit db [:dx/put    [:db/id 1] :name "ivan"])
+                 (dx/with-commit    [:dx/delete [:db/id 1] :name])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-where?
+                  '[[?ta ?e ?a ?v]])))))
 
     (t/testing "match-query"
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table ?e ?attr ?v]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [:db/id ?e ?attr ?v]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [:db/id 1 ?attr ?v]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [:db/id 1 :name ?v]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [:db/id 1 :name "ivan"]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table 1 :name "ivan"]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table ?e :name "ivan"]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table ?e ?attr "ivan"]])))))
       (t/is (false?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [:person/id ?e ?attr ?v]])))))
       (t/is (false?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table 2 ?attr ?v]])))))
       (t/is (false?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table ?e :age ?v]])))))
       (t/is (false?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table ?e ?attr "petr"]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/commit    [:dx/put [:db/id 1] :name "david"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 (dx/with-commit    [:dx/put [:db/id 1] :name "david"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table ?e ?attr "petr"]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table ?e ?attr "ivan"]
                      [(f)]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [(f)]
                      [?table ?e ?attr "ivan"]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/commit    [:dx/put [:db/id 1] :name "petr"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 (dx/with-commit    [:dx/put [:db/id 1] :name "petr"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table ?e ?attr "ivan"]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put [:db/id 1] :name "ivan"])
-                 (dx/commit    [:dx/put [:db/id 1] :name "petr"])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put [:db/id 1] :name "ivan"])
+                 (dx/with-commit    [:dx/put [:db/id 1] :name "petr"])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table ?e ?attr "petr"]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
-                 (dx/commit    [:dx/delete [:db/id 1] :name])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 (dx/with-commit    [:dx/delete [:db/id 1] :name])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table ?e ?attr "ivan"]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table ?e :name "ivan"]
                      [?table ?e :age  ?age]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [?table ?e :age  ?age]
                      [?table ?e :name "ivan"]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [(adult? ?age)]
                      [?table ?e :age  ?age]
                      [?table ?e :name "ivan"]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:where
                      [(adult? ?age)]
                      [?table ?e :age  ?age]
                      [?table ?e :name "ivan"]])))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:in ?table
                      :where
@@ -933,8 +1121,11 @@
                      [?table ?e :name "ivan"]]
                    :db/id)))))
       (t/is (false?
-             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:in ?table
                      :where
@@ -942,8 +1133,11 @@
                      [?table ?e :name "ivan"]]
                    :person/id)))))
       (t/is (true?
-             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:in [?table]
                      :where
@@ -951,8 +1145,11 @@
                      [?table ?e :name "ivan"]]
                    [:db/id :person/id])))))
       (t/is (false?
-             (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
-                 (dx/-last-tx-match-raw-query?
+             (-> (dx/with-commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                 meta
+                 ::dx/txs
+                 (dx/-datoms-since 0)
+                 (dx/-datoms-match-query?
                   (dx/parse-query
                    '[:in [?table]
                      :where
@@ -961,8 +1158,11 @@
                    [:person/id :car/id])))))
       (t/is (true?
              (let [tables [:db/id :person/id]]
-               (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
-                   (dx/-last-tx-match-raw-query?
+               (-> (dx/with-commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                   meta
+                   ::dx/txs
+                   (dx/-datoms-since 0)
+                   (dx/-datoms-match-query?
                     (dx/parse-query
                      '[:in [?table]
                        :where
@@ -971,8 +1171,11 @@
                      tables))))))
       (t/is (false?
              (let [tables [:person/id :car/id]]
-               (-> (dx/commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
-                   (dx/-last-tx-match-raw-query?
+               (-> (dx/with-commit db [:dx/put    [:db/id 1] {:name "ivan" :age 18}])
+                   meta
+                   ::dx/txs
+                   (dx/-datoms-since 0)
+                   (dx/-datoms-match-query?
                     (dx/parse-query
                      '[:in [?table]
                        :where
@@ -986,9 +1189,11 @@
 (t/deftest cached-query
   (let [conn_ (atom (dx/create-dx [] {::dx/with-diff? true}))]
     (dx/commit! conn_ [:dx/put [:db/id 1] {:name "ivan"}])
+    (Thread/sleep 10)
     (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
     (t/is (false? (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
     (dx/commit! conn_ [:dx/put [:db/id 2] {:name "ivan"}])
+    (Thread/sleep 10)
     (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
     (dx/commit! conn_ [:dx/put [:dog/id 1] {:name "pixel"}])
     (t/is (false? (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
