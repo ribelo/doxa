@@ -1202,6 +1202,82 @@
          [!datoms ...])
        (into [] (distinct))))
 
+(defmacro pull
+  ([db query id]
+   `(pull ~db ~query ~id ~(meta &form)))
+  ([db query id env]
+   (let [kw       (gensym 'cache-keyword_)
+         m        (gensym 'db-meta_)
+         fresh?   (gensym 'force-fresh?_)
+         cache    (gensym 'cache_)
+         cache_   (gensym 'cache_data)
+         ttl-ms   (gensym 'ttl-ms_)
+         txs      (gensym 'txs_)
+         measure? (gensym 'measure_)
+         tick_    (gensym 'tick_)
+         e        (gensym 'cache-entry_)
+         r        (gensym 'result_)
+         ltt      (gensym 'last-transaction-time_)
+         lqt     (gensym 'last-query-timestamp_)
+         instant  (gensym 'instant_)]
+     `(let [~kw       (-->cache-kw '~query '~id ~env)
+           ~measure? ~(env ::measure?)
+           ~instant  (enc/now-udt)]
+       (if (some? ~kw)
+         (let [~m      (meta ~db)
+               ~fresh? ~(boolean (env ::fresh?))
+               ~cache  (~m ::cache)
+               ~cache_ (.-cache_ ~(with-meta cache {:tag `BaseCache}))
+               ~ttl-ms (.-ttl-ms ~(with-meta cache {:tag `BaseCache}))
+               ~txs    (~m ::txs)
+               ~tick_  (.-tick_ ~(with-meta cache {:tag `BaseCache}))
+               ~e      (@~cache_ ~kw)
+               ~lqt    (if (some? ~e) (.-lqt ~(with-meta e {:tag `TickedCacheEntry})) 0)
+               ~ltt    (-ltt ~txs)]
+           (if (and (not ~fresh?) (some? ~e)
+                    (or (not ~ttl-ms) (> ~ttl-ms (- ~instant (.-udt ~(with-meta e {:tag `TickedCacheEntry})))))
+                    (or (and ~lqt (> ~lqt ~ltt))
+                        (not (-datoms-match-query? (-datoms-since ~txs ~lqt) (pull->datalog ~query ~id)))))
+             (let [~e (enc/-swap-val! ~cache_ ~kw
+                        (fn [~'?e]
+                          (let [~'e ~(with-meta '?e {:tag `TickedCacheEntry})]
+                            (TickedCacheEntry. (.-delay ~'e) (.-udt ~'e) @~tick_ (inc (.-tick-lfu ~'e)) ~instant))))
+                   ~r (if ~measure?
+                        (with-time-ms @(.-delay ~(with-meta e {:tag `TickedCacheEntry})))
+                        (deref (.-delay ~(with-meta e {:tag `TickedCacheEntry}))))]
+               (if (enc/if-clj
+                     (instance? clojure.lang.IMeta ~r)
+                     (satisfies? cljs.core.IMeta ~r))
+                 (vary-meta ~r assoc ::fresh? false)
+                 ~r))
+             (let [tick# (swap! ~tick_ (fn [^long n#] (inc n#)))
+                   ~r    (if ~measure?
+                           (delay (with-time-ms (-pull ~db ~query ~id ~env)))
+                           (delay (-pull ~db ~query ~id ~env)))]
+               (enc/-swap-val! ~cache_ ~kw
+                 (fn [~'?e]
+                   (if (or (nil? ~'?e) ~fresh?
+                           (> (- ~instant (.-udt ~(with-meta '?e {:tag `TickedCacheEntry}))) ~ttl-ms))
+                     (TickedCacheEntry. ~r ~instant tick# 1 ~instant)
+                     (let [e# ~(with-meta '?e {:tag `TickedCacheEntry})]
+                       (TickedCacheEntry. (.-delay e#) (.-udt e#)
+                                          tick# (inc (.-tick-lfu e#))
+                                          ~instant)))))
+               (let [v# (deref ~r)]
+                 (if (enc/if-clj
+                       (instance? clojure.lang.IMeta v#)
+                       (satisfies? cljs.core.IMeta v#))
+                   (vary-meta v# assoc ::fresh? true)
+                   v#)))))
+         (let [~r (if ~measure?
+                    (with-time-ms (-pull ~db ~query ~id ~env))
+                    (-pull ~db ~query ~id ~env))]
+           (if (enc/if-clj
+                 (instance? clojure.lang.IMeta ~r)
+                 (satisfies? cljs.core.IMeta ~r))
+             (vary-meta ~r assoc ::fresh? true)
+             ~r)))))))
+
 (defn -pull
   ([db query]
    (-pull db query nil nil))
@@ -1333,82 +1409,6 @@
              ;;
              (some? id)
              (recur r id))))))))
-
-(defmacro pull
-  ([db query id]
-   `(pull ~db ~query ~id ~(meta &form)))
-  ([db query id env]
-   (let [kw       (gensym 'cache-keyword_)
-         m        (gensym 'db-meta_)
-         fresh?   (gensym 'force-fresh?_)
-         cache    (gensym 'cache_)
-         cache_   (gensym 'cache_data)
-         ttl-ms   (gensym 'ttl-ms_)
-         txs      (gensym 'txs_)
-         measure? (gensym 'measure_)
-         tick_    (gensym 'tick_)
-         e        (gensym 'cache-entry_)
-         r        (gensym 'result_)
-         ltt      (gensym 'last-transaction-time_)
-         lqt     (gensym 'last-query-timestamp_)
-         instant  (gensym 'instant_)]
-     `(let [~kw       (-->cache-kw '~query '~id ~env)
-           ~measure? ~(env ::measure?)
-           ~instant  (enc/now-udt)]
-       (if (some? ~kw)
-         (let [~m      (meta ~db)
-               ~fresh? ~(boolean (env ::fresh?))
-               ~cache  (~m ::cache)
-               ~cache_ (.-cache_ ~(with-meta cache {:tag `BaseCache}))
-               ~ttl-ms (.-ttl-ms ~(with-meta cache {:tag `BaseCache}))
-               ~txs    (~m ::txs)
-               ~tick_  (.-tick_ ~(with-meta cache {:tag `BaseCache}))
-               ~e      (@~cache_ ~kw)
-               ~lqt    (if (some? ~e) (.-lqt ~(with-meta e {:tag `TickedCacheEntry})) 0)
-               ~ltt    (-ltt ~txs)]
-           (if (and (not ~fresh?) (some? ~e)
-                    (or (not ~ttl-ms) (> ~ttl-ms (- ~instant (.-udt ~(with-meta e {:tag `TickedCacheEntry})))))
-                    (or (and ~lqt (> ~lqt ~ltt))
-                        (not (-datoms-match-query? (-datoms-since ~txs ~lqt) (pull->datalog ~query ~id)))))
-             (let [~e (enc/-swap-val! ~cache_ ~kw
-                        (fn [~'?e]
-                          (let [~'e ~(with-meta '?e {:tag `TickedCacheEntry})]
-                            (TickedCacheEntry. (.-delay ~'e) (.-udt ~'e) @~tick_ (inc (.-tick-lfu ~'e)) ~instant))))
-                   ~r (if ~measure?
-                        (with-time-ms @(.-delay ~(with-meta e {:tag `TickedCacheEntry})))
-                        (deref (.-delay ~(with-meta e {:tag `TickedCacheEntry}))))]
-               (if (enc/if-clj
-                     (instance? clojure.lang.IMeta ~r)
-                     (satisfies? cljs.core.IMeta ~r))
-                 (vary-meta ~r assoc ::fresh? false)
-                 ~r))
-             (let [tick# (swap! ~tick_ (fn [^long n#] (inc n#)))
-                   ~r    (if ~measure?
-                           (delay (with-time-ms (-pull ~db ~query ~id ~env)))
-                           (delay (-pull ~db ~query ~id ~env)))]
-               (enc/-swap-val! ~cache_ ~kw
-                 (fn [~'?e]
-                   (if (or (nil? ~'?e) ~fresh?
-                           (> (- ~instant (.-udt ~(with-meta '?e {:tag `TickedCacheEntry}))) ~ttl-ms))
-                     (TickedCacheEntry. ~r ~instant tick# 1 ~instant)
-                     (let [e# ~(with-meta '?e {:tag `TickedCacheEntry})]
-                       (TickedCacheEntry. (.-delay e#) (.-udt e#)
-                                          tick# (inc (.-tick-lfu e#))
-                                          ~instant)))))
-               (let [v# (deref ~r)]
-                 (if (enc/if-clj
-                       (instance? clojure.lang.IMeta v#)
-                       (satisfies? cljs.core.IMeta v#))
-                   (vary-meta v# assoc ::fresh? true)
-                   v#)))))
-         (let [~r (if ~measure?
-                    (with-time-ms (-pull ~db ~query ~id ~env))
-                    (-pull ~db ~query ~id ~env))]
-           (if (enc/if-clj
-                 (instance? clojure.lang.IMeta ~r)
-                 (satisfies? cljs.core.IMeta ~r))
-             (vary-meta ~r assoc ::fresh? true)
-             ~r)))))))
 
 (defn pull-one
   ([db query]
