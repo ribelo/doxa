@@ -68,6 +68,16 @@
   [xs]
   (first (vals xs)))
 
+(defmacro -key [m]
+  `(enc/if-clj
+     (.key  ~(with-meta m {:tag 'clojure.lang.MapEntry}))
+     (.-key ~(with-meta m {:tag 'cljs.core.MapEntry}))))
+
+(defmacro -val [m]
+  `(enc/if-clj
+     (.val  ~(with-meta m {:tag 'clojure.lang.MapEntry}))
+     (.-val ~(with-meta m {:tag 'cljs.core.MapEntry}))))
+
 (def
   ^{:doc "returns a vector even if the argument is nil"}
   conjv (fnil conj []))
@@ -189,8 +199,8 @@
         (conj r [id (persistent! m)])
         ;;
         :let [^clojure.lang.MapEntry me (.next it)
-              k  #?(:clj (.key me) :cljs (.-key me))
-              v  #?(:clj (.val me) :cljs (.-val me))]
+              k  (-key me)
+              v  (-val me)]
         ;;
         (and (some? entity-key) (enc/kw-identical? entity-key k))
         (recur (assoc! m k v) r [k v])
@@ -228,9 +238,9 @@
          (not (.hasNext it))
          m
          ;;
-         :let [^clojure.lang.MapEntry me (.next it)
-               k  #?(:clj (.key me) :cljs (.-key me))
-               v  #?(:clj (.val me) :cljs (.-val me))]
+         :let [me (.next it)
+               k  (-key me)
+               v  (-val me)]
          (map? v)
          (recur (assoc m k (-denormalize db v max-level (inc level))))
          ;;
