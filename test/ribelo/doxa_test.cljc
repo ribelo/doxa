@@ -3,9 +3,7 @@
   (:require
    [ribelo.doxa :as dx]
    [clojure.test :as t]
-   [taoensso.encore :as enc]
-   [meander.epsilon :as m]
-   [meander.interpreter.epsilon :as mi]))
+   [meander.epsilon :as m]))
 
 ;; * datalog->meander
 
@@ -126,7 +124,7 @@
                 (dx/create-dx [] {::dx/with-diff? true ::dx/max-txs-count 32})
                 (range 100)))]
     (t/is (some? (some-> db meta ::dx/with-diff?)))
-    (t/is (some-> db meta ::dx/txs))
+    (t/is (some? (some-> db meta ::dx/txs)))
     ;; TODO
     ;; (t/is (some-> db meta ::dx/txs .-txs_))
     ))
@@ -355,14 +353,21 @@
                   :photo/height         10
                   :photo/width          10
                   :chat.entry/timestamp "7890"}]}
-            db (dx/db-with [tx])]
-        (t/is (= {:chat/entries
-                  [{:photo/id 0, :photo/url "photo://asdf_10x10.jkl" :photo/width 10, :photo/height 10, :chat.entry/timestamp "7890"}
-                   {:message/id 1, :message/text "bar" :chat.entry/timestamp "1235"}
-                   {:message/id 0, :message/text "foo" :chat.entry/timestamp "1234"}]}
-                 (dx/pull db [{:chat/entries {:message/id [:message/id :message/text :chat.entry/timestamp]
+            db (dx/db-with [tx])
+            r (dx/pull db [{:chat/entries {:message/id [:message/id :message/text :chat.entry/timestamp]
                                               :photo/id   [:photo/id :photo/url :photo/width :photo/height :chat.entry/timestamp]}}]
-                          [:chat/id 0])))))))
+                          [:chat/id 0])]
+        (t/is (or (= {:chat/entries
+                      [{:photo/id 0, :photo/url "photo://asdf_10x10.jkl" :photo/width 10, :photo/height 10, :chat.entry/timestamp "7890"}
+                       {:message/id 1, :message/text "bar" :chat.entry/timestamp "1235"}
+                       {:message/id 0, :message/text "foo" :chat.entry/timestamp "1234"}]}
+                     r)
+                  ;; cljs
+                  (= {:chat/entries
+                      [{:message/id 0, :message/text "foo" :chat.entry/timestamp "1234"}
+                       {:message/id 1, :message/text "bar" :chat.entry/timestamp "1235"}
+                       {:photo/id 0, :photo/url "photo://asdf_10x10.jkl" :photo/width 10, :photo/height 10, :chat.entry/timestamp "7890"}]}
+                     r)))))))
 
 ;; * query
 
@@ -760,7 +765,7 @@
 (t/deftest gh-17
   ;; https://github.com/ribelo/doxa/issues/17
   (let [db (dx/create-dx [{:db/id 1 :name "ivan" :car {:db/id 10 :name "tesla"}}])]
-    (dx/pull db [:name {:car [:name]}] [:db/id 1])))
+    (t/is (map? (:car (dx/pull db [:name {:car [:name]}] [:db/id 1]))))))
 
 (defmacro generate-matched-tests [datom]
   (m/rewrite datom
