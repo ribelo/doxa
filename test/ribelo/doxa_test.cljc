@@ -776,39 +776,39 @@
        (m/or (m/and ?v     (m/not (m/pred dx/qsymbol?))) (m/let [?v         1]))]))
     (do (t/is (true?
                (dx/-datoms-match-datom?
-                (dx/-edits->datoms [[~?table] :+ {~?e {~?a ~?v}}])
+                (dx/-edits->datoms [[[~?table] :+ {~?e {~?a ~?v}}]])
                 ~datom)))
         (t/is (true?
                (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[~?table] :r {~?e {~?a ~?v}}])
+                (dx/-edits->datoms  [[[~?table] :r {~?e {~?a ~?v}}]])
                 ~datom)))
         (t/is (true?
                (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[~?table ~?e] :+ {~?a ~?v}])
+                (dx/-edits->datoms  [[[~?table ~?e] :+ {~?a ~?v}]])
                 ~datom)))
         (t/is (true?
                (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[~?table ~?e] :r {~?a ~?v}])
+                (dx/-edits->datoms  [[[~?table ~?e] :r {~?a ~?v}]])
                 ~datom)))
         (t/is (true?
                (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[~?table ~?e ~?a] :+ ~?v])
+                (dx/-edits->datoms  [[[~?table ~?e ~?a] :+ ~?v]])
                 ~datom)))
         (t/is (true?
                (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[~?table ~?e ~?a] :r ~?v])
+                (dx/-edits->datoms  [[[~?table ~?e ~?a] :r ~?v]])
                 ~datom)))
         (t/is (true?
                (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[~?table] :-])
+                (dx/-edits->datoms  [[[~?table] :-]])
                 ~datom)))
         (t/is (true?
                (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[~?table ~?e] :-])
+                (dx/-edits->datoms  [[[~?table ~?e] :-]])
                 ~datom)))
         (t/is (true?
                (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[~?table ~?e ~?a] :-])
+                (dx/-edits->datoms  [[[~?table ~?e ~?a] :-]])
                 ~datom))))))
 
 (comment
