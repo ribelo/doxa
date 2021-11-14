@@ -1,6 +1,6 @@
 (ns ribelo.doxa
   (:refer-clojure  :exclude [ident? -next])
-  #?(:cljs (:require-macros [ribelo.doxa :refer [q with-dx with-dx! -iter]]))
+  #?(:cljs (:require-macros [ribelo.doxa :refer [pull q with-dx with-dx! -iter -key -val]]))
   (:require
    [clojure.set :as set]
    [meander.epsilon :as m]
@@ -1265,7 +1265,7 @@
                      (satisfies? cljs.core.IMeta ~r))
                  (vary-meta ~r assoc ::fresh? false)
                  ~r))
-             (let [tick# (swap! ~tick_ (fn [^long n#] (inc n#)))
+             (let [tick# (swap! ~tick_ (fn [~'n] (inc ~(with-meta 'n {:tag 'long}))))
                    ~r    (if ~measure?
                            (delay (with-time-ms (-pull ~db ~query ~id ~env)))
                            (delay (-pull ~db ~query ~id ~env)))]
