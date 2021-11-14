@@ -457,6 +457,9 @@
   ([db txs] (-commit db txs nil))
   ([db txs tx-meta]
    (let [db'        (enc/cond
+                      (or (nil? txs) (empty? txs))
+                      db
+                      ;;
                       (vector? (first txs))
                       (let [it (-iter txs)]
                         (loop [acc db match? true]
@@ -465,6 +468,9 @@
                             acc
                             :let [tx   (.next it)
                                   kind (first tx)]
+                            (or (nil? tx) (empty? tx))
+                            (recur acc match?)
+                            ;;
                             (enc/kw-identical? kind :dx/match)
                             (recur acc (-submit-commit acc tx))
                             ;;
