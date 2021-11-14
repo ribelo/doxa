@@ -141,48 +141,53 @@
 
 ;; TODO rewrite to state machine with m/with
 (defn -edits->datoms [edits]
-  (m/rewrite edits
-    [[?table] :+ (m/map-of !eids !maps)]
-    (m/cata [(m/cata [:+ ?table !eids !maps]) ...])
-    ;;
-    [:+ ?table ?eid (m/map-of !attrs !vs)]
-    (m/cata [[?table ?eid !attrs !vs] ...])
-    ;;
-    [[?table] :r (m/map-of !eids !maps)]
-    (m/cata [(m/cata [:r ?table !eids !maps]) ...])
-    ;;
-    [:r ?table ?eid (m/map-of !attrs _)]
-    (m/cata [[?table ?eid !attrs nil] ...])
-    ;;
-    [[?table ?eid] :+ (m/map-of !attrs !vs)]
-    (m/cata [[?table ?eid !attrs !vs] ...])
-    ;;
-    [[?table ?eid] :r (m/map-of !attrs _)]
-    (m/cata [[?table ?eid !attrs nil] ...])
-    ;;
-    [[?table ?eid ?a] :+ ?v]
-    [[?table ?eid ?a ?v]]
-    ;;
-    [[?table ?eid ?a] :r ?v]
-    [[?table ?eid ?a nil]]
-    ;;
-    [[?table] :-]
-    [[?table nil nil nil]]
-    ;;
-    [[?table ?eid] :-]
-    [[?table ?eid nil nil]]
-    ;;
-    [[?table ?eid ?a] :-]
-    [[?table ?eid ?a nil]]
-    ;;
-    (m/with [%1 [_ _ _ _ :as !datoms]
-             %2 (m/or [%2 ...] [%1 ...] %1)]
-      %2)
-    [!datoms ...]
-    [!elems ...]
-    (m/cata [(m/cata !elems) ...])
-    _ ~(throw (ex-info "transaction unsupported" {:tx edits}))))
-
+  (let [ita (-iter edits)]
+    (loop [acc (transient [])]
+      (if-not (.hasNext ita)
+        (persistent! acc)
+        (let [elem (.next ita)
+              acc
+              (m/find elem
+                [[?t] (m/and ?op (m/or :+ :r)) {:as ?entity}]
+                (let [itb (-iter ?entity)]
+                  (loop [acc acc]
+                    (if-not (.hasNext itb)
+                      acc
+                      (let [me  (.next itb)
+                            ?e  (-key me)
+                            ?m  (-val me)
+                            itc (-iter ?m)]
+                        (recur
+                         (loop [acc acc]
+                           (if-not (.hasNext itc)
+                             acc
+                             (let [me (.next itc)
+                                   ?a (-key me)
+                                   ?v (-val me)]
+                               (recur (conj! acc [?t ?e ?a (case ?op :+ ?v :r nil)]))))))))))
+                ;;
+                [[?t ?e] (m/and ?op (m/or :+ :r)) {:as ?m}]
+                (let [itc (-iter ?m)]
+                  (loop [acc acc]
+                    (if-not (.hasNext itc)
+                      acc
+                      (let [me (.next itc)
+                            ?a (-key me)
+                            ?v (-val me)]
+                        (recur (conj! acc [?t ?e ?a (case ?op :+ ?v :r nil)]))))))
+                ;;
+                [[?t ?e ?a] (m/and ?op (m/or :+ :r)) ?v]
+                (conj! acc [?t ?e ?a (case ?op :+ ?v :r nil)])
+                ;;
+                [[?t] :-]
+                (conj! acc [?t nil nil nil])
+                [[?t ?e] :-]
+                (conj! acc [?t ?e nil nil])
+                [[?t ?e ?a] :-]
+                (conj! acc [?t ?e ?a nil])
+                _
+                ~(throw (ex-info "transaction unsupported" {:tx edits})))]
+          (recur acc))))))
 
 (defn normalize
   "turns a nested map into a flat collection with references."
