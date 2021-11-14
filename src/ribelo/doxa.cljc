@@ -103,7 +103,7 @@
     _
     false))
 
-(defn -idents?[xs]
+(defn -idents? [xs]
   (m/match xs
     (m/seqable (m/pred -ident?) ...) true
     _
