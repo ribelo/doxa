@@ -1197,13 +1197,17 @@
 
 (defn reverse-search
   ([db id]
-   (vec
     ^::m/dangerous
-    (m/search db {?pid {?eid {?k (m/or ~id (m/scan ~id))}}} [?pid ?eid ?k])))
+    (m/search db {?pid {?eid {?k (m/or ~id (m/scan ~id))}}} [?pid ?eid ?k]))
   ([db k id]
-   (vec
     ^::m/dangerous
-    (m/search db {?pid {?eid {~k (m/or ~id (m/scan ~id))}}} [?pid ?eid]))))
+    (m/search db {?pid {?eid {~k (m/or ~id (m/scan ~id))}}} [?pid ?eid])))
+
+(defn eid-search
+  ([db eid]
+   ^::m/dangerous
+   (m/search db {?pid {~eid (m/some)}}
+     [?pid eid])))
 
 (defn pull->datalog [query ids]
   (->> (m/rewrite {:query query :ids ids}
@@ -1311,6 +1315,8 @@
        (mapv #(pull db query % env) parent)
        (= [:*] query)
        (get-in db parent)
+       (not (-ident? parent))
+       (mapv #(pull db query % env) (eid-search db parent))
        :else
        (let [qit (-iter query)]
          (loop [r {} id parent]
