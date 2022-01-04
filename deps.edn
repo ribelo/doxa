@@ -1,14 +1,20 @@
 {:paths ["src" "resources"]
- :deps  {meander/epsilon     {:mvn/version "0.0.650"}
+ :deps  {
+         ;; meander/epsilon     {:mvn/version "0.0.650"}
+         ;; meander/epsilon     {:local/root "/home/ribelo/code/meander"}
+         meander/epsilon {:git/url "https://github.com/noprompt/meander.git"
+                          :sha "6fe917e88053891cd12610ab66f6035914d35580"}
          com.taoensso/encore {:mvn/version "3.10.1"}
          com.taoensso/timbre {:mvn/version "5.1.2"}
-         juji/editscript     {:mvn/version "0.5.7"}}
+         juji/editscript {:mvn/version "0.5.7"}
+         cljs-bean/cljs-bean {:mvn/version "1.7.0"}
+         com.cognitect/transit-cljs {:mvn/version "0.8.269"}}
  :aliases
  {:test  {:extra-paths ["test"]}
   :run-tests
   {:extra-paths ["test"]
    :extra-deps  {com.cognitect/test-runner {:git/url "https://github.com/cognitect-labs/test-runner.git"
-                                            :sha     "dd6da11611eeb87f08780a30ac8ea6012d4c05ce"}}
+                                            :sha "dd6da11611eeb87f08780a30ac8ea6012d4c05ce"}}
    :main-opts   ["-m" "cognitect.test-runner"]
    :exec-fn     cognitect.test-runner.api/test}
   :build
@@ -22,4 +28,7 @@
                  slipset/deps-deploy           {:mvn/version "RELEASE"}}
    :exec-fn     build/clojars}
   :cljs  {:extra-deps {thheller/shadow-cljs {:mvn/version "2.11.15"}}}
-  :bench {:extra-deps {datascript/datascript {:mvn/version "1.0.7"}}}}}
+  :bench {:extra-deps {datascript/datascript {:mvn/version "1.0.7"}
+                       town.lilac/pyramid {:mvn/version "3.1.2"}
+                       metosin/malli {:mvn/version "0.7.5"}
+                       com.rpl/specter {:mvn/version "1.1.3"}}}}}

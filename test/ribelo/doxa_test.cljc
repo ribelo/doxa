@@ -2,134 +2,7 @@
   ;; #?(:cljs (:require-macros [ribelo.doxa-test :refer [generate-matched-tests]]))
   (:require
    [ribelo.doxa :as dx]
-   [clojure.test :as t]
-   [meander.epsilon :as m]))
-
-;; * datalog->meander
-
-(t/deftest parse-query
-  (t/testing "find"
-    (t/is (= {:find '[?x ?y]}
-             (dx/parse-find '[?x ?y])))
-    (t/is (= {:find '[?x ?y]     :mapcat? true :first? true}
-             (dx/parse-find '[?x ?y .])))
-    (t/is (= {:find '[?x ?y]     :mapcat? true}
-             (dx/parse-find '[?x ?y ...])))
-    (t/is (= {:find '[?table ?e]                            :pull {:q [:*] :ident '[?table ?e]}}
-             (dx/parse-find '[(pull [:*] [?table ?e])])))
-    (t/is (= {:find '[?table ?e] :mapcat? true :first? true :pull {:q [:*] :ident '[?table ?e]}}
-             (dx/parse-find '[(pull [:*] [?table ?e]) .])))
-    (t/is (= {:find '[?table ?e] :mapcat? true              :pull {:q [:*] :ident '[?table ?e]}}
-             (dx/parse-find '[(pull [:*] [?table ?e]) ...]))))
-
-  (t/testing "keys"
-    (t/is (= {:keys [:a :b :c] :args []}
-             (dx/parse-query [:keys [:a :b :c]]))))
-
-  (t/testing "build-args-map"
-    (t/is (= '{?name "Ivan"}
-             (-> (dx/parse-query '[:where [?e :name ?name]
-                                   :in ?name]
-                                 "Ivan")
-                 (dx/build-args-map))))
-    (t/is (= '{?name "ivan" ?age 35}
-             (-> (dx/parse-query '[:in ?name ?age] "ivan" 35)
-                 (dx/build-args-map))))
-    (t/is (= '{?name [:or ["ivan" "petr"]] ?age [:or [30 20]]}
-             (-> (dx/parse-query '[:in [?name] [?age]] ["ivan" "petr"] [30 20])
-                 (dx/build-args-map))))
-    (t/is (= '[{?name "ivan" ?age 20} {?name "petr" ?age 30}]
-             (-> (dx/parse-query '[:in [[?name ?age]]] [["ivan" 20] ["petr" 30]])
-                 (dx/build-args-map))))
-    (t/is (= '{?attr :name ?value [:or ["ivan" "petr"]]}
-             (-> (dx/parse-query '[:in ?attr [?value]]
-                                 :name ["ivan" "petr"])
-                 (dx/build-args-map))))))
-
-(t/deftest datalog->meander
-  (t/testing "where"
-    (t/is (= '{?table_?e {?e {:name "Ivan"}}}
-             (-> (dx/parse-query '[:where [?e :name "Ivan"]])
-                 (dx/datalog->meander))))
-    (t/is (= '(meander.epsilon/and
-               {?table_?e1 {?e1 {:name "Ivan"}}}
-               {?table_?e2 {?e2 {:name "Petr"}}})
-             (-> (dx/parse-query '[:where
-                                   [?e1 :name "Ivan"]
-                                   [?e2 :name "Petr"]])
-                 (dx/datalog->meander))))
-    (t/is (= '(meander.epsilon/and
-              {?table_?e {?e {:name "Ivan", :age (meander.epsilon/some ?age)}}}
-              (meander.epsilon/guard (> ?age 18)))
-             (-> (dx/parse-query '[:where
-                                   [?e :name "Ivan"]
-                                   [?e :age ?age]
-                                   [(> ?age 18)]])
-                 (dx/datalog->meander))))
-    (t/is (= '(meander.epsilon/and
-               {?table_?e {?e {:name "Ivan" :age (meander.epsilon/some ?age)}}}
-               (meander.epsilon/let [?adult (> ?age 18)]))
-             (-> (dx/parse-query '[:where
-                                   [?e :name "Ivan"]
-                                   [?e :age ?age]
-                                   [(> ?age 18) ?adult]])
-                 (dx/datalog->meander)))))
-  (t/testing "in & args"
-    (t/is (= '{?table_?e {?e {:name (meander.epsilon/and ?name "Ivan")}}}
-             (-> (dx/parse-query '[:where [?e :name ?name]
-                                   :in ?name]
-                                 "Ivan")
-                 (dx/datalog->meander))))
-    (t/is (= '{?table_?e {?e {:name (meander.epsilon/or "Ivan" "Petr")}}}
-             (-> (dx/parse-query '[:where [?e :name ?name]
-                                   :in [?name]]
-                                 ["Ivan" "Petr"])
-                 (dx/datalog->meander))))
-    (t/is (= '{?table_?e {?e {:name (meander.epsilon/or "Ivan" "Petr"), :age (meander.epsilon/or 20 30)}}}
-             (-> (dx/parse-query '[:where
-                                   [?e :name ?name]
-                                   [?e :age ?age]
-                                   :in [?name] [?age]]
-                                 ["Ivan" "Petr"]
-                                 [20 30])
-                 (dx/datalog->meander))))
-    (t/is (= '(meander.epsilon/or
-              {?table_?e {?e {:name (meander.epsilon/and ?name "Ivan"), :age (meander.epsilon/and ?age 20)}}}
-              {?table_?e {?e {:name (meander.epsilon/and ?name "Petr"), :age (meander.epsilon/and ?age 30)}}})
-             (-> (dx/parse-query '[:where
-                                   [?e :name ?name]
-                                   [?e :age ?age]
-                                   :in    [[?name ?age]]]
-                                 [["Ivan" 20]
-                                  ["Petr" 30]])
-                 (dx/datalog->meander))))
-    (t/is (= '(meander.epsilon/and {?table_?e {?e {:friend (meander.epsilon/scan [(meander.epsilon/some ?t) (meander.epsilon/some ?f)])}}}
-                                   {?table_?f {?f {:name (meander.epsilon/some ?name)}}})
-             (-> (dx/parse-query '[:where
-                                   [?e :friend [?t ?f]]
-                                   [?f :name ?name]])
-                 (dx/datalog->meander))))))
-
-;;
-
-(comment
-  (def db (-> (reduce
-               (fn [acc i] (dx/commit acc [:dx/put {:db/id i :name "David" :age (rand-int 100)}]))
-               (dx/create-dx [] {::dx/with-diff? true ::dx/max-txs-count 32})
-               (range 100)))))
-
-(t/deftest db-metadata
-  (let [db (-> (reduce
-                (fn [acc i] (dx/commit acc [:dx/put {:db/id i :name "David"}]))
-                (dx/create-dx [] {::dx/with-diff? true ::dx/max-txs-count 32})
-                (range 100)))]
-    (t/is (some? (some-> db meta ::dx/with-diff?)))
-    (t/is (some? (some-> db meta ::dx/txs)))
-    ;; TODO
-    ;; (t/is (some-> db meta ::dx/txs .-txs_))
-    ))
-
-;; * apply tx
+   [clojure.test :as t]))
 
 (comment
   (def db {:db/id {1 {:db/id 1 :name "Petr" :aka ["Devil"]}}}))
@@ -141,6 +14,8 @@
                (dx/commit {} [[:dx/put {:db/id 1 :name "David" :aka ["Devil"]}]])))
       (t/is (= #:db{:id {1 {:db/id 1 :aka ["Tupen"]}}}
                (dx/commit {} [[:dx/put [:db/id 1] :aka ["Tupen"]]])))
+      (t/is (= #:db{:id {1 {:db/id 1 :aka ["Tupen"] :name "Oleg"}}}
+               (dx/commit {} [[:dx/put [:db/id 1] :aka ["Tupen"] :name "Oleg"]])))
       (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
                (dx/commit {} [[:dx/put [:db/id 1] {:name "David" :aka ["Devil"]}]])))
       (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
@@ -153,9 +28,9 @@
                (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
       (t/is (= #:db{:id {1 {:db/id 1 :a {:b 1, :c 2}}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2}]])))
-      (t/is (= #:db{:id {1 {:a [:db/id 2]}, 2 {:b 1, :c 2, :db/id 2}}}
+      (t/is (= #:db{:id {1 {:db/id 1 :a [:db/id 2]}, 2 {:b 1, :c 2, :db/id 2}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2 :db/id 2}]])))
-      (t/is (= #:db{:id {1 {:a #{[:db/id 2] [:db/id 3]}}, 2 {:b 1, :c 2, :db/id 2}, 3 {:b 3, :c 4, :db/id 3}}}
+      (t/is (= #:db{:id {1 {:db/id 1 :a #{[:db/id 2] [:db/id 3]}}, 2 {:b 1, :c 2, :db/id 2}, 3 {:b 3, :c 4, :db/id 3}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a [{:b 1 :c 2 :db/id 2}
                                                       {:b 3 :c 4 :db/id 3}]]]))))
 
@@ -170,32 +45,7 @@
                (dx/commit db [[:dx/delete [:db/id 1] :AKA "Devil"]])))
       (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
                (dx/commit db [[:dx/put [:db/id 1] :friend {:db/id 2 :name "Ivan"}]
-                              [:dx/delete [:db/id 2]]])
-               (dx/commit db [[:dx/conj [:db/id 1] :friend {:db/id 2 :name "Ivan"}]
                               [:dx/delete [:db/id 2]]]))))
-
-    (t/testing "testing conj"
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil" "Tupen"]}}}
-               (dx/commit db [[:dx/conj [:db/id 1] :aka "Tupen"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name ["Petr" "Ivan"], :aka ["Devil"]}}}
-               (dx/commit db [[:dx/conj [:db/id 1] :name "Ivan"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend [[:db/id 2]]}
-                         2 {:db/id 2, :name "Ivan"}}}
-               (dx/commit db [[:dx/conj [:db/id 1] :friend {:db/id 2 :name "Ivan"}]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend [[:db/id 2] [:db/id 3]]}
-                         2 {:db/id 2, :name "Ivan"}
-                         3 {:db/id 3, :name "Lucy"}}}
-               (dx/commit db [[:dx/conj [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"] :sex ["male"]}}}
-               (dx/commit db [[:dx/conj [:db/id 1] :sex "male"]]))))
-
-    (t/testing "testing merge"
-      (t/is (= #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"], :address {:city "Warsaw"}}}}
-               (dx/commit db [:dx/merge [:db/id 1] :address {:city "Warsaw"}])))
-      (t/is (= #:db{:id {1 {:db/id 1, :name "Petr", :aka "Tupen"}}}
-               (dx/commit db [:dx/merge [:db/id 1] {:aka "Tupen"}])))
-      (t/is (= #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}, 2 #:db{:id 2}}}
-               (dx/commit db [:dx/merge [:db/id 2] {}]))))
 
     (t/testing "testing update"
       (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka "Tupen"}}}
