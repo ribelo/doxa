@@ -2,69 +2,150 @@
   ;; #?(:cljs (:require-macros [ribelo.doxa-test :refer [generate-matched-tests]]))
   (:require
    [ribelo.doxa :as dx]
-   [clojure.test :as t]))
+   [ribelo.doxa.util :as u]
+   #?(:clj [clojure.test :as t] :cljs [cljs.test :as t])))
+
+;; * util
+
+(t/deftest normalize
+  (t/is (= [[[:db/id 2] {:_friend [:db/id 1], :db/id 2, :name "Ivan"}] [[:db/id 1] {:db/id 1, :name "Petr", :friend [:db/id 2]}]]
+           (dx/normalize {:db/id 1 :name "Petr" :friend {:db/id 2 :name "Ivan"}}))))
+
+(t/deftest denormalize
+  (t/is (= {[:db/id 1] {:db/id 1, :name "Petr", :friend {:db/id 2, :name "Ivan"}}
+            [:db/id 2] {:db/id 2, :name "Ivan"}}
+           (dx/denormalize {[:db/id 1] {:db/id 1 :name "Petr" :friend [:db/id 2]}
+                            [:db/id 2] {:db/id 2 :name "Ivan"}}))))
+
+(t/deftest search-in-map
+  (t/is (= [:b :c]
+           (u/-search-in-map {:a 1 :b 2 :c [1 2]} 2)))
+  (t/is (= :b
+           (u/-search-in-map {:a 1 :b 2 :c [1 2]} :b 2)))
+  (t/is (= :c
+           (u/-search-in-map {:a 1 :b 2 :c [1 2]} :c 2))))
+
+(t/deftest eid-search
+  (t/is (= [[:db/id 1]]
+           (u/-eid-search {[:db/id 1] {:db/id 1 :name "Petr" :friend [:db/id 2]}
+                              [:db/id 2] {:db/id 2 :name "Ivan"}}
+                          1))))
+
+(t/deftest diff-entity
+  (t/is (= [[:- :a 1] [:+ :b 2]]
+           (mapv vec (u/-diff-entity {:a 1} {:b 2}))))
+  (t/is (= [[:- :a 1] [:+ :a 2]]
+           (mapv vec (u/-diff-entity {:a 1} {:a 2}))))
+  (t/is (= [[[:db/id 1] :- :a 1] [[:db/id 1] :+ :a 2]]
+           (u/-diff-entity [:db/id 1] {:a 1} {:a 2}))))
+
+#_(t/deftest diff-dbs
+  (t/is (= [[[:db/id 1] :+ :b 2] [[:db/id 1] :- :b 2]]
+           (dx/diff-dbs {[:db/id 1] {:a 1} [:db/id 2] {:b 2}} {[:db/id 1] {:a 1 :b 2}}))))
+
+(t/deftest merge-entity
+  (t/is (= {[:db/id 1] {:db/id 1, :name "Ivan", :friend [:db/id 2]}, [:db/id 2] {:db/id 2, :name "Petr"}}
+           (u/-merge-entity {[:db/id 1] {:db/id 1 :name "Ivan"}} {:db/id 1 :friend {:db/id 2 :name "Petr"}}))))
+
+(t/deftest put-entity
+  (t/is (= {[:db/id 1] {:db/id 1, :name "Ivan", :friend [:db/id 2]}, [:db/id 2] {:db/id 2, :name "Petr"}}
+           (u/-put-entity {} {:db/id 1 :name "Ivan" :friend {:db/id 2 :name "Petr"}}))))
+
+(t/deftest safe-put
+  (t/is (= {:db/id 1, :name "Ivan", [:db/id 1] {:db/id 1, :name "Petr"}}
+           (u/-safe-put-kv {:db/id 1 :name "Ivan"} [:db/id 1] :name "Petr"))))
+
+(t/deftest diff-dbs
+  (t/is (= [[[:db/id 1] :- :name "Ivan"] [[:db/id 1] :+ :name "Petr"]]
+           (dx/diff-dbs {[:db/id 1] {:db/id 1 :name "Ivan"}} {[:db/id 1] {:db/id 1 :name "Petr"}})))
+  (t/is (= [[[:db/id 1] :- :name "Ivan"] [[:db/id 1] :- :db/id 1] [[:db/id 2] :+ :db/id 2] [[:db/id 2] :+ :name "Petr"]]
+           (dx/diff-dbs {[:db/id 1] {:db/id 1 :name "Ivan"}} {[:db/id 2] {:db/id 2 :name "Petr"}}))))
+
+(t/deftest default-commit-diff
+  (t/is (= [[[:db/id 2] :+ :db/id 2] [[:db/id 2] :+ :name "Petr"]]
+           (dx/default-commit-diff {} {[:db/id 2] {:db/id 2 :name "Petr"}} [:dx/put [:db/id 2] :name "Peter"]))))
+
+(t/deftest clearing-delete
+  (t/is (= {[:db/id 1] {:db/id 1, :friend [[:db/id 2]]}}
+           (u/-clearing-delete {[:db/id 1] {:db/id 1 :name "Ivan" :friend [[:db/id 2]]}} [[:db/id 1] :name])))
+  (t/is (= {[:db/id 1] {:db/id 1, :name "Ivan"}}
+           (u/-clearing-delete {[:db/id 1] {:db/id 1 :name "Ivan" :friend [[:db/id 2]]}} [[:db/id 1] :friend] [:db/id 2])))
+  (t/is (= {}
+           (u/-clearing-delete {[:db/id 1] {:db/id 1 :name "Ivan"}} [[:db/id 1] :name])))
+  (t/is (= {[:db/id 2] {:db/id 2, :name "Petr"}}
+           (u/-clearing-delete {[:db/id 1] {:db/id 1 :name "Ivan"}
+                                   [:db/id 2] {:db/id 2 :name "Petr"}}
+                                  [[:db/id 1] :name]))))
+
+(t/deftest delete-entity
+  (t/is (= {[:db/id 1] {:db/id 1, :name "Ivan"}}
+           (u/-delete-entity {[:db/id 1] {:db/id 1 :name "Ivan" :friend [:db/id 2]}
+                                 [:db/id 2] {:db/id 2 :name "Petr"}}
+                                [:db/id 2] true))))
 
 (comment
-  (def db {:db/id {1 {:db/id 1 :name "Petr" :aka ["Devil"]}}}))
+  (def db @(dx/create-dx [{:db/id 1 :name "Petr" :aka ["Devil"]}])))
 
 (t/deftest commit
-  (let [db {:db/id {1 {:db/id 1 :name "Petr" :aka ["Devil"]}}}]
+  (let [db (dx/create-dx [{:db/id 1 :name "Petr" :aka ["Devil"]}])]
     (t/testing "testing put"
-      (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil"]}}
                (dx/commit {} [[:dx/put {:db/id 1 :name "David" :aka ["Devil"]}]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :aka ["Tupen"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :aka ["Tupen"]}}
                (dx/commit {} [[:dx/put [:db/id 1] :aka ["Tupen"]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :aka ["Tupen"] :name "Oleg"}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :aka ["Tupen"] :name "Oleg"}}
                (dx/commit {} [[:dx/put [:db/id 1] :aka ["Tupen"] :name "Oleg"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil"]}}
                (dx/commit {} [[:dx/put [:db/id 1] {:name "David" :aka ["Devil"]}]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil"]}}
                (dx/commit db [[:dx/put [:db/id 1] :name "David"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Tupen"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Tupen"]}}
                (dx/commit db [[:dx/put [:db/id 1] :aka ["Tupen"]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend #{[:db/id 2] [:db/id 3]}}
-                         2 {:db/id 2, :name "Ivan"}
-                         3 {:db/id 3, :name "Lucy"}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"], :friend #{[:db/id 2] [:db/id 3]}}
+                [:db/id 2] {:db/id 2, :name "Ivan"}
+                [:db/id 3] {:db/id 3, :name "Lucy"}}
                (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :a {:b 1, :c 2}}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :a {:b 1, :c 2}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2}]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :a [:db/id 2]}, 2 {:b 1, :c 2, :db/id 2}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :a [:db/id 2]}, [:db/id 2] {:b 1, :c 2, :db/id 2}}
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2 :db/id 2}]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :a #{[:db/id 2] [:db/id 3]}}, 2 {:b 1, :c 2, :db/id 2}, 3 {:b 3, :c 4, :db/id 3}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :a #{[:db/id 2] [:db/id 3]}}
+                [:db/id 2] {:b 1, :c 2, :db/id 2}
+                [:db/id 3] {:b 3, :c 4, :db/id 3}}
                (dx/commit {} [[:dx/put [:db/id 1] :a [{:b 1 :c 2 :db/id 2}
                                                       {:b 3 :c 4 :db/id 3}]]]))))
 
     (t/testing "testing delete"
       (t/is (= {}
                (dx/commit db [[:dx/delete [:db/id 1]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr"}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr"}}
                (dx/commit db [[:dx/delete [:db/id 1] :aka]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr"}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr"}}
                (dx/commit db [[:dx/delete [:db/id 1] :aka "Devil"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}}
                (dx/commit db [[:dx/delete [:db/id 1] :AKA "Devil"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
+      #_(t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}}
                (dx/commit db [[:dx/put [:db/id 1] :friend {:db/id 2 :name "Ivan"}]
                               [:dx/delete [:db/id 2]]]))))
 
     (t/testing "testing update"
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka "Tupen"}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka "Tupen"}}
                (dx/commit db [[:dx/update [:db/id 1] assoc :aka "Tupen"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil" "Tupen"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil" "Tupen"]}}
                (dx/commit db [[:dx/update [:db/id 1] :aka conj "Tupen"]]))))
 
     (t/testing "testing match"
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}}
                (dx/commit db [[:dx/match  [:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}}
                (dx/commit db [[:dx/match  [:db/id 1] :aka ["Devil"]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Tupen"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Tupen"]}}
                (dx/commit db [[:dx/match  [:db/id 1] :aka ["Devil"]]
                               [:dx/put    [:db/id 1] :aka ["Tupen"]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}}
                (dx/commit db [[:dx/match  [:db/id 1] :aka ["Tupen"]]
                               [:dx/delete [:db/id 1] :aka]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"] :sex :male}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"] :sex :male}}
                (dx/commit db [[:dx/match  [:db/id 1] :aka ["Tupen"]]
                               [:dx/put    [:db/id 1] :age 15]
                               [:dx/match  [:db/id 1] :name "Petr"]
@@ -96,9 +177,9 @@
 ;; ** pull
 
 (comment
-  (def db (dx/commit {} (into [] (map (fn [tx] [:dx/put tx]))  (into people-docs part-docs))))
-  (def db2 (dx/commit (dx/create-dx [] {::dx/with-diff? true})
-                      (into [] (map (fn [tx] [:dx/put tx]))  (into people-docs part-docs)))))
+  (def db @(dx/create-dx (into people-docs part-docs)))
+  #_(def db2 (dx/commit! (dx/create-dx [] {::dx/with-diff? true})
+                         (into [] (map (fn [tx] [:dx/put tx]))  (into people-docs part-docs)))))
 
 (t/deftest test-pull
   (let [db (dx/commit {} (into [] (map (fn [tx] [:dx/put tx])) (into people-docs part-docs)))]
@@ -185,50 +266,74 @@
     ;;            (dx/pull db {[:db/id 1] [:name]})
     ;;            (dx/pull db [:name] [:db/id 1]))))
 
-    (t/testing "union"
-      (let [tx {:chat/id 0
-                :chat/entries
-                [{:message/id           0
-                  :message/text         "foo"
-                  :chat.entry/timestamp "1234"}
-                 {:message/id           1
-                  :message/text         "bar"
-                  :chat.entry/timestamp "1235"}
-                 {:audio/id             0
-                  :audio/url            "audio://asdf.jkl"
-                  :audio/duration       1234
-                  :chat.entry/timestamp "4567"}
-                 {:photo/id             0
-                  :photo/url            "photo://asdf_10x10.jkl"
-                  :photo/height         10
-                  :photo/width          10
-                  :chat.entry/timestamp "7890"}]}
-            db (dx/db-with [tx])
-            r (dx/pull db [{:chat/entries {:message/id [:message/id :message/text :chat.entry/timestamp]
+    ))
+
+(comment
+  (let [tx {:chat/id 0
+            :chat/entries
+            [{:message/id           0
+              :message/text         "foo"
+              :chat.entry/timestamp "1234"}
+             {:message/id           1
+              :message/text         "bar"
+              :chat.entry/timestamp "1235"}
+             {:audio/id             0
+              :audio/url            "audio://asdf.jkl"
+              :audio/duration       1234
+              :chat.entry/timestamp "4567"}
+             {:photo/id             0
+              :photo/url            "photo://asdf_10x10.jkl"
+              :photo/height         10
+              :photo/width          10
+              :chat.entry/timestamp "7890"}]}]
+    (def db (dx/dx-with [tx]))))
+
+
+(t/deftest pull-union
+  (let [tx {:chat/id 0
+            :chat/entries
+            [{:message/id           0
+              :message/text         "foo"
+              :chat.entry/timestamp "1234"}
+             {:message/id           1
+              :message/text         "bar"
+              :chat.entry/timestamp "1235"}
+             {:audio/id             0
+              :audio/url            "audio://asdf.jkl"
+              :audio/duration       1234
+              :chat.entry/timestamp "4567"}
+             {:photo/id             0
+              :photo/url            "photo://asdf_10x10.jkl"
+              :photo/height         10
+              :photo/width          10
+              :chat.entry/timestamp "7890"}]}
+        db (dx/dx-with [tx])]
+    (t/is (or (= {:chat/entries
+                  [{:photo/id 0, :photo/url "photo://asdf_10x10.jkl" :photo/width 10, :photo/height 10, :chat.entry/timestamp "7890"}
+                   {:message/id 1, :message/text "bar" :chat.entry/timestamp "1235"}
+                   {:message/id 0, :message/text "foo" :chat.entry/timestamp "1234"}]}
+                 (dx/pull db [{:chat/entries {:message/id [:message/id :message/text :chat.entry/timestamp]
                                               :photo/id   [:photo/id :photo/url :photo/width :photo/height :chat.entry/timestamp]}}]
-                          [:chat/id 0])]
-        (t/is (or (= {:chat/entries
-                      [{:photo/id 0, :photo/url "photo://asdf_10x10.jkl" :photo/width 10, :photo/height 10, :chat.entry/timestamp "7890"}
-                       {:message/id 1, :message/text "bar" :chat.entry/timestamp "1235"}
-                       {:message/id 0, :message/text "foo" :chat.entry/timestamp "1234"}]}
-                     r)
-                  ;; cljs
-                  (= {:chat/entries
-                      [{:message/id 0, :message/text "foo" :chat.entry/timestamp "1234"}
-                       {:message/id 1, :message/text "bar" :chat.entry/timestamp "1235"}
-                       {:photo/id 0, :photo/url "photo://asdf_10x10.jkl" :photo/width 10, :photo/height 10, :chat.entry/timestamp "7890"}]}
-                     r)))))))
+                          [:chat/id 0]))
+              ;; cljs
+              (= {:chat/entries
+                  [{:message/id 0, :message/text "foo" :chat.entry/timestamp "1234"}
+                   {:message/id 1, :message/text "bar" :chat.entry/timestamp "1235"}
+                   {:photo/id 0, :photo/url "photo://asdf_10x10.jkl" :photo/width 10, :photo/height 10, :chat.entry/timestamp "7890"}]}
+                 (dx/pull db [{:chat/entries {:message/id [:message/id :message/text :chat.entry/timestamp]
+                                              :photo/id   [:photo/id :photo/url :photo/width :photo/height :chat.entry/timestamp]}}]
+                          [:chat/id 0]))))))
 
 ;; * query
 
 (comment
-  (def db (dx/db-with [{:db/id 1, :name "Ivan" :age 15 :friend [[:db/id 2] [:db/id 3]]}
+  (def db (dx/dx-with [{:db/id 1, :name "Ivan" :age 15 :friend [[:db/id 2] [:db/id 3]]}
                        {:db/id 2, :name "Petr" :age 37 :friend [:db/id 3]}
                        {:db/id 3, :name "Ivan" :age 37}
                        {:db/id 4, :age 15}])))
 
 (t/deftest test-joins
-  (let [db (dx/db-with [{:db/id 1, :name "Ivan", :age 15 :friend [[:db/id 2] [:db/id 3]]}
+  (let [db (dx/dx-with [{:db/id 1, :name "Ivan", :age 15 :friend [[:db/id 2] [:db/id 3]]}
                         {:db/id 2, :name "Petr", :age 37 :friend [:db/id 3]}
                         {:db/id 3, :name "Ivan", :age 37}
                         {:db/id 4, :age 15}])]
@@ -304,7 +409,8 @@
                db)))))
 
 (comment
-  (def db (dx/db-with [{:db/id 1
+
+  (def db (dx/dx-with [{:db/id 1
                         :name  "Ivan"
                         :aka   ["ivolga" "pi"]}
                        {:db/id 2
@@ -312,7 +418,7 @@
                         :aka   ["porosenok" "pi"]}])))
 
 (t/deftest test-q-many
-  (let [db (dx/db-with [{:db/id 1
+  (let [db (dx/dx-with [{:db/id 1
                          :name  "Ivan"
                          :aka   ["ivolga" "pi"]}
                         {:db/id 2
@@ -328,12 +434,12 @@
                db)))))
 
 (comment
-  (def db (dx/db-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
+  (def db (dx/dx-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
                        {:db/id 2, :name "Petr" :age 37 :email "petr@gmail.com"}
                        {:db/id 3, :name "Ivan" :age 37 :email "ivan@mail.ru"}])))
 
 (t/deftest test-q-in
-  (let [db (dx/db-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
+  (let [db (dx/dx-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
                         {:db/id 2, :name "Petr" :age 37 :email "petr@gmail.com"}
                         {:db/id 3, :name "Ivan" :age 37 :email "ivan@mail.ru"}])]
 
@@ -368,7 +474,7 @@
                 ["Petr" "petr@gmail.com"]])))))
 
 (t/deftest test-q-keys
-  (let [db (dx/db-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
+  (let [db (dx/dx-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
                         {:db/id 2, :name "Petr" :age 37 :email "petr@gmail.com"}
                         {:db/id 3, :name "Ivan" :age 37 :email "ivan@mail.ru"}])]
     (t/is (= #{{:name "Ivan" :email "ivan@mail.ru" :age 15}
@@ -383,7 +489,7 @@
                db)))))
 
 (comment
-  (def db (dx/db-with
+  (def db (dx/dx-with
             [{:db/id 1 :follow [:db/id 2]}
              {:db/id 2 :follow [[:db/id 3] [:db/id 4]]}
              {:db/id 3 :follow [:db/id 4]}
@@ -391,7 +497,7 @@
              {:db/id 5 :follow [:db/id 3]}])))
 
 (t/deftest test-q-rules
-  (let [db (dx/db-with
+  (let [db (dx/dx-with
             [{:db/id 1 :follow [:db/id 2]}
              {:db/id 2 :follow [[:db/id 3] [:db/id 4]]}
              {:db/id 3 :follow [:db/id 4]}
@@ -447,7 +553,7 @@
                     (follow ?t ?e2)]])))))
 
 (comment
-  (def db (dx/db-with [{:db/id 1 :name "Ivan" :age 10}
+  (def db (dx/dx-with [{:db/id 1 :name "Ivan" :age 10}
                        {:db/id 2 :name "Ivan" :age 20}
                        {:db/id 3 :name "Oleg" :age 10}
                        {:db/id 4 :name "Oleg" :age 20}
@@ -455,7 +561,7 @@
                        {:db/id 6 :name "Ivan" :age 20}])))
 
 (t/deftest test-q-or
-  (let [db (dx/db-with [{:db/id 1 :name "Ivan" :age 10}
+  (let [db (dx/dx-with [{:db/id 1 :name "Ivan" :age 10}
                         {:db/id 2 :name "Ivan" :age 20}
                         {:db/id 3 :name "Oleg" :age 10}
                         {:db/id 4 :name "Oleg" :age 20}
