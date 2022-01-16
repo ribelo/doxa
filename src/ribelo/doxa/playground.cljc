@@ -44,74 +44,139 @@
 (do
   (println :datascript :q1)
   (cc/quick-bench (ddq1))
+  (println "\n")
   (println :doxa :q1)
   (cc/quick-bench (dxq1))
   (println "\n"))
 
 (defn ddq2 []
-  (d/q '[:find ?e
+  (d/q '[:find ?e ?a
          :where
          [?e :name "Ivan"]
-         [?e :age 20]]
+         [?e :age ?a]]
     db100k))
 
 (defn dxq2 []
-  (dxq/-q '[:find ?e
+  (dxq/-q '[:find ?e ?a
             :where
             [?e :name "Ivan"]
-            [?e :age 20]]
+            [?e :age ?a]]
           dxdb100k))
+
 
 (do
   (println :datascript :q2)
   (cc/quick-bench (ddq2))
+  (println "\n")
   (println :doxa :q2)
   (cc/quick-bench (dxq2))
   (println "\n"))
 
+(defn ddq3 []
+  (d/q '[:find ?e ?a
+         :where [?e :name "Ivan"]
+         [?e :age ?a]
+         [?e :sex :male]]
+    db100k))
+
+
+(defn dxq3 []
+  (dxq/-q '[:find ?e ?a
+            :where [?e :name "Ivan"]
+            [?e :age ?a]
+            [?e :sex :male]]
+          dxdb100k))
 
 (do
-  (println :datascript :q1)
-  (cc/quick-bench (ddq1))
-  (println :doxa :q1)
-  (cc/quick-bench (dxq1))
+  (println :datascript :q3)
+  (cc/quick-bench (ddq3))
+  (println "\n")
+  (println :doxa :q3)
+  (cc/quick-bench (dxq3))
   (println "\n"))
 
-
-(defn q3 []
-  (core/bench
-    (d/q '[:find ?e ?a
-           :where [?e :name "Ivan"]
-                  [?e :age ?a]
-                  [?e :sex :male]]
-      db100k)))
-
-
-(defn q4 []
-  (core/bench
-    (d/q '[:find ?e ?l ?a
-           :where [?e :name "Ivan"]
-                  [?e :last-name ?l]
-                  [?e :age ?a]
-                  [?e :sex :male]]
-      db100k)))
-
-(defn q5 []
-  (core/bench
-   (d/q '[:find ?e1 ?l ?a
-          :where [?e :name "Ivan"]
-          [?e :age ?a]
-          [?e1 :age ?a]
-          [?e1 :last-name ?l]]
-        db100k)))
+(defn ddq4 []
+  (d/q '[:find ?e ?l ?a
+         :where [?e :name "Ivan"]
+         [?e :last-name ?l]
+         [?e :age ?a]
+         [?e :sex :male]]
+    db100k))
 
 
-(defn qpred1 []
-  (core/bench
-    (d/q '[:find ?e ?s
-           :where [?e :salary ?s]
-                  [(> ?s 50000)]]
-      db100k)))
+(defn dxq4 []
+  (dxq/-q '[:find ?e ?l ?a
+            :where [?e :name "Ivan"]
+            [?e :last-name ?l]
+            [?e :age ?a]
+            [?e :sex :male]]
+          dxdb100k))
+
+(do
+  (println :datascript :q4)
+  (cc/quick-bench (ddq4))
+  (println "\n")
+  (println :doxa :q4)
+  (cc/quick-bench (dxq4))
+  (println "\n"))
+
+(defn ddq5 []
+  (d/q '[:find ?e1 ?l ?a
+         :where
+         [?e :name "Ivan"]
+         [?e :age ?a]
+         [?e1 :age ?a]
+         [?e1 :last-name ?l]]
+    db100k))
+
+;; TODO
+(defn dxq5 []
+  (dxq/-q '[:find ?e1 ?l ?a
+            :where
+            [?e :name "Ivan"]
+            [?e :age ?a]
+            [?e1 :age ?a]
+            [?e1 :last-name ?l]]
+          dxdb100k))
+
+(do
+  (println :datascript :q4)
+  (cc/quick-bench (ddq4))
+  (println "\n")
+  (println :doxa :q4)
+  (cc/quick-bench (dxq4))
+  (println "\n"))
+
+(defn ddqpred1 []
+  (d/q '[:find ?e ?s
+         :where
+         [?e :salary ?s]
+         [(> ?s 50000)]
+         [(< ?s 500000)]
+         [(< ?s 500000)]
+         [(< ?s 500000)]
+         [(< ?s 500000)]]
+    db100k))
+
+(defn dxqpred1 []
+  (dxq/-q '[:find ?e ?s
+            :where
+            [?e :salary ?s]
+            [(> ?s 50000)]
+            [(< ?s 500000)]
+            [(< ?s 500000)]
+            [(< ?s 500000)]
+            [(< ?s 500000)]]
+          dxdb100k))
+
+
+(do
+  (println :datascript :qpred1)
+  (cc/quick-bench (ddqpred1))
+  (println "\n")
+  (println :doxa :qpred1)
+  (cc/quick-bench (dxqpred1))
+  (println "\n"))
 
 
 (defn qpred2 []
@@ -121,3 +186,6 @@
            :where [?e :salary ?s]
                   [(> ?s ?min_s)]]
       db100k 50000)))
+
+
+

@@ -80,11 +80,10 @@
 
 (defmethod -reducer :rel
   [xs]
-  (let [k (when (= 1 (count xs)) (ex/-first xs))]
-    (fn [acc]
-      (if k
-        (persistent! (ex/-into! #{} (map vector) (ex/-get* acc k)))
-        (ex/-cartesian-product #{} (ex/-mapv (fn [k] (ex/-get* acc k)) xs))))))
+  (fn
+    ([^HashMap stack* acc _db]
+     (conj! acc (ex/-mapv (fn [s] (.get stack* s)) xs)))
+    ([acc] acc)))
 
 (defmethod -reducer :rel-first
   [xs]
@@ -137,95 +136,53 @@
 ;; [?e :name]
 (defmethod -filterer [:? :c nil]
   [[e a]]
-  (fn [db acc]
-    (let [refs (u/-lookup-attr db a)]
-      (if (ex/-get* acc e)
-        (ex/-update! acc e ex/-intersection refs)
-        (ex/-assoc! acc e refs)))))
+  (fn [^HashMap stack* [ref m]]
+    (boolean
+      (if-let [oe (.get stack* e)]
+        (when (= oe ref)
+          (when (ex/-get* m a)
+            stack*))
+        (when (ex/-get* m a)
+          (doto stack* (.put e ref)))))))
 
 ;; [?e :name "Ivan"]
 (defmethod -filterer [:? :c :c]
   [[e a v]]
-  (fn [db acc]
-    (let [refs (u/-lookup-for db a v)]
-      (if (ex/-get* acc e)
-        (ex/-update! acc e ex/-intersection refs)
-        (ex/-assoc! acc e refs)))))
+  (fn [^HashMap stack* [ref m]]
+    (boolean
+      (if-let [oe (.get stack* e)]
+        (when (= oe ref)
+          (when (= v (ex/-get* m a))
+            stack*))
+        (when (= v (ex/-get* m a))
+          (doto stack* (.put e ref)))))))
 
 ;; [?e :name ?name]
 (defmethod -filterer [:? :c :?]
   [[e a v]]
-  (fn [db acc]
-    (let [rs (u/-lookup-attr db a)]
-      (if-let [oe (ex/-get* acc e)]
-        (let [ie (ex/-intersection oe rs)
-              vs (persistent!
-                   (ex/-reduce
-                     (fn [acc' ref]
-                       (conj! acc' (p/-pick db ref a)))
-                     (transient #{})
-                     ie))]
-          (if-let [ov (ex/-get* acc v)]
-            (let [iv (ex/-intersection ov vs)
-                  rv (ex/-reduce
-                       (fn [acc' v] (ex/-union acc' (u/-lookup-for db a v)))
-                       #{}
-                       iv)
-                  ie (ex/-intersection ie rv)]
-              (ex/-assoc! acc e ie v iv))
-            (ex/-assoc! acc e ie v vs)))
-        (let [vs (persistent!
-                   (ex/-reduce
-                     (fn [acc' ref]
-                       (conj! acc' (p/-pick db ref a)))
-                     (transient #{})
-                     rs))]
-          (if-let [ov (ex/-get* acc v)]
-            (let [iv (ex/-intersection ov vs)
-                  rv (ex/-reduce
-                       (fn [acc' v] (ex/-union acc' (u/-lookup-for db a v)))
-                       #{}
-                       iv)
-                  ie (ex/-intersection rs rv)]
-              (ex/-assoc! acc e ie v iv))
-            (ex/-assoc! acc e rs v vs)))))))
+  (fn [^HashMap stack* [ref m]]
+    (boolean
+      (if-let [oe (.get stack* e)]
+        (when (= oe ref)
+          (if-let [ov (.get stack* v)]
+            (= ov (ex/-get* m a))
+            (doto stack* (.put v (ex/-get* m a)))))
+        (when-let [nv (ex/-get* m a)]
+          (doto stack* (.put e ref) (.put v nv)))))))
 
 
 ;; [?e ?name "Ivan"]
 (defmethod -filterer [:? :? :c]
   [[e a v]]
-  (fn [db acc]
-    (let [rs (u/-lookup-val db v)]
-      (if-let [oe (ex/-get* acc e)]
-        (let [ie (ex/-intersection oe rs)
-              as (ex/-reduce
-                   (fn [acc ref]
-                     (ex/-union acc (u/-search-attr-in-map (p/-pick db ref) v)))
-                   #{}
-                   ie)]
-          (if-let [oa (ex/-get* acc a)]
-            (let [ia (ex/-intersection oa as)
-                  ra (ex/-reduce
-                       (fn [acc a] (ex/-union acc (u/-lookup-for db a v)))
-                       #{}
-                       ia)
-                  ie (ex/-intersection ie ra)]
-              (ex/-assoc! acc e ie a ia))
-            (ex/-assoc! acc e ie a as)))
-        (let [as (ex/-reduce
-                   (fn [acc ref]
-                     (ex/-union acc (u/-search-attr-in-map (p/-pick db ref) v)))
-                   #{}
-                   rs)]
-          (if-let [oa (ex/-get* acc a)]
-            (let [ia (ex/-intersection oa as)
-                  rv (ex/-reduce
-                       (fn [acc v] (ex/-union acc (u/-lookup-for db a v)))
-                       #{}
-                       ia)
-                  ie (ex/-intersection rs rv)]
-              (ex/-assoc! acc e ie a ia))
-            (ex/-assoc! acc e rs a as)))))))
+  (fn [^HashMap stack* [ref m]]
+    (boolean
+      (if-let [oe (.get stack* e)]
+        (when (= oe ref)
+          (if-let [oa (.get stack* a)]
+            ((u/-search-attr-in-map m v) oa)
+            (doto stack* (.put a (ex/-get* m a)))))
+        (when-let [na (u/-search-attr-in-map m v)]
+          (doto stack* (.put e ref) (.put v na)))))))
 
 ;; [(> ?age 15)]
 (defmethod -filterer :filter
@@ -243,20 +200,18 @@
       (boolean (doto stack* (.put var (ex/-apply f (mapv (partial -resolve-variable stack*) args))))))
     (throw (ex-info "can't resolve function" {:f f}))))
 
-(defn -datoms-intersection
+(defn -datoms-matcher
   ([datoms]
-   (fn [db acc]
-     ((ex/-reduce
-        (fn [acc datom]
-          (comp (partial (-filterer datom) db) acc))
-        (comp)
-        datoms)
-      acc))))
+   (ex/-every-pred (ex/-mapv (fn [datom] (-filterer datom)) datoms))))
 
 (def minidb (dx/create-dx (dxim/empty-db)
                           [{:db/id 1 :age 15 :salary 50}
                            {:db/id 2 :age 20 :salary 100}
                            {:db/id 3 :salary 200}]))
+
+(def datoms '[[?e :age 15]])
+(def f1 (-datoms-matcher datoms))
+(f1 (HashMap.) [[:db/id 1] {:age 20}])
 
 (def miniddb (d/db-with (d/empty-db)
                         [{:db/id 1 :age 15 :salary 50}
@@ -269,28 +224,13 @@
     (persistent! (filterer db (transient {})))))
 
 ;; TODO
-(defn -q [query db]
-  (let [pq (-query->map query)
-        filterer (-datoms-intersection (ex/-get* pq :where))
-        reducer (-reducer (ex/-get* pq :find))]
-    (persistent! (filterer db (transient {})))))
-
-(-q '[:find ?e ?salary
-      :where
-      [?e :salary ?salary]]
-    minidb)
-
-(d/q '[:find ?e ?salary
-       :where
-       [?e :salary ?salary]]
-  miniddb)
-
-(defn -oq [query dx]
+(defn -q [query dx]
   (let [pq (-query->map query)
         filterer (-datoms-matcher (ex/-get* pq :where))
         reducer (-reducer (ex/-get* pq :find))
-        acc (-create-acc (ex/-get* pq :find) (ex/-get* pq :with))]
-    (ex/-loop [me dx :let [acc acc]]
+        ;; acc (-create-acc (ex/-get* pq :find) (ex/-get* pq :with))
+        ]
+    (ex/-loop [me dx :let [acc (transient [])]]
       (let [stack* (HashMap.)]
         (if (filterer stack* me)
           (let [acc' (reducer stack* acc dx)]
@@ -299,6 +239,16 @@
               (recur acc')))
           (recur acc)))
       (persistent! (reducer acc)))))
+
+(-q '[:find ?e ?salary
+       :where
+       [?e :salary ?salary]]
+  minidb)
+
+(d/q '[:find ?e ?salary
+       :where
+       [?e :salary ?salary]]
+  miniddb)
 
 (cc/quick-bench
   (let [s1 (u/-lookup db :name "Ivan")
