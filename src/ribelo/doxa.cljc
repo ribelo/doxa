@@ -2,10 +2,9 @@
   (:refer-clojure :exclude [-next -first filter])
   (:require
    [ribelo.exin :as ex]
-   [ribelo.doxa.impl :as i]
+   [ribelo.doxa.impl.protocols :as p]
    [ribelo.doxa.util :as u]
-   [clojure.walk :refer [postwalk]]
-   [ribelo.doxa.persistent-map :refer [empty-db]]))
+   [clojure.walk :refer [postwalk]]))
 
 (comment
   (require '[taoensso.encore :as enc])
@@ -60,7 +59,7 @@
                   (u/-put-entity dx m)
                   (-submit-failure tx))
                 (if (map? m)
-                  (u/-put-entity dx (i/-put m tid eid))
+                  (u/-put-entity dx (p/-put m tid eid))
                   (-submit-failure tx))))
 
           4 (let [k (nth tx 2)
@@ -74,7 +73,7 @@
                       (u/-merge-entities v))
 
                   (if (u/-ref-lookup? v)
-                    (if (i/-pick dx v)
+                    (if (p/-pick dx v)
                       (u/-safe-put-kv dx ref k v)
                       (-submit-failure tx))
                     (u/-safe-put-kv dx ref k v)))))
@@ -121,13 +120,13 @@
           (keyword? k-or-f)
           (let [k k-or-f
                 f (nth tx 3)
-                x (i/-pick dx ref k)]
-            (i/-put dx ref k (apply f x (drop 4 tx))))
+                x (p/-pick dx ref k)]
+            (p/-put dx ref k (apply f x (drop 4 tx))))
 
           (fn? k-or-f)
           (let [f k-or-f
-                m (i/-pick dx ref)]
-            (i/-put dx ref (apply f m (drop 3 tx))))
+                m (p/-pick dx ref)]
+            (p/-put dx ref (apply f m (drop 3 tx))))
 
           :else
           (-submit-failure tx)))
@@ -137,7 +136,7 @@
   [dx tx]
   (let [cnt (count tx)
         ref (nth tx 1)
-        e (i/-pick dx ref)
+        e (p/-pick dx ref)
         x (nth tx 2)]
     (case cnt
       3 (cond
@@ -164,7 +163,7 @@
   ([dx txs] (-commit-many dx txs nil))
   ([dx txs meta']
    (let [it (ex/-iter txs)]
-     (loop [acc dx match? true]
+     (loop [acc (p/-clear-tx dx) match? true]
        (if (.hasNext it)
          (if-let [tx (.next it)]
            (let [kind (nth tx 0)]
@@ -202,12 +201,12 @@
    (if (not-empty data) (dx-with empty-db data) empty-db)))
 
 (defn connect! [dx]
-  (i/-connect dx))
+  (p/-connect dx))
 
 (declare entity)
 
 (defn -entity-lookup [dx ref k denormalize?]
-  (let [e (i/-pick dx ref)]
+  (let [e (p/-pick dx ref)]
     (if denormalize?
       (when-let [x (ex/-get e k)]
         (if (u/-ref-lookup? x)
@@ -221,7 +220,7 @@
   ([dx ref] (entity dx ref {}))
   ([dx ref {:keys [denormalize?]}]
    {:pre [(u/-probably-dx? @dx)]}
-   (when (i/-pick dx ref)
+   (when (p/-pick dx ref)
      #?(:clj
         (reify
           clojure.lang.ILookup
@@ -234,7 +233,7 @@
 
           clojure.lang.IDeref
           (deref [this]
-            (when-let [e (i/-pick dx ref)]
+            (when-let [e (p/-pick dx ref)]
               (if denormalize?
                 (denormalize dx e)
                 e))))
@@ -251,7 +250,7 @@
 
           IDeref
           (-deref [this]
-            (when-let [e (i/-pick dx ref)]
+            (when-let [e (p/-pick dx ref)]
               (if denormalize?
                 (denormalize dx e)
                 e))))))))
