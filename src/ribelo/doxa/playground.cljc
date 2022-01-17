@@ -6,7 +6,8 @@
    [ribelo.doxa.impl.protocols :as p]
    [ribelo.doxa.util :as u]
    [ribelo.doxa.impl.map :as dxim]
-   [datascript.core :as d]))
+   [datascript.core :as d]
+   [meander.epsilon :as m]))
 
 (def next-eid (volatile! 0))
 
@@ -24,10 +25,16 @@
 
 (def people20k (shuffle (take 20000 people)))
 
+(def people100 (shuffle (take 1000 people)))
+
 (def db100k
   (d/db-with (d/empty-db) people20k))
 
+(def db500
+  (d/db-with (d/empty-db) people100))
+
 (def dxdb100k (dx/create-dx (dxim/empty-db) people20k))
+(def dxdb500 (dx/create-dx (dxim/empty-db) people100))
 
 (require '[criterium.core :as cc])
 
@@ -44,7 +51,6 @@
 (do
   (println :datascript :q1)
   (cc/quick-bench (ddq1))
-  (println "\n")
   (println :doxa :q1)
   (cc/quick-bench (dxq1))
   (println "\n"))
@@ -63,18 +69,17 @@
             [?e :age ?a]]
           dxdb100k))
 
-
 (do
   (println :datascript :q2)
   (cc/quick-bench (ddq2))
-  (println "\n")
   (println :doxa :q2)
   (cc/quick-bench (dxq2))
   (println "\n"))
 
 (defn ddq3 []
   (d/q '[:find ?e ?a
-         :where [?e :name "Ivan"]
+         :where
+         [?e :name "Ivan"]
          [?e :age ?a]
          [?e :sex :male]]
     db100k))
@@ -82,7 +87,8 @@
 
 (defn dxq3 []
   (dxq/-q '[:find ?e ?a
-            :where [?e :name "Ivan"]
+            :where
+            [?e :name "Ivan"]
             [?e :age ?a]
             [?e :sex :male]]
           dxdb100k))
@@ -90,23 +96,23 @@
 (do
   (println :datascript :q3)
   (cc/quick-bench (ddq3))
-  (println "\n")
   (println :doxa :q3)
   (cc/quick-bench (dxq3))
   (println "\n"))
 
 (defn ddq4 []
   (d/q '[:find ?e ?l ?a
-         :where [?e :name "Ivan"]
+         :where
+         [?e :name "Ivan"]
          [?e :last-name ?l]
          [?e :age ?a]
          [?e :sex :male]]
     db100k))
 
-
 (defn dxq4 []
   (dxq/-q '[:find ?e ?l ?a
-            :where [?e :name "Ivan"]
+            :where
+            [?e :name "Ivan"]
             [?e :last-name ?l]
             [?e :age ?a]
             [?e :sex :male]]
@@ -127,9 +133,8 @@
          [?e :age ?a]
          [?e1 :age ?a]
          [?e1 :last-name ?l]]
-    db100k))
+    db500))
 
-;; TODO
 (defn dxq5 []
   (dxq/-q '[:find ?e1 ?l ?a
             :where
@@ -137,46 +142,40 @@
             [?e :age ?a]
             [?e1 :age ?a]
             [?e1 :last-name ?l]]
-          dxdb100k))
+          dxdb500))
 
 (do
-  (println :datascript :q4)
-  (cc/quick-bench (ddq4))
+  (println :datascript :q5)
+  (cc/quick-bench (ddq5))
+  (println "\n")
+  (println :doxa :q5)
+  (cc/quick-bench (dxq5))
+  (println "\n"))
+
+(def idb (.-db dxdb100k))
+
+(count (m/search idb
+   {?e {:name ?name
+        :age ?a}
+    ?e1 {:age ?a
+         :last-name ?l}}
+         [?e ?l ?a]))
+
+(do
+  (println :datascript :q5)
+  (cc/quick-bench (ddq5))
   (println "\n")
   (println :doxa :q4)
-  (cc/quick-bench (dxq4))
+  (cc/quick-bench (dxq5))
   (println "\n"))
 
-(defn ddqpred1 []
-  (d/q '[:find ?e ?s
-         :where
-         [?e :salary ?s]
-         [(> ?s 50000)]
-         [(< ?s 500000)]
-         [(< ?s 500000)]
-         [(< ?s 500000)]
-         [(< ?s 500000)]]
-    db100k))
 
-(defn dxqpred1 []
-  (dxq/-q '[:find ?e ?s
-            :where
-            [?e :salary ?s]
-            [(> ?s 50000)]
-            [(< ?s 500000)]
-            [(< ?s 500000)]
-            [(< ?s 500000)]
-            [(< ?s 500000)]]
-          dxdb100k))
-
-
-(do
-  (println :datascript :qpred1)
-  (cc/quick-bench (ddqpred1))
-  (println "\n")
-  (println :doxa :qpred1)
-  (cc/quick-bench (dxqpred1))
-  (println "\n"))
+(defn qpred1 []
+  (core/bench
+    (d/q '[:find ?e ?s
+           :where [?e :salary ?s]
+                  [(> ?s 50000)]]
+      db100k)))
 
 
 (defn qpred2 []
@@ -186,6 +185,3 @@
            :where [?e :salary ?s]
                   [(> ?s ?min_s)]]
       db100k 50000)))
-
-
-

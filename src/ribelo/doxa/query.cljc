@@ -81,15 +81,17 @@
 (defmethod -reducer :rel
   [xs]
   (fn
-    ([^HashMap stack* acc _db]
-     (conj! acc (ex/-mapv (fn [s] (.get stack* s)) xs)))
+    ([stack acc _db]
+     (conj! acc (ex/-mapv (fn [s] (ex/-get* stack s)) xs)))
     ([acc] acc)))
 
 (defmethod -reducer :rel-first
   [xs]
   (let [k (ex/-first xs)]
-    (fn [acc]
-      (-> (ex/-get* acc k) ex/-iter .next))))
+    (fn
+      ([stack _acc _db]
+       (when-let [v (ex/-get* stack k)] (reduced v)))
+      ([acc] acc))))
 
 (defmethod -reducer :rel-coll
   [xs]
@@ -110,8 +112,8 @@
   (let [ref (-> xs ex/-first ex/-second)
         q   (-> xs ex/-first (nth 2))]
     (fn
-      ([^HashMap stack* acc dx]
-       (conj! acc (dp/-pull dx q (.get stack* ref))))
+      ([^HashMap stack acc dx]
+       (conj! acc (dp/-pull dx q (ex/-get* stack ref))))
       ([acc] acc))))
 
 (defmethod -reducer :default
@@ -136,118 +138,150 @@
 ;; [?e :name]
 (defmethod -filterer [:? :c nil]
   [[e a]]
-  (fn [^HashMap stack* [ref m]]
-    (boolean
-      (if-let [oe (.get stack* e)]
-        (when (= oe ref)
-          (when (ex/-get* m a)
-            stack*))
+  (fn [stack [ref m]]
+    (if-let [oe (ex/-get* stack e)]
+      (when (= oe ref)
         (when (ex/-get* m a)
-          (doto stack* (.put e ref)))))))
+          stack))
+      (when (ex/-get* m a)
+        (ex/-assoc stack e ref)))))
 
 ;; [?e :name "Ivan"]
 (defmethod -filterer [:? :c :c]
   [[e a v]]
-  (fn [^HashMap stack* [ref m]]
-    (boolean
-      (if-let [oe (.get stack* e)]
-        (when (= oe ref)
-          (when (= v (ex/-get* m a))
-            stack*))
+  (fn [stack [ref m]]
+    (if-let [oe (ex/-get* stack e)]
+      (when (= oe ref)
         (when (= v (ex/-get* m a))
-          (doto stack* (.put e ref)))))))
+          stack))
+      (when (= v (ex/-get* m a))
+        (ex/-assoc stack e ref)))))
 
 ;; [?e :name ?name]
 (defmethod -filterer [:? :c :?]
   [[e a v]]
-  (fn [^HashMap stack* [ref m]]
-    (boolean
-      (if-let [oe (.get stack* e)]
-        (when (= oe ref)
-          (if-let [ov (.get stack* v)]
-            (= ov (ex/-get* m a))
-            (doto stack* (.put v (ex/-get* m a)))))
-        (when-let [nv (ex/-get* m a)]
-          (doto stack* (.put e ref) (.put v nv)))))))
+  (fn [stack [ref m]]
+    (if-let [oe (ex/-get* stack e)]
+      (when (= oe ref)
+        (if-let [ov (ex/-get* stack v)]
+          (when (= ov (ex/-get* m a))
+            stack)
+          (ex/-assoc stack v (ex/-get* m a))))
+      (let [nv (ex/-get* m a)]
+        (if-let [ov (ex/-get* stack v)]
+          (when (= ov nv)
+            (ex/-assoc stack e ref))
+          (ex/-assoc stack e ref v nv))))))
 
 
 ;; [?e ?name "Ivan"]
 (defmethod -filterer [:? :? :c]
   [[e a v]]
-  (fn [^HashMap stack* [ref m]]
+  (fn [stack [ref m]]
     (boolean
-      (if-let [oe (.get stack* e)]
+      (if-let [oe (ex/-get* stack e)]
         (when (= oe ref)
-          (if-let [oa (.get stack* a)]
+          (if-let [oa (ex/-get* stack a)]
             ((u/-search-attr-in-map m v) oa)
-            (doto stack* (.put a (ex/-get* m a)))))
+            (ex/-assoc stack a (ex/-get* m a))))
         (when-let [na (u/-search-attr-in-map m v)]
-          (doto stack* (.put e ref) (.put v na)))))))
+          (ex/-assoc stack e ref v na))))))
 
 ;; [(> ?age 15)]
 (defmethod -filterer :filter
   [[[f & args]]]
   (if-let [f (-resolve-fn f)]
-    (fn [^HashMap stack* [_ref _m]]
-      (ex/-apply f (mapv (partial -resolve-variable stack*) args)))
+    (fn [stack [_ref _m]]
+      (ex/-apply f (mapv (partial -resolve-variable stack) args)))
     (throw (ex-info "can't resolve function" {:f f}))))
 
 ;; [(+ ?a ?b) ?c]]
 (defmethod -filterer :bind
   [[[f & args] var]]
   (if-let [f (-resolve-fn f)]
-    (fn [^HashMap stack* [_ref _m]]
-      (boolean (doto stack* (.put var (ex/-apply f (mapv (partial -resolve-variable stack*) args))))))
+    (fn [stack [_ref _m]]
+      (boolean (doto stack (.put var (ex/-apply f (mapv (partial -resolve-variable stack) args))))))
     (throw (ex-info "can't resolve function" {:f f}))))
+
+(defn -create-acc [find]
+  (case (-find-patern find)
+    :rel (transient #{})
+    :rel-first (transient [])
+    :rel-coll (transient [])
+    :pull (transient #{})))
+
+(defn -group-datoms [datoms]
+  (ex/-loop [d datoms :let [r (transient []) acc (transient []) e nil]]
+    (let [pd (-parse-datom d)]
+      (cond
+        (ex/-kw-identical? :? (ex/-first pd))
+        (let [de (ex/-first d)]
+          (if (and e (not= e (ex/-first d)))
+            (recur (conj! r (persistent! acc)) (transient [d]) de)
+            (recur r (conj! acc d) de)))
+        :else
+        (recur r (conj! acc d) e)))
+    (persistent! (conj! r (persistent! acc)))))
 
 (defn -datoms-matcher
   ([datoms]
    (ex/-every-pred (ex/-mapv (fn [datom] (-filterer datom)) datoms))))
 
 (def minidb (dx/create-dx (dxim/empty-db)
-                          [{:db/id 1 :age 15 :salary 50}
-                           {:db/id 2 :age 20 :salary 100}
-                           {:db/id 3 :salary 200}]))
-
-(def datoms '[[?e :age 15]])
-(def f1 (-datoms-matcher datoms))
-(f1 (HashMap.) [[:db/id 1] {:age 20}])
+                          [{:db/id 2 :age 20 :salary 100}
+                           {:db/id 3 :age 25 :salary 20}
+                           {:db/id 4 :age 25 :salary 20}]))
 
 (def miniddb (d/db-with (d/empty-db)
-                        [{:db/id 1 :age 15 :salary 50}
-                         {:db/id 2 :age 20 :salary 100}
-                         {:db/id 3 :salary 200}]))
+                        [{:db/id 2 :age 20 :salary 100}
+                         {:db/id 3 :age 25 :salary 20}
+                         {:db/id 4 :age 25 :salary 20}]))
 
-(require '[criterium.core :as cc])
-(cc/quick-bench
-  (let [filterer (-datoms-intersection '[[?e :name "Ivan"]])]
-    (persistent! (filterer db (transient {})))))
+(defn -process
+  ([dx filterers reducer acc]
+   (-process dx filterers reducer acc {} nil))
+  ([dx filterers reducer acc stack]
+   (-process dx filterers reducer acc stack nil))
+  ([dx [filterer & more] reducer acc stack prev]
+   (ex/-loop [me dx :let [acc acc stack (or prev stack)]]
+     (if-let [stack (filterer stack me)]
+       (if (seq more)
+         (recur (-process dx more reducer acc {} stack) (or prev {}))
+         (let [acc' (reducer stack acc dx)]
+           (if (reduced? acc')
+             @acc'
+             (recur acc' (or prev {})))))
+       (recur acc (or prev {})))
+     (reducer acc))))
+
+(def mm (ex/-mutable-map {:a 1}))
+(vswap! mm (fn [m] (empty m)))
+@mm
+(empty (transient {:a 1}))
 
 ;; TODO
 (defn -q [query dx]
   (let [pq (-query->map query)
-        filterer (-datoms-matcher (ex/-get* pq :where))
+        grouped-datoms (-group-datoms (ex/-get* pq :where))
+        filterers (ex/-mapv -datoms-matcher grouped-datoms)
         reducer (-reducer (ex/-get* pq :find))
-        ;; acc (-create-acc (ex/-get* pq :find) (ex/-get* pq :with))
-        ]
-    (ex/-loop [me dx :let [acc (transient [])]]
-      (let [stack* (HashMap.)]
-        (if (filterer stack* me)
-          (let [acc' (reducer stack* acc dx)]
-            (if (reduced? acc')
-              @acc'
-              (recur acc')))
-          (recur acc)))
-      (persistent! (reducer acc)))))
+        acc (-create-acc (ex/-get* pq :find))
+        result (-process dx filterers reducer acc)]
+    (if (ex/-transient? result)
+      (persistent! result)
+      result)
+    ))
 
-(-q '[:find ?e ?salary
-       :where
-       [?e :salary ?salary]]
-  minidb)
+(-q '[:find ?e2 ?age
+      :where
+      [?e1 :age ?age]
+      [?e2 :salary ?age]]
+    minidb)
 
-(d/q '[:find ?e ?salary
+(d/q '[:find ?e2 ?age
        :where
-       [?e :salary ?salary]]
+       [?e1 :age ?age]
+       [?e2 :salary ?age]]
   miniddb)
 
 (cc/quick-bench
@@ -272,37 +306,6 @@
         [?e :salary 500]]
     ddb))
 
-;; (require '[meander.epsilon :as me])
-(cc/quick-bench
-  (doall
-    (me/search db
-      {?ref {:name (me/some ?name)
-             :age (me/some ?age)}}
-      [?name ?age])))
-
-(cc/quick-bench
-  )
-
-(cc/quick-bench
-  (doall
-    (me/search db
-      (me/and {?e {:name "Ivan"
-                  :age ?age
-                  :salary 500
-                  :friend "Pixel"}}
-             (me/guard (> ?age 10)))
-      ?e)))
-
-;; 225 50
-;; 235 16
-
-(def db {[:db/id 1] {:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
-         [:db/id 2] {:db/id 2, :name "Petr" :age 37 :email "petr@gmail.com"}
-         [:db/id 3] {:db/id 3, :name "Ivan" :age 37 :email "ivan@mail.ru"}})
-
-(require '[criterium.core :as cc])
-(require '[meander.epsilon :as me])
-(require '[ribelo.doxa :as dx])
 
 (def db (dx/create-dx (dxim/empty-db)
                       (into [{:db/id 1, :name "Ivan" , :age 15 :salary 500 :friend "Pixel"}
@@ -310,39 +313,6 @@
                              {:db/id 3, :name "Ivan" , :age 37}]
                             (into [] (map (fn [i] {:db/id i :age (rand-int 80) :salary (rand-int 100)})) (range 4 1e3)))))
 
-(def query
-  '[[?e :friend ?friend]
-    [?friend :name ?name]])
-
-(group-by first query)
-
-(defn -permutations [m]
-  (ex/-mapv
-    (fn [e]
-      [[e] (dissoc m (key e))])
-    m))
-
-(-permutations {:a 1
-                :b 2
-                :c 3})
-
-(require '[taoensso.encore :as enc])
-
-(defn -process
-  ([query db] (-process query db (transient [])))
-  ([query db acc]
-   (let [[e1 k1 v1] '[?e :friend ?friend]
-         [e2 k2 v2] '[?friend :name ?name]]
-     (ex/-loop [[ref1 m1] db :let [acc acc]]
-       (recur
-         (ex/-loop [[ref2 m2] (dissoc db ref1) :let [acc acc]]
-           (if (= (ex/-get* m1 k1) ref2)
-             (recur (conj! acc [ref1 (ex/-get* m2 k2)]))
-             (recur acc))
-           acc))
-       (persistent! acc)))))
-
-(cc/quick-bench (-process query db))
 
 (require '[datascript.core :as d])
 (def ddb (d/db-with (d/empty-db)
@@ -351,8 +321,3 @@
                            {:db/id 3, :name "Ivan" , :age 37}]
                           (into [] (map (fn [i] {:db/id i :age (rand-int 80) :salary (rand-int 100)})) (range 4 1e3)))))
 
-(cc/quick-bench
-  (d/q '[:find ?e
-         :where
-         [?e :age 20]]
-    ddb))
