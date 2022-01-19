@@ -60,35 +60,68 @@
       (transient {})
       m)))
 
-(defn -diff-entity [e1 e2]
-  (let [ref1 (-entity-ref e1)
-        ref2 (-entity-ref e2)]
-    (if (or (= ref1 ref2) (nil? ref1) (nil? ref2))
-      (let [ref (or ref1 ref2)
-            acc (ex/-reduce-kv
+(deftype DoxaDBChange [e kind a v udt])
+
+(defn -diff-entity
+  ([e1 e2] (-diff-entity e1 e2 (ex/-udt)))
+  ([e1 e2 udt]
+   (let [ref1 (-entity-ref e1)
+         ref2 (-entity-ref e2)]
+     (if (or (= ref1 ref2) (nil? ref1) (nil? ref2))
+       (let [ref (or ref1 ref2)
+             acc (ex/-reduce-kv
                   (fn [acc k v1]
                     (if (ex/-get e2 k)
                       acc
-                      (ex/-add-first acc (ex/-deque [ref1 :- k v1]))))
+                      (conj! acc (DoxaDBChange. ref1 :- k v1 udt))))
                   (transient [])
                   e1)]
-        (persistent!
+         (persistent!
           (ex/-reduce-kv
-            (fn [acc k v2]
-              (if-let [v1 (ex/-get e1 k)]
-                (if (= v1 v2)
-                  acc
-                  (-> (conj! acc [ref :- k v1]) (conj! [ref :+ k v2])))
-                (conj! acc [ref :+ k v2])))
-            acc
-            e2)))
-      (throw (ex-info "can't diff entities with difrent key-id" {:eids [ref1 ref2]})))))
+           (fn [acc k v2]
+             (if-let [v1 (ex/-get e1 k)]
+               (if (= v1 v2)
+                 acc
+                 (-> (conj! acc (DoxaDBChange. ref :- k v1 udt)) (conj! (DoxaDBChange. ref :+ k v2 udt))))
+               (conj! acc [ref :+ k v2])))
+           acc
+           e2)))
+       (throw (ex-info "can't diff entities with difrent key-id" {:eids [ref1 ref2]}))))))
 
-(defn -match-diff? [[ce _ ca cv] [de da dv]]
+(defn -variable? [x]
+  (and (symbol? x) (.startsWith (name x) "?")))
+
+(defn -underscore? [x]
+  (= '_ x))
+
+(defn -src-variable? [x]
+  (and (symbol? x) (.startsWith (name x) "$")))
+
+(defn -plain-symbol? [x]
+  (and (symbol? x) (not (-variable? x)) (not (-underscore? x)) (not (-src-variable? x))))
+
+(defn -dot? [x]
+  (= '. x))
+
+(defn -dots? [x]
+  (= '... x))
+
+(defn -constant? [x]
+  (not (symbol? x)))
+
+(defn -patern [x]
+  (cond
+    (-variable? x) :?
+    (-underscore? x) :_
+    (-src-variable? x) :$
+    (-plain-symbol? x) :x
+    (-constant? x) :c))
+
+(defn -match-diff? [^DoxaDBChange c [de da dv]]
   (and
-    (or (= de '_) (= de ce) (and (fn? de) (de ce)))
-    (or (= da '_) (= da ca) (and (fn? da) (da ca)))
-    (or (= dv '_) (= dv cv) (and (fn? dv) (dv cv)))))
+   (or (-underscore? de) (-variable? de) (= de (.-e c)))
+   (or (-underscore? da) (-variable? de) (= da (.-a c)))
+   (or (-underscore? dv) (-variable? de) (= dv (.-v c)))))
 
 (defn -search-attr-in-map
   ([m x]
@@ -240,7 +273,7 @@
      (ex/-loop [x intersection :let [acc (transient #{})]]
        (let [m (p/-pick dx x)]
          (if (= v (ex/-get* m k))
-           (recur (conj! acc (case kind :ref x :entity m)))
+           (recur (conj! acc (case kind :ref [x m] :entity m)))
            (recur acc)))
        (persistent! acc)))))
 

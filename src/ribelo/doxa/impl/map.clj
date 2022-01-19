@@ -9,7 +9,7 @@
 
 (set! *warn-on-reflection* true)
 
-(deftype Doxa [db index tx cache max-cache-size ttl-ms listeners_ meta_]
+(deftype Doxa [db index tx cache listeners_ meta_]
   Object
   (equals [_ obj] (.equals db obj))
   (hashCode [_] (.hashCode db))
@@ -61,7 +61,7 @@
           ne (ex/-get ndb e {})
           diff (u/-diff-entity oe ne)
           index' (idx/-update-index index diff)]
-      (Doxa. ndb index' (into tx diff) cache max-cache-size ttl-ms listeners_ meta_)))
+      (Doxa. ndb index' (into tx diff) cache listeners_ meta_)))
 
   (p/-put [this e a v]
     (p/-put this e (p/-put (or (p/-pick this e) {}) a v)))
@@ -78,7 +78,7 @@
           oe (ex/-get db e {})
           diff (u/-diff-entity oe {})
           index' (idx/-update-index index diff)]
-      (Doxa. ndb index' (into tx diff) cache max-cache-size ttl-ms listeners_ meta_)))
+      (Doxa. ndb index' (into tx diff) cache listeners_ meta_)))
   (p/-del [this e a]
     (p/-put this e (p/-del (p/-pick this e) a)))
   (p/-del [this e a v]

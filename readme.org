@@ -43,6 +43,7 @@ around 3 nested maps, pretending to be a =quadruplestore=, it allows to use the 
 #+begin_src clojure :results silent :exports code
 
 (require '[ribelo.doxa     :as dx])
+(require '[ribelo.doxa     :as dx])
 (require '[meander.epsilon :as  m])
 
 #+end_src
@@ -1031,12 +1032,15 @@ categories
                  m))
               data100k)))
 
-(def dx100k (dx/create-dx data100k))
+(require '[ribelo.doxa.impl.map :as dxim])
+(def dx100k (dx/create-dx (dxim/empty-db) data100k))
 (def pc100k (pc/db data100k))
 
 #+end_src
 
 #+begin_src clojure :results silent :exports code
+
+(require '[ribelo.doxa.query :as dxq])
 
 (defn datascript-query []
   (enc/qb 1e1
@@ -1049,12 +1053,12 @@ categories
 
 (defn dx-query []
   (enc/qb 1e1
-    (dx/q [:find ?e
-           :where
-           [?e :name "Avocado"]
-           [?e :price ?price]
-           [(< ?price 50)]]
-      dx100k)))
+    (dxq/-q '[:find ?e
+              :where
+              [?e :name "Avocado"]
+              [?e :price ?price]
+              [(< ?price 50)]]
+            dx100k)))
 
 (defn cached-dx-query []
   (enc/qb 1e1
@@ -1068,13 +1072,12 @@ categories
 
 (defn fast-dx-query []
   (enc/qb 1e1
-    (dx/q [:find ?e
-           :in ?table
-           :where
-           [?table ?e :name "Avocado"]
-           [?table ?e :price ?price]
-           [(< ?price 50)]]
-      dx100k :fruit/id)))
+    (dxq/-q '[:find ?e
+              :where
+              [?e :name "Avocado"]
+              [?e :price ?price]
+              [(< ?price 50)]]
+            (dx/table dx100k :fruit/id))))
 
 (defn fast-cached-dx-query []
   (enc/qb 1e1
@@ -1087,17 +1090,13 @@ categories
            [(< ?price 50)]]
       dx100k :fruit/id)))
 
-(require '[com.rpl.specter :as sp])
-
-(.val (first {:a 1 :b 2}))
-
 (defn meander-query []
   (enc/qb 1e1
     (doall
      ^::m/dangerous
-     (m/search dx100k
-       {:fruit/id {?eid {:name "Avocado"
-                         :price (m/pred #(< 50 ^long %))}}}
+     (m/search (.-db dx100k)
+       {?eid {:name "Avocado"
+              :price (m/pred #(< 50 ^long %))}}
        ?eid))))
 
 (defn transducer-query []
@@ -1109,10 +1108,14 @@ categories
                      (and (= "Avocado" (.valAt m :name))
                           (< 50 (.valAt m :price)))))
            (map (fn [^clojure.lang.ILookup m] (.valAt m :fruit/id))))
-          (dx100k :fruit/id))))
+          (dx/table dx100k :fruit/id))))
 
 [(datascript-query) (dx-query) #_(cached-dx-query) (fast-dx-query) #_(fast-cached-dx-query) (transducer-query) (meander-query)]
 ;; clj => [159.42 531.67 0.05 50.15 0.03]
+
+(require '[ribelo.exin :as ex])
+(require '[ribelo.doxa.impl.protocols :as p])
+(require '[criterium.core :as cc])
 #+end_src
 
 **** query by one condition

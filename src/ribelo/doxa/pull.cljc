@@ -1,9 +1,9 @@
 (ns ribelo.doxa.pull
   (:require
+   [clojure.walk :as walk]
    [ribelo.exin :as ex]
    [ribelo.doxa.impl.protocols :as p]
    [ribelo.doxa.util :as u]))
-
 
 (declare pull)
 

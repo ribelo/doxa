@@ -7,7 +7,8 @@
    [ribelo.doxa.util :as u]
    [ribelo.doxa.impl.map :as dxim]
    [datascript.core :as d]
-   [meander.epsilon :as m]))
+   [meander.epsilon :as m]
+   [com.wotbrew.relic :as rel]))
 
 (def next-eid (volatile! 0))
 
@@ -15,7 +16,7 @@
   {:db/id     (str (vswap! next-eid inc))
    :name      (rand-nth ["Ivan" "Petr" "Sergei" "Oleg" "Yuri" "Dmitry" "Fedor" "Denis"])
    :last-name (rand-nth ["Ivanov" "Petrov" "Sidorov" "Kovalev" "Kuznetsov" "Voronoi"])
-   :sex       (rand-nth [:male :female])
+   :sex       (rand-nth ["male" "female"])
    :age       (long (rand-int 100))  ;;data hike complains if they're integers
    :salary    (long (rand-int 100000))})
 
@@ -30,13 +31,11 @@
 (def db100k
   (d/db-with (d/empty-db) people20k))
 
-(def db500
-  (d/db-with (d/empty-db) people100))
-
 (def dxdb100k (dx/create-dx (dxim/empty-db) people20k))
-(def dxdb500 (dx/create-dx (dxim/empty-db) people100))
 
 (require '[criterium.core :as cc])
+
+(def reldb100k (rel/transact {} (into [:insert :people] people20k)))
 
 (defn ddq1 []
   (d/q '[:find ?e
@@ -48,11 +47,16 @@
          :where [?e :name "Ivan"]]
           dxdb100k))
 
+(defn relq1 []
+  (doall (rel/q reldb100k [[:from :people] [:where [= :name "Ivan"]]])))
+
 (do
   (println :datascript :q1)
   (cc/quick-bench (ddq1))
   (println :doxa :q1)
   (cc/quick-bench (dxq1))
+  (println :relic :q1)
+  (cc/quick-bench (relq1))
   (println "\n"))
 
 (defn ddq2 []
@@ -69,11 +73,20 @@
             [?e :age ?a]]
           dxdb100k))
 
+(defn relq2 []
+  (rel/q reldb100k [[:from :people]
+                    [:where
+                     [= :name "Ivan"]]
+                    [:select :age :db/id]
+                    ]))
+
 (do
   (println :datascript :q2)
   (cc/quick-bench (ddq2))
   (println :doxa :q2)
   (cc/quick-bench (dxq2))
+  (println :relic :q2)
+  (cc/quick-bench (relq2))
   (println "\n"))
 
 (defn ddq3 []
@@ -81,24 +94,36 @@
          :where
          [?e :name "Ivan"]
          [?e :age ?a]
-         [?e :sex :male]]
+         [?e :sex "male"]]
     db100k))
-
 
 (defn dxq3 []
   (dxq/-q '[:find ?e ?a
             :where
             [?e :name "Ivan"]
             [?e :age ?a]
-            [?e :sex :male]]
+            [?e :sex "male"]]
           dxdb100k))
+
+(defn relq3 []
+  (rel/q reldb100k [[:from :people]
+                    [:where
+                     [= :name "Ivan"]
+                     [= :sex "male"]]
+                    [:select :age :db/id]]))
 
 (do
   (println :datascript :q3)
   (cc/quick-bench (ddq3))
   (println :doxa :q3)
   (cc/quick-bench (dxq3))
+  (println :relic :q3)
+  (cc/quick-bench (relq3))
   (println "\n"))
+
+(require '[clj-async-profiler.core :as prof])
+(prof/serve-files 8080)
+(prof/profile (dotimes [_ 1e3] (dxq3)))
 
 (defn ddq4 []
   (d/q '[:find ?e ?l ?a
@@ -118,12 +143,22 @@
             [?e :sex :male]]
           dxdb100k))
 
+(defn relq4 []
+  (rel/q reldb100k [[:from :people]
+                    [:where
+                     [= :name "Ivan"]
+                     [= :sex "male"]]
+                    [:select :age :db/id :last-name]
+                    ]))
+
 (do
   (println :datascript :q4)
   (cc/quick-bench (ddq4))
   (println "\n")
   (println :doxa :q4)
   (cc/quick-bench (dxq4))
+  (println :relic :q4)
+  (cc/quick-bench (relq4))
   (println "\n"))
 
 (defn ddq5 []
@@ -169,19 +204,33 @@
   (cc/quick-bench (dxq5))
   (println "\n"))
 
+(defn ddqpred1 []
+  (d/q '[:find ?e ?s
+         :where [?e :salary ?s]
+         [(> ?s 50000)]]
+    db100k))
 
-(defn qpred1 []
-  (core/bench
-    (d/q '[:find ?e ?s
-           :where [?e :salary ?s]
-                  [(> ?s 50000)]]
-      db100k)))
+
+(defn dxqpred1 []
+  (dxq/-q '[:find ?e ?s
+            :where
+            [?e :salary ?s]
+            [(> ?s 50000)]]
+          dxdb100k))
+
+(do
+  (println :datascript :qpred1)
+  (cc/quick-bench (ddqpred1))
+  (println "\n")
+  (println :doxa :qpred1)
+  (cc/quick-bench (dxqpred1))
+  (println "\n"))
+
 
 
 (defn qpred2 []
-  (core/bench
-    (d/q '[:find ?e ?s
-           :in   $ ?min_s
-           :where [?e :salary ?s]
-                  [(> ?s ?min_s)]]
-      db100k 50000)))
+  (d/q '[:find ?e ?s
+         :in   $ ?min_s
+         :where [?e :salary ?s]
+         [(> ?s ?min_s)]]
+    db100k 50000))

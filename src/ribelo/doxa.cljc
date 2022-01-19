@@ -3,8 +3,7 @@
   (:require
    [ribelo.exin :as ex]
    [ribelo.doxa.impl.protocols :as p]
-   [ribelo.doxa.util :as u]
-   [clojure.walk :refer [postwalk]]))
+   [ribelo.doxa.util :as u]))
 
 (comment
   (require '[taoensso.encore :as enc])
@@ -162,7 +161,8 @@
 (defn- -commit-many
   ([dx txs] (-commit-many dx txs nil))
   ([dx txs meta']
-   (let [it (ex/-iter txs)]
+   (let [it (ex/-iter txs)
+         cache (p/-cache dx)]
      (loop [acc (p/-clear-tx dx) match? true]
        (if (.hasNext it)
          (if-let [tx (.next it)]
@@ -254,6 +254,12 @@
               (if denormalize?
                 (denormalize dx e)
                 e))))))))
+
+(defn table [dx table]
+  (when-let [xs (ex/-get* (p/-index dx) table)]
+    (ex/-loop [ref xs :let [acc (transient {})]]
+      (recur (ex/-assoc! acc ref (p/-pick dx ref)))
+      (persistent! acc))))
 
 ;; (defn- -filter [pred dx]
 ;;   (persistent!

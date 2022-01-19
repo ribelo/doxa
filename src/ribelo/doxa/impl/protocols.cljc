@@ -15,6 +15,21 @@
   (-entities    [_     ])
   (-index       [_     ]))
 
+(defprotocol IDoxaCache
+  (-hit [_ args])
+  (-miss  [_ args f] [_ args f fresh?])
+  (-evict [_ args])
+  (-gc-now? [_])
+  (-run-gc [_]))
+
+(defprotocol IDoxaChange
+  (-ref [_])
+  (-kind [_])
+  (-e [_])
+  (-a [_])
+  (-v [_])
+  (-udt [_]))
+
 (extend-type nil
   IDoxa
   (-pick
