@@ -1420,7 +1420,7 @@
                          (recur
                           (let [r (pull db v ref' env)]
                             (if (not-empty r) (conj! acc r) acc)))))]
-               (recur (enc/assoc-some r (first-key elem) acc) id))
+               (recur (enc/assoc-some r (first-key elem) (not-empty acc)) id))
              ;;
              (and (some? id) (-idents? ref') rev?)
              (recur (enc/assoc-some r (first-key elem)
