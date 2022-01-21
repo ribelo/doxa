@@ -174,7 +174,9 @@
                    (recur db' match?))
                  (recur acc match?))))
            (recur acc match?))
-         acc)))))
+         (do
+           (p/-refresh cache (p/-tx acc))
+           acc))))))
 
 (defn commit
   ([dx txs] (commit dx txs nil))

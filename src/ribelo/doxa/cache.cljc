@@ -11,24 +11,52 @@
 
 (deftype DoxaCache [cache_ latch_ tick_ ^long cache-size ^long ttl-ms]
   p/IDoxaCache
-  (p/-hit [_ args]
-    (ex/-get* @cache_ args))
-  (p/-miss [this args f datoms]
-    (p/-miss this args f false))
-  (p/-miss [_ args f datoms fresh?]
-    (let [tick (swap! tick_ inc)
-          instant (ex/-udt)]
-      (swap! cache_
-        (fn [^clojure.lang.IPersistentMap m]
+  (p/-tick [_ args tick-lru tick-lfu]
+    (swap! cache_
+      (fn [m]
+        (when-let [^TickedCacheEntry ?e (ex/-get* m args)]
           #?(:clj (when-let [latch @latch_] (.await ^CountDownLatch latch)))
-          (let [^TickedCacheEntry ?e (ex/-get* m args)]
-            (if (or (nil? ?e) fresh? (> (- instant (.-udt ^TickedCacheEntry ?e)) ttl-ms))
-              (assoc m args (TickedCacheEntry. (delay (ex/-apply f args)) datoms instant tick 1))
-              (assoc m args (TickedCacheEntry. (.-delay ?e) datoms (.-udt ?e) tick (.-tick-lfu ?e)))))))))
+          (assoc m args (TickedCacheEntry. (.-delay ?e) (.-datoms ?e) (.-udt ?e) tick-lru tick-lfu))))))
+
+  (p/-has? [_ k]
+    (let [instant (ex/-udt)]
+      (when-let [^TickedCacheEntry ?e (ex/-get @cache_ k)]
+        (or (zero? ttl-ms) (< (- instant (.-udt ?e)) ttl-ms)))))
+
+  (p/-hit [this args]
+    (p/-run-gc this)
+    (let [^TickedCacheEntry ?e (ex/-get @cache_ args)
+          tick (swap! tick_ inc)]
+      (p/-tick this args tick (inc (.-tick-lfu ?e)))
+      (.-delay ?e)))
+
+  (p/-miss [this k f args datoms]
+    (p/-run-gc this)
+    (let [tick (swap! tick_ inc)
+          instant (ex/-udt)
+          d (delay (ex/-apply f args))]
+      (swap! cache_
+        (fn [m]
+          #?(:clj (when-let [latch @latch_] (.await ^CountDownLatch latch)))
+          (assoc m k (TickedCacheEntry. d datoms instant tick 1))))
+      d))
+
+  (p/-refresh [this changes]
+    (println :changes changes)
+    (p/-run-gc this)
+    (swap! cache_
+      (fn [m]
+        (println :cache m)
+        (ex/-loop [me m :let [acc (transient m)]]
+          (let [k (ex/-k me)
+                ^TickedCacheEntry e (ex/-v me)]
+            (if-not (u/-datoms-match-changes? (.-datoms e) changes)
+              (recur (dissoc! m k))
+              (recur acc)))))))
 
   (p/-gc-now? [_]
-    #?(:clj  (<= (java.lang.Math/random) ~(/ 1.0 16000))
-       :cljs (<=       (.random js/Math) ~(/ 1.0 16000))))
+    #?(:clj  (<= (java.lang.Math/random) (/ 1.0 16000))
+       :cljs (<=       (.random js/Math) (/ 1.0 16000))))
 
   (p/-run-gc [this]
     (when (p/-gc-now? this)
@@ -40,7 +68,7 @@
               (persistent!
                (reduce-kv
                 (fn [acc k ^TickedCacheEntry e]
-                  (if (> (- instant (.-udt e)) ttl-ms)
+                  (if (and (pos? ttl-ms) (> (- instant (.-udt e)) ttl-ms))
                     (dissoc! acc k)
                     acc))
                 (transient (or m {}))
@@ -48,8 +76,8 @@
           #?(:clj (.countDown latch))
           #?(:clj (reset! latch_ nil)))))))
 
-(defn cache
-  ([] (cache {}))
+(defn doxa-cache
+  ([] (doxa-cache {}))
   ([{:keys [cache-size ttl-ms]
      :or {cache-size 1024
           ttl-ms 0}}]

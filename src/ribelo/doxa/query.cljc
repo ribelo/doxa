@@ -10,15 +10,20 @@
 
 (set! *warn-on-reflection* true)
 
-(defn -parse-double [[x y]]
-  (if (list? x)
-    :bind
-    [(u/-patern x) (u/-patern y) nil]))
-
 (def -resolve-fn
-  {'< <
-   '> >
-   '+ +})
+  {'= =, '== ==, 'not= not=, '!= not=, '< <, '> >, '<= <=, '>= >=, '+ +, '- -,
+   '* *, '/ /, 'quot quot, 'rem rem, 'mod mod, 'inc inc, 'dec dec, 'max max, 'min min,
+   'zero? zero?, 'pos? pos?, 'neg? neg?, 'even? even?, 'odd? odd?, 'compare compare,
+   'rand rand, 'rand-int rand-int,
+   'true? true?, 'false? false?, 'nil? nil?, 'some? some?, 'not not, ;; 'and and-fn, 'or or-fn,
+   'complement complement, 'identical? identical?,
+   'identity identity, 'keyword keyword, 'meta meta, 'name name, 'namespace namespace, 'type type,
+   'vector vector, 'list list, 'set set, 'hash-map hash-map, 'array-map array-map,
+   'count count, 'range range, 'not-empty not-empty, 'empty? empty?, 'contains? contains?,
+   'str str, 'pr-str pr-str, 'print-str print-str, 'println-str println-str, 'prn-str prn-str, 'subs subs,
+   're-find re-find, 're-matches re-matches, 're-seq re-seq, 're-pattern re-pattern,
+   'ground identity,
+   'tuple vector, 'untuple identity})
 
 (defn- -find-patern [xs]
   (cond
@@ -91,13 +96,7 @@
       (recur (ex/-update acc flag ex/-conjv elem) flag))
     acc))
 
-(defn -parse-datom [datom]
-  (case (count datom)
-    1 :filter
-    2 (-parse-double datom)
-    3 (ex/-mapv u/-patern datom)))
-
-(defmulti -filterer (fn [x] (-parse-datom x)))
+(defmulti -filterer (fn [x] (u/-parse-datom x)))
 
 ;; [?e :name]
 (defmethod -filterer [:? :c nil]
@@ -184,7 +183,7 @@
 
 (defn -group-datoms [datoms]
   (ex/-loop [d datoms :let [r (transient []) acc (transient []) e nil]]
-    (let [pd (-parse-datom d)]
+    (let [pd (u/-parse-datom d)]
       (cond
         (and (vector? pd) (ex/-kw-identical? :? (ex/-first pd)))
         (let [de (ex/-first d)]
@@ -252,3 +251,10 @@
 (defn -q [query db & args]
   (let [querer (-querer query)]
     (querer db args)))
+
+(defn -mq [query db & args]
+  (let [k (conj args query)
+        cache (p/-cache db)]
+    (if (p/-has? cache k)
+      (do (println :hit) @(p/-hit cache k))
+      (do (println :miss) @(p/-miss cache k -q (conj args db query) (ex/-get* (-query->map query) :where))))))

@@ -6,6 +6,7 @@
    [ribelo.doxa.impl.protocols :as p]
    [ribelo.doxa.util :as u]
    [ribelo.doxa.impl.map :as dxim]
+   [ribelo.doxa.cache :as cache]
    [datascript.core :as d]
    [meander.epsilon :as m]
    [com.wotbrew.relic :as rel]))
@@ -31,11 +32,23 @@
 (def db100k
   (d/db-with (d/empty-db) people20k))
 
-(def dxdb100k (dx/create-dx (dxim/empty-db) people20k))
+(def dxdb100k (dx/create-dx (dxim/empty-db {:cache (cache/doxa-cache {:ttl-ms 0})}) people20k))
+
+(def minidb (dx/create-dx (dxim/empty-db {:cache (cache/doxa-cache)}) [{:db/id 1 :name "Ivan"}]))
+(def conn (atom minidb))
+(p/-cache minidb)
 
 (require '[criterium.core :as cc])
 
 (def reldb100k (rel/transact {} (into [:insert :people] people20k)))
+
+(cc/quick-bench
+ (dxq/-mq '[:find ?e
+            :where [?e :name "Ivan"]]
+          dxdb100k))
+
+(.-cache dxdb100k)
+
 
 (defn ddq1 []
   (d/q '[:find ?e
@@ -44,11 +57,14 @@
 
 (defn dxq1 []
   (dxq/-q '[:find ?e
-         :where [?e :name "Ivan"]]
+            :where [?e :name "Ivan"]]
           dxdb100k))
 
 (defn relq1 []
   (doall (rel/q reldb100k [[:from :people] [:where [= :name "Ivan"]]])))
+
+(defn relq1 []
+  (doall (rel/mat reldb100k [[:from :people] [:where [= :name "Ivan"]]])))
 
 (do
   (println :datascript :q1)
@@ -67,7 +83,7 @@
     db100k))
 
 (defn dxq2 []
-  (dxq/-q '[:find ?e ?a
+  (dxq/-mq '[:find ?e ?a
             :where
             [?e :name "Ivan"]
             [?e :age ?a]]

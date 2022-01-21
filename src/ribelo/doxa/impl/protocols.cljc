@@ -11,24 +11,20 @@
   (-unlisten!   [_ k   ])
   (-tx          [_     ])
   (-clear-tx    [_     ])
+  (-cache       [_     ])
   (-keys        [_     ])
   (-entities    [_     ])
   (-index       [_     ]))
 
 (defprotocol IDoxaCache
-  (-hit [_ args])
-  (-miss  [_ args f] [_ args f fresh?])
+  (-tick [_ k lru lfu])
+  (-has? [_ k])
+  (-hit [_ k])
+  (-miss [_ k f args datoms])
+  (-refresh [_ changes])
   (-evict [_ args])
   (-gc-now? [_])
   (-run-gc [_]))
-
-(defprotocol IDoxaChange
-  (-ref [_])
-  (-kind [_])
-  (-e [_])
-  (-a [_])
-  (-v [_])
-  (-udt [_]))
 
 (extend-type nil
   IDoxa

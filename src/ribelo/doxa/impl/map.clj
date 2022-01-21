@@ -102,7 +102,10 @@
   (p/-tx [_] tx)
 
   (p/-clear-tx [_]
-    (Doxa. db index [] cache max-cache-size ttl-ms listeners_ meta_))
+    (Doxa. db index [] cache listeners_ meta_))
+
+  (p/-cache [_]
+    cache)
 
   ;; (p/-keys [_] (keys db))
 
@@ -112,6 +115,5 @@
 
 (defn empty-db
   ([] (empty-db {}))
-  ([{:keys [cache max-cache-size ttl-ms]
-      :or {max-cache-size 128}}]
-   (Doxa. {} {} [] cache max-cache-size ttl-ms (atom {}) (atom {}))))
+  ([{:keys [cache]}]
+   (Doxa. {} {} [] cache (atom {}) (atom {}))))

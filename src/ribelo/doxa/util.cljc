@@ -83,7 +83,7 @@
                (if (= v1 v2)
                  acc
                  (-> (conj! acc (DoxaDBChange. ref :- k v1 udt)) (conj! (DoxaDBChange. ref :+ k v2 udt))))
-               (conj! acc [ref :+ k v2])))
+               (conj! acc (DoxaDBChange. ref :+ k v2 udt))))
            acc
            e2)))
        (throw (ex-info "can't diff entities with difrent key-id" {:eids [ref1 ref2]}))))))
@@ -109,6 +109,9 @@
 (defn -constant? [x]
   (not (symbol? x)))
 
+(defn -fn? [x]
+  (not (symbol? x)))
+
 (defn -patern [x]
   (cond
     (-variable? x) :?
@@ -117,11 +120,37 @@
     (-plain-symbol? x) :x
     (-constant? x) :c))
 
-(defn -match-diff? [^DoxaDBChange c [de da dv]]
-  (and
-   (or (-underscore? de) (-variable? de) (= de (.-e c)))
-   (or (-underscore? da) (-variable? de) (= da (.-a c)))
-   (or (-underscore? dv) (-variable? de) (= dv (.-v c)))))
+(defn -parse-double [[x y]]
+  (if (list? x)
+    :bind
+    [(-patern x) (-patern y) nil]))
+
+(defn -parse-datom [datom]
+  (case (count datom)
+    1 :filter
+    2 (-parse-double datom)
+    3 (ex/-mapv -patern datom)))
+
+(defn -datom-match-change? [datom ^DoxaDBChange change]
+  (case (-parse-datom datom)
+    :filter nil
+    :bind nil
+    (let [[e a v] datom]
+      (and
+       (or (-variable? e) (-underscore? e) (= e (.-e change)))
+       (or (-variable? a) (-underscore? a) (= a (.-a change)))
+       (or (-variable? v) (-underscore? v) (= v (.-v change)) (nil? v))))))
+
+(defn -datoms-match-changes? [datoms changes]
+  (ex/-loop [datom datoms :let [acc false]]
+    (if (true? (ex/-loop [change changes :let [acc acc]]
+                 (if (true? (-datom-match-change? datom change))
+                   true
+                   (recur acc))
+                 acc))
+      true
+      (recur acc))
+    acc))
 
 (defn -search-attr-in-map
   ([m x]
