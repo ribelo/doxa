@@ -1240,3 +1240,19 @@
         r2 (people db2)]
     (t/is (= #{} r1))
     (t/is (= #{"Chris"} r2))))
+
+(t/deftest gh-26
+  (let [db (dx/create-dx [{:id 1
+                           :name "Steve"
+                           :languages/spoken [{:id 2
+                                               :name "english"}
+                                              {:id 3
+                                               :name "dutch"}]
+                           :languages/computer [{:id 4
+                                                 :name "clojure"}
+                                                {:id 5
+                                                 :name "typescript"}]}])]
+    (t/is (= {:id 1
+              :languages/spoken [{:id 2, :name "english"} {:id 3, :name "dutch"}]
+              :languages/computer [{:id 4, :name "clojure"} {:id 5, :name "typescript"}]}
+             (dx/-pull db [:id {:languages/spoken [:*]} {:languages/computer [:*]}] [:id 1])))))

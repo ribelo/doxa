@@ -1400,26 +1400,27 @@
              (recur (enc/assoc-some r k (pull db (first-val elem) ref' env)) id)
              ;;
              (and (some? id) (-idents? ref') (not rev?))
-             (let [rit (-iter ref')]
-               (loop [acc (transient [])]
-                 (enc/cond
-                   (not (.hasNext rit))
-                   (enc/assoc-some r (first-key elem) (not-empty (persistent! acc)))
-                   ;;
-                   :let [ref' (.next rit)
-                         k (nth ref' 0)
-                         v (first-val elem)]
-                   ;;
-                   (map? v)
-                   (let [q (get v k)]
-                     (recur
-                      (if q
-                        (conj! acc (pull db q ref' env))
-                        acc)))
-                   (vector? v)
-                   (recur
-                    (let [r (pull db v ref' env)]
-                      (if (not-empty r) (conj! acc r) acc))))))
+             (let [rit (-iter ref')
+                   acc (loop [acc (transient [])]
+                       (enc/cond
+                         (not (.hasNext rit))
+                         (persistent! acc)
+                         ;;
+                         :let [ref' (.next rit)
+                               k (nth ref' 0)
+                               v (first-val elem)]
+                         ;;
+                         (map? v)
+                         (let [q (get v k)]
+                           (recur
+                            (if q
+                              (conj! acc (pull db q ref' env))
+                              acc)))
+                         (vector? v)
+                         (recur
+                          (let [r (pull db v ref' env)]
+                            (if (not-empty r) (conj! acc r) acc)))))]
+               (recur (enc/assoc-some r (first-key elem) acc) id))
              ;;
              (and (some? id) (-idents? ref') rev?)
              (recur (enc/assoc-some r (first-key elem)
