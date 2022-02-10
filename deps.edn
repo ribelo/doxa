@@ -1,16 +1,5 @@
 {:paths ["src" "resources"]
- :deps  {
-         ;; meander/epsilon     {:mvn/version "0.0.650"}
-         ;; meander/epsilon     {:local/root "/home/ribelo/code/meander"}
-         meander/epsilon {:git/url "https://github.com/noprompt/meander.git"
-                          :sha "6fe917e88053891cd12610ab66f6035914d35580"}
-         ribelo/exin {:local/root "../exin"}
-         org.clojure/data.csv {:mvn/version "1.0.0"}
-         com.taoensso/encore {:mvn/version "3.10.1"}
-         com.taoensso/timbre {:mvn/version "5.1.2"}
-         cljs-bean/cljs-bean {:mvn/version "1.7.0"}
-         com.cognitect/transit-cljs {:mvn/version "0.8.269"}
-         ribelo/stade {:local/root "../stade"}}
+ :deps  {ribelo/extropy {:local/root "../extropy"}}
  :aliases
  {:test  {:extra-paths ["test"]}
   :run-tests
@@ -30,11 +19,13 @@
                  slipset/deps-deploy           {:mvn/version "RELEASE"}}
    :exec-fn     build/clojars}
   :cljs  {:extra-deps {thheller/shadow-cljs {:mvn/version "2.11.15"}}}
-  :bench {:extra-deps {datascript/datascript {:mvn/version "1.3.5"}
-                       town.lilac/pyramid {:mvn/version "3.2.0"}
-                       metosin/malli {:mvn/version "0.7.5"}
-                       com.rpl/specter {:mvn/version "1.1.3"}
+  :bench {:extra-deps {datascript/datascript                    {:mvn/version "1.3.5"}
+                       town.lilac/pyramid                       {:mvn/version "3.2.0"}
+                       metosin/malli                            {:mvn/version "0.7.5"}
+                       com.rpl/specter                          {:mvn/version "1.1.3"}
                        com.clojure-goes-fast/clj-async-profiler {:mvn/version "0.5.1"}
-                       com.wotbrew/relic {:mvn/version "0.1.2"}
-                       criterium {:mvn/version "0.4.6"}}
+                       com.wotbrew/relic                        {:mvn/version "0.1.2"}
+                       criterium/criterium                      {:mvn/version "0.4.6"}
+                       cljs-bean/cljs-bean                      {:mvn/version "1.7.0"}
+                       meander/epsilon                          {:mvn/version "0.0.650"}}
           :jvm-opts ["-Djdk.attach.allowAttachSelf"]}}}

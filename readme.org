@@ -1113,7 +1113,7 @@ categories
 [(datascript-query) (dx-query) #_(cached-dx-query) (fast-dx-query) #_(fast-cached-dx-query) (transducer-query) (meander-query)]
 ;; clj => [159.42 531.67 0.05 50.15 0.03]
 
-(require '[ribelo.exin :as ex])
+(require '[ribelo.extropy :as ex])
 (require '[ribelo.doxa.impl.protocols :as p])
 (require '[criterium.core :as cc])
 #+end_src
