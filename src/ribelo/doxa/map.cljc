@@ -5,18 +5,7 @@
    [ribelo.doxa.protocols :as p])
   #?(:clj
      (:import
-      (java.util Map)
-      (ribelo.doxa.util DoxaDBChange))))
-
-(defn -update-index [index changes]
-  (ex/-loop [^DoxaDBChange change changes :let [acc index]]
-    (let [[tid _ :as ref] (.-e change)]
-      (if (ex/-kw-identical? tid (.-a change))
-        (case (.-kind change)
-          :+ (recur (ex/-update acc tid ex/-conjs ref))
-          :- (recur (ex/-update acc tid disj ref)))
-        (recur acc)))
-    acc))
+      (java.util Map))))
 
 #?(:clj (set! *warn-on-reflection* true))
 
@@ -62,9 +51,9 @@
 
      clojure.lang.IFn
      (invoke [_ k]
-       (valAt db k))
+       (.valAt ^clojure.lang.ILookup db k))
      (invoke [_ k not-found]
-       (valAt db k not-found))
+       (.valAt ^clojure.lang.ILookup db k not-found))
 
      p/IDoxa
      (p/-put [_ e m]
@@ -103,7 +92,7 @@
 
      (p/-index [_] index)
      (p/-reindex [_]
-       (Doxa. db cache_ (-update-index index tx) tx listeners_))))
+       (Doxa. db cache_ (u/-update-index index tx) tx listeners_))))
 
 #?(:cljs
    (deftype Doxa [db cache_ index tx listeners_]
@@ -218,10 +207,23 @@
      (p/-index [_]
        index)
      (p/-reindex [_]
-       (Doxa. db cache_ (-update-index index tx) tx listeners_))
+       (Doxa. db cache_ (u/-update-index index tx) tx listeners_))
      ))
 
 (defn empty-db
   ([] (empty-db {}))
   ([{:keys [cache]}]
    (Doxa. {} (atom cache) {} [] (atom {}))))
+
+
+#?(:cljs
+   (def transit-writer-handler
+     {Doxa
+      (reify Object
+        (tag [_ _] "dx/map")
+        (rep [_ ^js dx] (js/Array (.-db dx) (empty @(.-cache_ dx)) (.-index dx)))
+        (stringRep [_ _] nil)
+        (verboseHandler [_] nil))}))
+
+(def -transit-read-handler
+  {"dx/map" (fn [[m cache index]] (Doxa. m (atom cache) index [] (atom {})))})

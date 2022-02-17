@@ -288,20 +288,21 @@
        acc))))
 
 (def -querer
-  (fn [query]
-    (let [pq (-query->map query)
-          grouped-datoms (-group-datoms (ex/-get* pq :where))
-          filterers (ex/-mapv -datoms-matcher grouped-datoms)
-          reducer (-reducer (ex/-get* pq :find)
-                            {:limit (some-> (ex/-get* pq :limit) ex/-first)})]
-      (fn [db args]
-        (let [inputs (-parse-input (ex/-get* pq :in) args)
-              acc (-create-acc (ex/-get* pq :find))]
-          (-process db filterers reducer inputs acc))))))
+  (ex/-memoize
+    (fn [query]
+      (let [pq (-query->map query)
+            grouped-datoms (-group-datoms (ex/-get* pq :where))
+            filterers (ex/-mapv -datoms-matcher grouped-datoms)
+            reducer (-reducer (ex/-get* pq :find)
+                              {:limit (some-> (ex/-get* pq :limit) ex/-first)})]
+        (fn [db args]
+          (let [inputs (-parse-input (ex/-get* pq :in) args)
+                acc (-create-acc (ex/-get* pq :find))]
+            (-process db filterers reducer inputs acc)))))))
 
 (defn -q [query db & args]
   (let [querer (-querer query)]
-    (querer db args)))
+    (some-> db (querer args))))
 
 (defn -mq [query db & args]
   (let [k (conj args query)

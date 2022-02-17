@@ -2,6 +2,7 @@
   (:refer-clojure :exclude [-next -first filter])
   (:require
    [ribelo.extropy :as ex]
+   [ribelo.doxa.extend]
    [ribelo.doxa.protocols :as p]
    [ribelo.doxa.pull-api :refer [-pull -mpull]]
    [ribelo.doxa.query :refer [-q -mq]]
@@ -252,8 +253,10 @@
    (create-dx empty-db []))
   ([empty-db data]
    (create-dx empty-db data {}))
-  ([empty-db data opts]
-   (if (not-empty data) (dx-with empty-db data) empty-db)))
+  ([empty-db data meta]
+   (if (not-empty data)
+     (vary-meta (dx-with empty-db data) ex/-merge meta)
+     (vary-meta empty-db ex/-merge meta))))
 
 (defn connect!
   ([dx]
@@ -269,7 +272,7 @@
       (when-let [x (ex/-get e k)]
         (if (u/-ref-lookup? x)
           (entity dx ref {:denormalize? denormalize?})
-          (if (u/-probably-ref-lookups? x)
+          (if (u/-ref-lookups? x)
             (into (empty x) (fn [ref] (entity dx ref {:denormalize? denormalize?})) x)
             x)))
       (ex/-get e k))))
@@ -320,10 +323,11 @@
                 e))))))))
 
 (defn table [dx table]
-  (when-let [xs (ex/-get* (p/-index dx) table)]
+  (if-let [xs (some-> dx p/-index (ex/-get table))]
     (ex/-loop [ref xs :let [acc (transient {})]]
       (recur (ex/-assoc!* acc ref (entity dx ref)))
-      (persistent! acc))))
+      (persistent! acc))
+    (empty dx)))
 
 ;; (defn- -filter [pred dx]
 ;;   (persistent!

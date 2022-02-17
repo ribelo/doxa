@@ -18,7 +18,7 @@
   ([db query parent {:keys [lazy?] :as opts}]
    (let [recur-pull (if lazy? -pull --pull)]
      (cond
-       (u/-probably-ref-lookups? parent)
+       (ex/-every? u/-ref-lookup? parent)
        (ex/-mapv #(recur-pull db query %) parent)
 
        (= [:*] query)
@@ -48,7 +48,7 @@
                    (cond
                      (some? k)
                      (let [x (ex/-get-in db [ref elem])]
-                       (if (or (u/-ref-lookup? x) (u/-probably-ref-lookups? x))
+                       (if (or (u/-ref-lookup? x) (u/-ref-lookups? x))
                          (recur (ex/-assoc* r elem x) ref)
                          (recur r ref)))
 
@@ -70,7 +70,7 @@
                          (and ref (or one? (u/-ref-lookup? ref')))
                          (recur (ex/-assoc-some r k (recur-pull db (ex/-first-val elem) ref' opts)) ref)
 
-                         (and ref (u/-probably-ref-lookups? ref') (not ?rk))
+                         (and ref (u/-ref-lookups? ref') (not ?rk))
                          (recur
                           (ex/-assoc-some
                            r (ex/-first-key elem)
@@ -94,7 +94,7 @@
                               ref'))))
                           ref)
 
-                         (and ref (u/-probably-ref-lookups? ref') ?rk)
+                         (and ref (u/-ref-lookups? ref') ?rk)
                          (let [xs (ex/-mapv (fn [ref] (recur-pull db (ex/-first-val elem) ref opts)) ref')
                                n (ex/-count* xs)]
                            (recur

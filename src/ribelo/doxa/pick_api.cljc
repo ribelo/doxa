@@ -23,25 +23,32 @@
      (vector? query)
      (ex/-conj-some! acc
        (ex/-not-empty
-         (persistent!
+         (ex/-ensure-persisten!
            (ex/-reduce
              (fn [acc' q]
                (cond
                  (keyword? q)
-                 (ex/-assoc-some! acc' q (ex/-get-in db [ref q]))
+                 (if-let [v (ex/-get-in db [ref q])]
+                   (ex/-assoc!* acc' q v)
+                   (reduced nil))
                  (map? q)
-                 (ex/-merge! acc' (-pick db q ref))))
+                 (if-let [m (ex/-not-empty (-pick db q ref))]
+                   (ex/-merge! acc' m)
+                   (reduced nil))))
              (transient {})
              query))))
 
      (map? query)
-     (let [k (ex/-first-key query)
-           query' (ex/-first-val query)]
-       (if-let [v (ex/-get-in db [ref k])]
-         (cond
-           (u/-ref-lookup? v)
-           (-pick db query' acc v)
+     (ex/-loop [me query :let [acc acc]]
+       (let [k (ex/-k* me)
+             query' (ex/-v* me)]
+         (recur
+           (if-let [v (ex/-get-in db [ref k])]
+             (cond
+               (u/-ref-lookup? v)
+               (-pick db query' acc v)
 
-           (u/-probably-ref-lookups? v)
-           (ex/-reduce (fn [acc ref] (-pick db query' acc ref)) acc v))
-         acc)))))
+               (u/-ref-lookups? v)
+               (ex/-reduce (fn [acc ref] (-pick db query' acc ref)) acc v))
+             acc)))
+       acc))))
