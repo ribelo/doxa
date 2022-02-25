@@ -81,7 +81,7 @@
   (def db (dx/create-dx {} [{:db/id 1 :name "Petr" :aka ["Devil"]}])))
 
 (t/deftest commit
-  (let [db (dx/create-dx [{:db/id 1 :name "Petr" :aka ["Devil"]}])]
+  (let [db (dx/create-dx {} [{:db/id 1 :name "Petr" :aka ["Devil"]}])]
     (t/testing "testing put"
       (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil"]}}
                (dx/commit {} [[:dx/put {:db/id 1 :name "David" :aka ["Devil"]}]])))
@@ -114,7 +114,7 @@
                 [:db/id 2] {:db/id 2, :_friend [:db/id 1], :name "Petr", :friend [:db/id 3]}
                 [:db/id 3] {:db/id 3, :_friend [:db/id 2], :name "Lucy", :friend [:db/id 1]}}
                (dx/commit {} [:dx/put {:db/id 1 :name "Ivan" :friend {:db/id 2 :name "Petr" :friend {:db/id 3 :name "Lucy" :friend [:db/id 1]}}}])))
-      (t/is (= {[:db/id 1] {:_friend [[:db/id 2] [:db/id 3]], :db/id 1, :name "Ivan", :friend [:db/id 2]},
+      (t/is (= {[:db/id 1] {:_friend #{[:db/id 2] [:db/id 3]}, :db/id 1, :name "Ivan", :friend [:db/id 2]},
                 [:db/id 2] {:_friend [:db/id 1], :db/id 2, :name "Petr", :friend #{[:db/id 1] [:db/id 3]}}
                 [:db/id 3] {:_friend [:db/id 2], :db/id 3, :name "Lucy", :friend [:db/id 1]}},
                (dx/commit {} [:dx/put {:db/id 1 :name "Ivan" :friend {:db/id 2 :name "Petr" :friend [{:db/id 1} {:db/id 3 :name "Lucy" :friend [:db/id 1]}]}}]))))
@@ -200,7 +200,7 @@
                          (into [] (map (fn [tx] [:dx/put tx]))  (into people-docs part-docs)))))
 
 (t/deftest test-pull
-  (let [db (dx/commit {} (into [] (map (fn [tx] [:dx/put tx])) (into people-docs part-docs)))]
+  (let [db (dx/create-dx {} (into people-docs part-docs))]
     (t/testing "test pull attr"
       (t/is (= {:name "Petr" :aka ["Devil" "Tupen"]}
                (dx/pull db [:name :aka] [:db/id 1])))
@@ -228,9 +228,9 @@
       (t/is (= {:name "Thomas" :_father [:db/id 6]}
                (dx/pull db [:name :_father] [:db/id 3])))
 
-      (t/is (or (= {:name "Petr" :_father [[:db/id 3] [:db/id 2]]}
+      (t/is (or (= {:name "Petr" :_father #{[:db/id 3] [:db/id 2]}}
                    (dx/pull db [:name :_father] [:db/id 1]))
-                (= {:name "Petr" :_father [[:db/id 2] [:db/id 3]]}
+                (= {:name "Petr" :_father #{[:db/id 2] [:db/id 3]}}
                    (dx/pull db [:name :_father] [:db/id 1]))))
 
       (t/is (= {:name "Thomas" :_father {:name "Matthew"}}
@@ -718,8 +718,8 @@
 ;;                db :person/id "BLUE")))))
 
 (t/deftest gh-14
-  (let [db  (dx/create-dx [{:db/id 1, :name "Ivan" :age 15}
-                           {:db/id 2, :name "Petr" :age 37}])
+  (let [db  (dx/create-dx {} [{:db/id 1, :name "Ivan" :age 15}
+                              {:db/id 2, :name "Petr" :age 37}])
         age 15]
     (t/is (= #{["Ivan"]}
              (dx/q '[:find ?name
@@ -727,23 +727,22 @@
                      :where
                      [?e :name ?name]
                      [?e :age ?age]]
-               db age))))
-  )
+               db age)))))
 
 (t/deftest gh-16
   ;; https://github.com/ribelo/doxa/issues/16
-  (let [db (dx/create-dx [{:db/id 4 :name "mike" :cars []}
-                          {:db/id 1 :name "ivan" :cars [{:db/id 10 :name "tesla"}
-                                                        {:db/id 11 :name "ferrari"}]}
-                          {:db/id 2 :name "petr" :cars [{:db/id 10 :name "peugot"}]}
-                          {:db/id 3 :name "mike" :cars {:db/id 10 :name "peugot"}}])]
+  (let [db (dx/create-dx {} [{:db/id 4 :name "mike" :cars []}
+                             {:db/id 1 :name "ivan" :cars [{:db/id 10 :name "tesla"}
+                                                           {:db/id 11 :name "ferrari"}]}
+                             {:db/id 2 :name "petr" :cars [{:db/id 10 :name "peugot"}]}
+                             {:db/id 3 :name "mike" :cars {:db/id 10 :name "peugot"}}])]
 
     (t/is (vector? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 2])))
           "pull returns vector when 1 entity in join")))
 
 (t/deftest gh-17
   ;; https://github.com/ribelo/doxa/issues/17
-  (let [db (dx/create-dx [{:db/id 1 :name "ivan" :car {:db/id 10 :name "tesla"}}])]
+  (let [db (dx/create-dx {} [{:db/id 1 :name "ivan" :car {:db/id 10 :name "tesla"}}])]
     (t/is (map? (:car (dx/pull db [:name {:car [:name]}] [:db/id 1]))))))
 
 ;; (defmacro generate-matched-tests [datom]
@@ -1165,21 +1164,21 @@
                      tables)))))))))
 
 (comment
-  (def conn_ (atom (dx/create-dx [] {::dx/with-diff? true}))))
+  (def conn_ (dx/connect! (dx/create-dx {} [] {::dx/cache (atom (dxc/doxa-cache))}))))
 
-#_(t/deftest cached-query
-  (let [conn_ (atom (dx/create-dx [] {::dx/with-diff? true}))]
-    (dx/commit! conn_ [:dx/put [:db/id 1] {:name "ivan"}])
-    (Thread/sleep 10)
-    (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
-    (t/is (false? (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
-    (dx/commit! conn_ [:dx/put [:db/id 2] {:name "ivan"}])
-    (Thread/sleep 10)
-    (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
-    (dx/commit! conn_ [:dx/put [:dog/id 1] {:name "pixel"}])
-    (t/is (false? (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
-    (dx/commit! conn_ [:dx/put [:db/id 3] {:name "ivan"}])
-    (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))))
+;; (t/deftest cached-query
+;;   (let [conn_ (dx/connect! (dx/create-dx {} [] {::dx/cache (atom (dxc/doxa-cache))}))]
+;;     (dx/commit! conn_ [:dx/put [:db/id 1] {:name "ivan"}])
+;;     (Thread/sleep 10)
+;;     (t/is (true?  (::dx/fresh? (dx/mq '[:find [?e ...] :where [?e :name "ivan"]] @conn_))))
+;;     (t/is (false? (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
+;;     (dx/commit! conn_ [:dx/put [:db/id 2] {:name "ivan"}])
+;;     (Thread/sleep 10)
+;;     (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
+;;     (dx/commit! conn_ [:dx/put [:dog/id 1] {:name "pixel"}])
+;;     (t/is (false? (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
+;;     (dx/commit! conn_ [:dx/put [:db/id 3] {:name "ivan"}])
+;;     (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))))
 
 (t/deftest gh-23
   ;; https://github.com/ribelo/doxa/issues/23
