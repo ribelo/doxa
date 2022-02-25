@@ -26,7 +26,9 @@
   (-ordered-set? xs))
 
 (defn -entity? [m]
-  (and (map? m) (ex/-reduce-kv (fn [_ k _] (if (-key-id? k) (reduced true) false)) false m)))
+  (or
+    (ex/-get (meta m) :ribelo.doxa/entity-key)
+    (and (map? m) (ex/-reduce-kv (fn [_ k _] (if (-key-id? k) (reduced true) false)) false m))))
 
 (defn -entities? [xs]
   (and (seqable? xs) (ex/-every? -entity? xs)))
@@ -38,13 +40,16 @@
   (satisfies? p/IDoxa dx))
 
 (defn -entity-ref [m]
-  (when (map? m)
-    (ex/-reduce-kv
-      (fn [_ k v]
-        (when (-key-id? k)
-          (reduced [k v])))
-      nil
-      m)))
+  (if-let [tid (ex/-get (meta m) :ribelo.doxa/entity-key)]
+    ;; TODO
+    [tid (ex/-get m tid)]
+    (when (map? m)
+      (ex/-reduce-kv
+        (fn [_ k v]
+          (when (-key-id? k)
+            (reduced [k v])))
+        nil
+        m))))
 
 (defn -entities-refs [xs]
   (when (vector? xs)
