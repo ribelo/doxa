@@ -1256,3 +1256,15 @@
               :languages/spoken [{:id 2, :name "english"} {:id 3, :name "dutch"}]
               :languages/computer [{:id 4, :name "clojure"} {:id 5, :name "typescript"}]}
              (dx/-pull db [:id {:languages/spoken [:*]} {:languages/computer [:*]}] [:id 1])))))
+
+(t/deftest gh-27 []
+  (let [db (dx/create-dx [{:id       1
+                           :name   "Olympics"
+                           :sports [{:id   2
+                                     :name "Boardercross"}
+                                    {:id   3
+                                     :name "Curling"}]}]
+                         {::dx/with-diff? true})]
+    (t/is (= {:id 1, :sports [{:id 2, :name "Boardercross"} {:id 3, :name "Curling"}]}
+             ^{::dx/cache :sports-event}
+             (dx/pull db [:id {:sports [:id :name]}] [:id 1])))))

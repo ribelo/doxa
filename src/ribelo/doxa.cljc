@@ -1312,11 +1312,11 @@
    (let [env (cond-> env (some? (::cache env)) (-> (dissoc ::cache) (assoc ::cache? true)))]
      (enc/cond
        (-idents? parent)
-       (mapv #(pull db query % env) parent)
+       (mapv #(-pull db query % env) parent)
        (= [:*] query)
        (get-in db parent)
        (not (-ident? parent))
-       (mapv #(pull db query % env) (eid-search db parent))
+       (mapv #(-pull db query % env) (eid-search db parent))
        :else
        (let [qit (-iter query)]
          (loop [r {} id parent]
@@ -1326,7 +1326,7 @@
              ;;
              :let  [elem (.next qit)]
              (and (map? elem) (-ident? (first-key elem)))
-             (recur (pull db (first-val elem) (first-key elem) env) id)
+             (recur (-pull db (first-val elem) (first-key elem) env) id)
              ;; prop
              (and (some? id) (#{:*} elem))
              (recur
@@ -1397,7 +1397,7 @@
                     ref' (if one? (nth ref' 0) ref')]
              ;;
              (and (some? id) (or one? (-ident? ref')))
-             (recur (enc/assoc-some r k (pull db (first-val elem) ref' env)) id)
+             (recur (enc/assoc-some r k (-pull db (first-val elem) ref' env)) id)
              ;;
              (and (some? id) (-idents? ref') (not rev?))
              (let [rit (-iter ref')
@@ -1414,18 +1414,18 @@
                          (let [q (get v k)]
                            (recur
                             (if q
-                              (conj! acc (pull db q ref' env))
+                              (conj! acc (-pull db q ref' env))
                               acc)))
                          (vector? v)
                          (recur
-                          (let [r (pull db v ref' env)]
+                          (let [r (-pull db v ref' env)]
                             (if (not-empty r) (conj! acc r) acc)))))]
                (recur (enc/assoc-some r (first-key elem) (not-empty acc)) id))
              ;;
              (and (some? id) (-idents? ref') rev?)
              (recur (enc/assoc-some r (first-key elem)
                                     (enc/cond
-                                      :let [xs (mapv #(pull db (first-val elem) % env) ref')
+                                      :let [xs (mapv #(-pull db (first-val elem) % env) ref')
                                             n  (count xs)]
                                       ;;
                                       (> n 1)
