@@ -70,7 +70,7 @@
                   (u/-put-entity dx m)
                   (-submit-failure tx))
                 (if (map? m)
-                  (u/-put-entity dx (p/-put m tid eid))
+                  (u/-put-entity dx (ex/-assoc* m tid eid))
                   (-submit-failure tx))))
 
           4 (let [k (nth tx 2)
@@ -122,7 +122,7 @@
                   (u/-merge-entity dx m)
                   (-submit-failure tx))
                 (if (map? m)
-                  (u/-merge-entity dx (p/-put m tid eid))
+                  (u/-merge-entity dx (ex/-assoc* m tid eid))
                   (-submit-failure tx))))
 
           4 (let [k (nth tx 2)
