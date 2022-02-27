@@ -106,7 +106,7 @@
          (persistent!
            (ex/-reduce-kv
              (fn [acc k v2]
-               (if-let [v1 (ex/-get* e1 k)]
+               (if-some [v1 (ex/-get* e1 k)]
                  (if (= v1 v2)
                    acc
                    (-> (conj! acc (DoxaDBChange. ref :- k v1 udt)) (conj! (DoxaDBChange. ref :+ k v2 udt))))
@@ -302,7 +302,7 @@
              (recur (ex/-assoc!* m k v)))))))))
 
 (defn -safe-put-v [m k v]
-  (if-let [ov (and m (ex/-get* m k))]
+  (if-some [ov (and m (ex/-get* m k))]
     (cond
       (-ref-lookup? ov)
       (ex/-assoc* m k (ordered-set [ov v]))
@@ -387,7 +387,7 @@
   ([dx [ref k] v]
    (let [dissoc? (ex/-kw-identical? ::dissoc v)
          dx' (if dissoc? (ex/-dissoc-in dx [ref k]) (-delete-reference dx ref k v))]
-     (if-let [x (if dissoc? (ex/-get* dx' ref) (ex/-get-in dx' [ref k]))]
+     (if-some [x (if dissoc? (ex/-get* dx' ref) (ex/-get-in dx' [ref k]))]
        (if (map? x)
          ;; more than :db/id
          (if (> (count x) 1) dx' (if dissoc? (p/-del dx' ref) (ex/-dissoc-in dx' [ref k])))
