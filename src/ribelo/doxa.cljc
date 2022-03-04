@@ -166,7 +166,12 @@
 
       3 (let [ref (nth tx 1)
               k (nth tx 2)]
-          (u/-clearing-delete dx [ref k]))
+          (if (vector? k)
+            (ex/-loop [j k :let [acc dx]]
+              (recur (u/-clearing-delete acc [ref j]))
+              acc)
+
+            (u/-clearing-delete dx [ref k])))
 
       4 (let [ref (nth tx 1)
               k (nth tx 2)
@@ -198,29 +203,41 @@
 (defmethod -submit-commit :dx/match
   [dx tx]
   (let [cnt (count tx)
-        ref (nth tx 1)
-        e (ex/-get* dx ref)
-        x (nth tx 2)]
+        ref-or-map (nth tx 1)]
     (case cnt
-      3 (cond
-          (fn? x)
-          (x e)
+      2 (if (map? ref-or-map)
+          (if-let [ref (u/-entity-ref ref-or-map)]
+            (let [e (ex/-get* dx ref)]
+              (reduce-kv
+                (fn [_ k v]
+                  (if (= v (ex/-get e k)) true (reduced false)))
+                false
+                (ex/-get dx ref)))
+            (-submit-failure tx))
+          (-submit-failure tx))
 
-          (map? x)
-          (reduce-kv
-            (fn [_ k v]
-              (if (= v (ex/-get e k)) true (reduced false)))
-            false
-            x))
+      (let [x (nth tx 2)
+            e (ex/-get* dx ref-or-map)]
+        (case cnt
+          3 (cond
+              (fn? x)
+              (x e)
 
-      4 (let [v (nth tx 3)]
-          (if (fn? v)
-            (v (ex/-get e x))
-            (if-not (fn? x)
-              (let [v' (ex/-get e x)]
-                (or (= v v')
-                    (when (coll? v') (ex/-some #{v} v'))))
-              (-submit-failure tx "function should be the 3rd element")))))))
+              (map? x)
+              (reduce-kv
+                (fn [_ k v]
+                  (if (= v (ex/-get e k)) true (reduced false)))
+                false
+                x))
+
+          4 (let [v (nth tx 3)]
+              (if (fn? v)
+                (v (ex/-get e x))
+                (if-not (fn? x)
+                  (let [v' (ex/-get e x)]
+                    (or (= v v')
+                        (when (coll? v') (ex/-some #{v} v'))))
+                  (-submit-failure tx "function should be the 3rd element")))))))))
 
 (defn commit
   ([dx txs] (commit dx txs nil))
