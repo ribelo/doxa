@@ -1216,6 +1216,17 @@
     (t/is (= [] r1))
     (t/is (= ["Chris"] r2 r3))))
 
+(t/deftest gh-33 []
+  (let [db (dx/create-dx {} [{:db/id 1
+                              :name     "Olympics"
+                              :sports   [{:db/id 2
+                                          :name     "Boardercross"}
+                                         {:db/id 3
+                                          :name     "Curling"}]}])]
+    (t/is (= {[:db/id 2] {:_sports [:db/id 1], :db/id 2, :name "Boardercross"}
+              [:db/id 1] {:db/id 1, :name "Olympics", :sports #{[:db/id 2]}}}
+             (dx/commit db [[:dx/delete [:db/id 3]]])))))
+
 (comment
   (def db (dx/commit {} [:dx/merge [{:product/id 1
                                      :product/name "product1"
@@ -1227,13 +1238,3 @@
   (tap> [:ok (dx/pick db {:offer/_market [:offer/price {:product/_offer [:product/name]}]} [:market/id 1])])
   (tap> (+ 1 1))
   )
-
-;; (let [db (dx/create-dx {} [{:id       1
-;;                             :name   "Olympics"
-;;                             :sports [{:id   2
-;;                                       :name "Boardercross"}
-;;                                      {:id   3
-;;                                       :name "Curling"}]}]
-;;                        {::dx/cache (atom (dxc/doxa-cache))})]
-;;   (dx/mpull db [:id {:sports [:id :name]}] [:id 1]))
-;; => {:id 1, :sports [{:id 2, :name "Boardercross"} {:id 3, :name "Curling"}]}

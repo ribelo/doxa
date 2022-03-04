@@ -77,7 +77,7 @@
                   v (nth tx 3)]
               (if (u/-entity? v)
                 (-> (u/-safe-put-kv dx ref k (u/-entity-ref v))
-                    (u/-put-entity (u/-add-reference v (u/-key->rev k) ref)))
+                    (u/-put-entity (u/-safe-assoc v (u/-key->rev k) ref)))
 
                 (if-let [ids (u/-entities-refs v)]
                   (-> (u/-safe-put-kv dx ref k ids)

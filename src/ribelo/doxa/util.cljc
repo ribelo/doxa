@@ -1,7 +1,7 @@
 (ns ribelo.doxa.util
   (:require
    [ribelo.extropy :as ex]
-   [ribelo.doxa.ordered-set :as dxos :refer [ordered-set]]
+   [ribelo.doxa.ordered-set :as dxos :refer [ordered-set ordered-set?]]
    [ribelo.doxa.protocols :as p]
    [clojure.set :as set])
   #?(:clj
@@ -18,12 +18,8 @@
   (and (vector? xs) (= 2 (count xs))
        (-key-id? (nth xs 0))))
 
-(defn -ordered-set? [xs]
-  #?(:clj  (instance? OrderedSet xs)
-     :cljs (instance? dxos/OrderedSet xs)))
-
 (defn -ref-lookups? [xs]
-  (-ordered-set? xs))
+  (ordered-set? xs))
 
 (defn -entity? [m]
   (or
@@ -202,7 +198,7 @@
      (when (or (= v x)
                (cond
                  (set? v) (v x)
-                 (-ordered-set? v) (contains? v x)
+                 (ordered-set? v) (contains? v x)
                  (seqable? v) (ex/-some= x v)))
        k))))
 
@@ -334,9 +330,9 @@
 
 (defn -safe-merge-entity [e1 e2]
   (ex/-reduce-kv
-   (fn [acc k v] (-safe-put-v acc k v))
-   e1
-   e2))
+    (fn [acc k v] (-safe-put-v acc k v))
+    e1
+    e2))
 
 (defn -merge-entity [dx m]
   (ex/-reduce
@@ -362,23 +358,35 @@
 (defn -safe-put-kvs [dx ref & kvs]
   (ex/-reduce-kvs (fn [acc k v] (-safe-put-kv acc ref k v)) dx kvs))
 
-(defn -add-reference
+(defn -safe-assoc
   ([m k v]
    (let [x (ex/-get* m k)]
      (if x
-       (if (vector? (ex/-first x))
+       (cond
+         (-ref-lookups? x)
          (ex/-assoc* m k (conj x v))
+
+         (and (not (-ref-lookup? x)) (vector? x))
+         (ex/-assoc* m k (conj x v))
+
+         :else
          (ex/-assoc* m k (into x v)))
        (ex/-assoc* m k v))))
   ([dx ref k v]
-   (ex/-assoc* dx ref (-add-reference (ex/-get* dx ref) k v))))
+   (ex/-assoc* dx ref (-safe-assoc (ex/-get* dx ref) k v))))
 
-(defn -delete-reference [dx ref k v]
+(defn -safe-dissoc [dx ref k v]
   (let [m (ex/-get* dx ref)
         x (ex/-get* m k)]
     (if x
-      (if (vector? (ex/-first x))
+      (cond
+        (-ref-lookups? x)
+        (ex/-assoc* dx ref (ex/-assoc* m k (disj x v)))
+
+        (and (not (-ref-lookup? x)) (vector? x))
         (ex/-assoc* dx ref (ex/-assoc* m k (ex/-remove (partial = v) x)))
+
+        :else
         (ex/-assoc* dx ref (ex/-dissoc* m k)))
       dx)))
 
@@ -386,7 +394,7 @@
   ([dx path] (-clearing-delete dx path ::dissoc))
   ([dx [ref k] v]
    (let [dissoc? (ex/-kw-identical? ::dissoc v)
-         dx' (if dissoc? (ex/-dissoc-in dx [ref k]) (-delete-reference dx ref k v))]
+         dx' (if dissoc? (ex/-dissoc-in dx [ref k]) (-safe-dissoc dx ref k v))]
      (if-some [x (if dissoc? (ex/-get* dx' ref) (ex/-get-in dx' [ref k]))]
        (if (map? x)
          ;; more than :db/id
