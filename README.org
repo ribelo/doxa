@@ -18,22 +18,16 @@ with data denormalization and fatigue with multiple nested maps.
 the ideal solution seems to be =datascript=, but there have been several attempts
 to incorporate it into the =re-frame= ecosystem, eg. [[https://github.com/mpdairy/posh][posh]] and [[https://github.com/denistakeda/re-posh][re-posh]], and in my
 humble opinion, despite much desire and hard work, the transplant has failed.
-datascript seems to be too heavy for the frontend. it's not necessarily because
-it's too slow for normal use, it's because =clojurescript= itself has additional
-overhead compared to =js=, and there's always the chase for numbers and
-optimization for lighthouse. much bigger inconvenience is that
-datascript is built around its own data types. =re-frame= has a whole bunch of
+=datascript= seems to be too heavy for the frontend. biggest inconvenience is that
+=datascript= is built around its own data types. =re-frame= has a whole bunch of
 tools with [[https://github.com/day8/re-frame-10x][re-frame-10x]] that allow you to preview =app-db= in real time.
 =shadow-cljs= also offers =tap>= and there is no problem to spit out entire =app-db=
 and check each individual map, leaf and node.
 
-=doxa= is an attempt to create a normalized db based on a simple =hashmap=, that
-allows you to edit data both using =clojure.core= functions like =assoc=, =assoc-in=,
-and using transactions similar to =datascript=. in addition, it offers the ability
-to use =datalog= and =pull/eql= queries, as well as =clojure.core= =filter=, =map=,
-=keep=, =take= and all the data processing features we love. due to being built
-around 3 nested maps, pretending to be a =quadruplestore=, it allows to use the whole
-=clojure= ecosystem operating around maps, like =malli=, =spec=, =specter=, =meander= etc.
+=doxa= is an attempt to create a =db= that can be treated as a simple =hashmap=, which
+makes it possible to use a whole set of Clojure functions on it, from =filter= to
+=transreducers=, but also using transactions similar to =datascript=, =datalog query=
+and =pull query=.
 
 * db structure
 :PROPERTIES:
@@ -44,32 +38,17 @@ around 3 nested maps, pretending to be a =quadruplestore=, it allows to use the 
 
 (require '[ribelo.doxa     :as dx])
 (require '[ribelo.doxa     :as dx])
-(require '[meander.epsilon :as  m])
 
 #+end_src
 
-=db= is a simple map with three levels of nesting
+=db= is a simple map with two levels of nesting
 
 #+begin_src clojure :results silent :exports code
 
-{?table {?eid {:db/id ?eid
-               ?k     ?v}}
- ...    {...  {:db/id ...}}}
-
-;;eg
-
-{:person/id {1 {:person/id 1 :name "ivan" :age 18}
-             2 {:person/id 2 :name "petr" :age 24 :friend [:person/id 1]}}}
+{[:person/id 1] {:person/id 1 :name "ivan" :age 18}
+ [:person/id 2] {:person/id 2 :name "petr" :age 24 :friend [:person/id 1]}}
 
 #+end_src
-
-why not flat map? because this design allows for greater flexibility when it
-comes to the operation of references and naming entity. =[person/id :ivan]= looks
-better than =:person.id/ivan=, is easier to create and easier to use.
-
-but wouldn't operations on a flat map be faster? in normal use, the speed
-difference is negligible, while a nested map can be faster than =datascript= due
-to the possibility of limiting the iterated elements, see [[https://github.com/ribelo/doxa#can-we-be-faster-than-datascript-yes][benchmark]]
 
 * usage examples
 
