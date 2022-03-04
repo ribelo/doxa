@@ -43,6 +43,7 @@ around 3 nested maps, pretending to be a =quadruplestore=, it allows to use the 
 #+begin_src clojure :results silent :exports code
 
 (require '[ribelo.doxa     :as dx])
+(require '[ribelo.doxa     :as dx])
 (require '[meander.epsilon :as  m])
 
 #+end_src
@@ -848,6 +849,8 @@ what effect this has on performance can be found in the [[https://github.com/rib
 (require '[meander.epsilon :as   m])
 (require '[datascript.core :as   d])
 (require '[ribelo.doxa     :as  dx])
+(require '[pyramid.core    :as  pc])
+(require '[pyramid.query   :as  pq])
 
 #+end_src
 
@@ -985,7 +988,7 @@ categories
 
 ;; result in ms
 [(datascript-add-1 people50k) (doxa-add-1 people50k)]
-;; clj => [1277.13 204.93]
+;; clj => [1155.09 226.2]
 
 #+end_src
 
@@ -1006,7 +1009,7 @@ categories
          (dx/commit {}))))
 
 [(datascript-add-all) (doxa-add-all)]
-;; clj => [1483.59 42.56]
+;; clj => [3285.33 221.5]
 
 #+end_src
 
@@ -1029,11 +1032,15 @@ categories
                  m))
               data100k)))
 
-(def dx100k (dx/create-dx data100k))
+(require '[ribelo.doxa.impl.map :as dxim])
+(def dx100k (dx/create-dx (dxim/empty-db) data100k))
+(def pc100k (pc/db data100k))
 
 #+end_src
 
 #+begin_src clojure :results silent :exports code
+
+(require '[ribelo.doxa.query :as dxq])
 
 (defn datascript-query []
   (enc/qb 1e1
@@ -1046,12 +1053,12 @@ categories
 
 (defn dx-query []
   (enc/qb 1e1
-    (dx/q [:find ?e
-           :where
-           [?e :name "Avocado"]
-           [?e :price ?price]
-           [(< ?price 50)]]
-      dx100k)))
+    (dxq/-q '[:find ?e
+              :where
+              [?e :name "Avocado"]
+              [?e :price ?price]
+              [(< ?price 50)]]
+            dx100k)))
 
 (defn cached-dx-query []
   (enc/qb 1e1
@@ -1065,13 +1072,12 @@ categories
 
 (defn fast-dx-query []
   (enc/qb 1e1
-    (dx/q [:find ?e
-           :in ?table
-           :where
-           [?table ?e :name "Avocado"]
-           [?table ?e :price ?price]
-           [(< ?price 50)]]
-      dx100k :fruit/id)))
+    (dxq/-q '[:find ?e
+              :where
+              [?e :name "Avocado"]
+              [?e :price ?price]
+              [(< ?price 50)]]
+            (dx/table dx100k :fruit/id))))
 
 (defn fast-cached-dx-query []
   (enc/qb 1e1
@@ -1084,8 +1090,32 @@ categories
            [(< ?price 50)]]
       dx100k :fruit/id)))
 
-[(datascript-query) (dx-query) (cached-dx-query) (fast-dx-query) (fast-cached-dx-query)]
+(defn meander-query []
+  (enc/qb 1e1
+    (doall
+     ^::m/dangerous
+     (m/search (.-db dx100k)
+       {?eid {:name "Avocado"
+              :price (m/pred #(< 50 ^long %))}}
+       ?eid))))
+
+(defn transducer-query []
+  (enc/qb 1e1
+    (into []
+          (comp
+           (map (fn [^clojure.lang.IMapEntry me] (.val me)))
+           (filter (fn [^clojure.lang.ILookup m]
+                     (and (= "Avocado" (.valAt m :name))
+                          (< 50 (.valAt m :price)))))
+           (map (fn [^clojure.lang.ILookup m] (.valAt m :fruit/id))))
+          (dx/table dx100k :fruit/id))))
+
+[(datascript-query) (dx-query) #_(cached-dx-query) (fast-dx-query) #_(fast-cached-dx-query) (transducer-query) (meander-query)]
 ;; clj => [159.42 531.67 0.05 50.15 0.03]
+
+(require '[ribelo.extropy :as ex])
+(require '[ribelo.doxa.impl.protocols :as p])
+(require '[criterium.core :as cc])
 #+end_src
 
 **** query by one condition
@@ -1107,6 +1137,7 @@ categories
               people50k)))
 
 (def dx50k (dx/create-dx people50k))
+(def pc50k (pc/db people50k))
 
 #+end_src
 
@@ -1118,15 +1149,21 @@ categories
            :where [?e :name "Ivan"]]
       db50k)))
 
+(defn pq-q1 []
+  (enc/qb 1
+    (doall
+     (pq/q '[:find ?e
+             :where [?e :name "Ivan"]]
+       pc50k))))
+
 (defn dx-q1 []
   (enc/qb 1
     (dx/q [:find  ?e
            :where [?e :name "Ivan"]]
       dx50k)))
 
-[(datascript-q1) (dx-q1)]
-;; cljs => [   9    51]
-;; clj  => [5.45 32.09]
+[(datascript-q1) (pq-q1) (dx-q1)]
+;; => [5.08 43.9 33.34]
 
 #+end_src
 
@@ -1138,20 +1175,30 @@ categories
 (defn datascript-q2 []
   (enc/qb 1e1
     (d/q '[:find ?e ?a
-           :where [?e :name "Ivan"]
+           :where
+           [?e :name "Ivan"]
            [?e :age ?a]]
       db50k)))
 
+(defn pq-q2 []
+  (enc/qb 1e1
+    (doall
+     (pq/q '[:find ?e ?a
+             :where
+             [?e :name "Ivan"]
+             [?e :age ?a]]
+       pc50k))))
+
 (defn dx-q2 []
   (enc/qb 1e1
-    (dx/q [ :find  [?e ?a]
-             :where [?e :name "Ivan"]
-            [?e :age ?a]]
+    (dx/q [:find  [?e ?a]
+           :where
+           [?e :name "Ivan"]
+           [?e :age ?a]]
       dx50k)))
 
-[(datascript-q2) (dx-q2)]
-;; cljs => [   242    618]
-;; clj  => [152.96 317.74]
+[(datascript-q2) (pq-q2) (dx-q2)]
+;; => [145.09 914.3 346.78]
 #+end_src
 
 **** 3
@@ -1161,20 +1208,33 @@ categories
 (defn datascript-q3 []
   (enc/qb 1e1
     (d/q '[:find ?e ?a
-           :where [?e :name "Ivan"]
+           :where
+           [?e :name "Ivan"]
            [?e :age ?a]
            [?e :sex :male]]
       db50k)))
 
+(defn pq-q3 []
+  (enc/qb 1e1
+    (doall
+     (pq/q '[:find ?e ?a
+             :where
+             [?e :name "Ivan"]
+             [?e :age ?a]
+             [?e :sex :male]]
+       pc50k))))
+
 (defn dx-q3 []
   (enc/qb 1e1
     (dx/q [:find  [?e ?a]
-             :where [?e :name "Ivan"]
-                     [?e :age ?a]
-            [?e :sex :male]]
+           :where
+           [?e :name "Ivan"]
+           [?e :age ?a]
+           [?e :sex :male]]
       dx50k)))
 
-[(datascript-q3) (dx-q3)]
+[(datascript-q3) (pq-q3) (dx-q3)]
+;; => [217.01 1157.64 334.31]
 ;; cljs => [   409    646]
 ;; clj  => [133.26 307.05]
 #+end_src
@@ -1192,6 +1252,16 @@ categories
            [?e :sex :male]]
       db50k)))
 
+(defn pq-q4 []
+  (enc/qb 1e1
+    (doall
+     (pq/q '[:find ?e ?l ?a
+             :where [?e :name "Ivan"]
+             [?e :last-name ?l]
+             [?e :age ?a]
+             [?e :sex :male]]
+       pc50k))))
+
 (defn dx-q4 []
   (enc/qb 1e1
     (doall
@@ -1202,9 +1272,8 @@ categories
             [?e :sex :male]]
        dx50k))))
 
-[(datascript-q4) (dx-q4)]
-;; cljs => [  588    681]
-;; clj  => [252.49 310.05]
+[(datascript-q4) (pq-q4) (dx-q4)]
+;; => [351.17 1612.01 343.59]
 
 #+end_src
 
@@ -1219,6 +1288,14 @@ categories
            [(> ?s 50000)]]
       db50k)))
 
+(defn pq-qpred1 []
+  (enc/qb 1e1
+    (doall
+     (pq/q '[:find ?e ?s
+             :where [?e :salary ?s]
+             [(> ?s 50000)]]
+       pc50k))))
+
 (defn dx-qpred1 []
   (enc/qb 1e1
     (dx/q [:find ?e ?s
@@ -1226,10 +1303,8 @@ categories
           [(> ?s 50000)]]
       dx50k)))
 
-[(datascript-qpred1) (dx-qpred1)]
-;; cljs => [  321    959]
-;; clj  => [259.34 384.9]
-
+[(datascript-qpred1) (pq-qpred1) (dx-qpred1)]
+;; => [256.56 4410.23 531.31]
 #+end_src
 
 *** pull
@@ -1240,16 +1315,18 @@ categories
 
 (defn datascript-pull1 []
   (enc/qb 1e3
-    (d/pull db100k [:name] (rand-int 20000))))
+    (d/pull db100k [:name] 50300)))
+
+(defn pyramid-pull1 []
+  (enc/qb 1e3
+    (pc/pull pc100k [[:fruit/id 50300]])))
 
 (defn dx-pull1 []
   (enc/qb 1e3
-    (dx/pull dx100k [:name] [:db/id (rand-int 20000)])))
+    (dx/pull dx100k [:name] [:fruit/id 50300])))
 
-[(datascript-pull1) (dx-pull1)]
-;; cljs => [   15    8]
-;; clj  => [14.43 1.36]
-
+[(datascript-pull1) (pyramid-pull1) (dx-pull1)]
+;; => [10.22 5.52 1.31]
 #+end_src
 
 **** entire map

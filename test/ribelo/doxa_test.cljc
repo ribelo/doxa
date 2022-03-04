@@ -2,219 +2,168 @@
   ;; #?(:cljs (:require-macros [ribelo.doxa-test :refer [generate-matched-tests]]))
   (:require
    [ribelo.doxa :as dx]
-   [clojure.test :as t]
-   [meander.epsilon :as m]))
+   [ribelo.doxa.protocols :as p]
+   [ribelo.doxa.map :as dxm]
+   [ribelo.doxa.cache :as dxc]
+   [ribelo.doxa.query :as dxq]
+   [ribelo.doxa.util :as u]
+   #?(:clj [clojure.test :as t] :cljs [cljs.test :as t])))
 
-;; * datalog->meander
+;; * util
 
-(t/deftest parse-query
-  (t/testing "find"
-    (t/is (= {:find '[?x ?y]}
-             (dx/parse-find '[?x ?y])))
-    (t/is (= {:find '[?x ?y]     :mapcat? true :first? true}
-             (dx/parse-find '[?x ?y .])))
-    (t/is (= {:find '[?x ?y]     :mapcat? true}
-             (dx/parse-find '[?x ?y ...])))
-    (t/is (= {:find '[?table ?e]                            :pull {:q [:*] :ident '[?table ?e]}}
-             (dx/parse-find '[(pull [:*] [?table ?e])])))
-    (t/is (= {:find '[?table ?e] :mapcat? true :first? true :pull {:q [:*] :ident '[?table ?e]}}
-             (dx/parse-find '[(pull [:*] [?table ?e]) .])))
-    (t/is (= {:find '[?table ?e] :mapcat? true              :pull {:q [:*] :ident '[?table ?e]}}
-             (dx/parse-find '[(pull [:*] [?table ?e]) ...]))))
+(t/deftest normalize
+  (t/is (= [[[:db/id 2] {:_friend [:db/id 1], :db/id 2, :name "Ivan"}] [[:db/id 1] {:db/id 1, :name "Petr", :friend [:db/id 2]}]]
+           (dx/normalize {:db/id 1 :name "Petr" :friend {:db/id 2 :name "Ivan"}}))))
 
-  (t/testing "keys"
-    (t/is (= {:keys [:a :b :c] :args []}
-             (dx/parse-query [:keys [:a :b :c]]))))
+(t/deftest denormalize
+  (t/is (= {[:db/id 1] {:db/id 1, :name "Petr", :friend {:db/id 2, :name "Ivan"}}
+            [:db/id 2] {:db/id 2, :name "Ivan"}}
+           (dx/denormalize {[:db/id 1] {:db/id 1 :name "Petr" :friend [:db/id 2]}
+                            [:db/id 2] {:db/id 2 :name "Ivan"}}))))
 
-  (t/testing "build-args-map"
-    (t/is (= '{?name "Ivan"}
-             (-> (dx/parse-query '[:where [?e :name ?name]
-                                   :in ?name]
-                                 "Ivan")
-                 (dx/build-args-map))))
-    (t/is (= '{?name "ivan" ?age 35}
-             (-> (dx/parse-query '[:in ?name ?age] "ivan" 35)
-                 (dx/build-args-map))))
-    (t/is (= '{?name [:or ["ivan" "petr"]] ?age [:or [30 20]]}
-             (-> (dx/parse-query '[:in [?name] [?age]] ["ivan" "petr"] [30 20])
-                 (dx/build-args-map))))
-    (t/is (= '[{?name "ivan" ?age 20} {?name "petr" ?age 30}]
-             (-> (dx/parse-query '[:in [[?name ?age]]] [["ivan" 20] ["petr" 30]])
-                 (dx/build-args-map))))
-    (t/is (= '{?attr :name ?value [:or ["ivan" "petr"]]}
-             (-> (dx/parse-query '[:in ?attr [?value]]
-                                 :name ["ivan" "petr"])
-                 (dx/build-args-map))))))
+(t/deftest search-in-map
+  (t/is (= [:b :c]
+           (u/-search-in-map {:a 1 :b 2 :c [1 2]} 2)))
+  (t/is (= :b
+           (u/-search-in-map {:a 1 :b 2 :c [1 2]} :b 2)))
+  (t/is (= :c
+           (u/-search-in-map {:a 1 :b 2 :c [1 2]} :c 2))))
 
-(t/deftest datalog->meander
-  (t/testing "where"
-    (t/is (= '{?table_?e {?e {:name "Ivan"}}}
-             (-> (dx/parse-query '[:where [?e :name "Ivan"]])
-                 (dx/datalog->meander))))
-    (t/is (= '(meander.epsilon/and
-               {?table_?e1 {?e1 {:name "Ivan"}}}
-               {?table_?e2 {?e2 {:name "Petr"}}})
-             (-> (dx/parse-query '[:where
-                                   [?e1 :name "Ivan"]
-                                   [?e2 :name "Petr"]])
-                 (dx/datalog->meander))))
-    (t/is (= '(meander.epsilon/and
-              {?table_?e {?e {:name "Ivan", :age (meander.epsilon/some ?age)}}}
-              (meander.epsilon/guard (> ?age 18)))
-             (-> (dx/parse-query '[:where
-                                   [?e :name "Ivan"]
-                                   [?e :age ?age]
-                                   [(> ?age 18)]])
-                 (dx/datalog->meander))))
-    (t/is (= '(meander.epsilon/and
-               {?table_?e {?e {:name "Ivan" :age (meander.epsilon/some ?age)}}}
-               (meander.epsilon/let [?adult (> ?age 18)]))
-             (-> (dx/parse-query '[:where
-                                   [?e :name "Ivan"]
-                                   [?e :age ?age]
-                                   [(> ?age 18) ?adult]])
-                 (dx/datalog->meander)))))
-  (t/testing "in & args"
-    (t/is (= '{?table_?e {?e {:name (meander.epsilon/and ?name "Ivan")}}}
-             (-> (dx/parse-query '[:where [?e :name ?name]
-                                   :in ?name]
-                                 "Ivan")
-                 (dx/datalog->meander))))
-    (t/is (= '{?table_?e {?e {:name (meander.epsilon/or "Ivan" "Petr")}}}
-             (-> (dx/parse-query '[:where [?e :name ?name]
-                                   :in [?name]]
-                                 ["Ivan" "Petr"])
-                 (dx/datalog->meander))))
-    (t/is (= '{?table_?e {?e {:name (meander.epsilon/or "Ivan" "Petr"), :age (meander.epsilon/or 20 30)}}}
-             (-> (dx/parse-query '[:where
-                                   [?e :name ?name]
-                                   [?e :age ?age]
-                                   :in [?name] [?age]]
-                                 ["Ivan" "Petr"]
-                                 [20 30])
-                 (dx/datalog->meander))))
-    (t/is (= '(meander.epsilon/or
-              {?table_?e {?e {:name (meander.epsilon/and ?name "Ivan"), :age (meander.epsilon/and ?age 20)}}}
-              {?table_?e {?e {:name (meander.epsilon/and ?name "Petr"), :age (meander.epsilon/and ?age 30)}}})
-             (-> (dx/parse-query '[:where
-                                   [?e :name ?name]
-                                   [?e :age ?age]
-                                   :in    [[?name ?age]]]
-                                 [["Ivan" 20]
-                                  ["Petr" 30]])
-                 (dx/datalog->meander))))
-    (t/is (= '(meander.epsilon/and {?table_?e {?e {:friend (meander.epsilon/scan [(meander.epsilon/some ?t) (meander.epsilon/some ?f)])}}}
-                                   {?table_?f {?f {:name (meander.epsilon/some ?name)}}})
-             (-> (dx/parse-query '[:where
-                                   [?e :friend [?t ?f]]
-                                   [?f :name ?name]])
-                 (dx/datalog->meander))))))
+(t/deftest eid-search
+  (t/is (= [[:db/id 1]]
+           (u/-eid-search {[:db/id 1] {:db/id 1 :name "Petr" :friend [:db/id 2]}
+                           [:db/id 2] {:db/id 2 :name "Ivan"}}
+                          1))))
 
-;;
+#_(t/deftest diff-entity
+  (t/is (= [[:- :a 1] [:+ :b 2]]
+           (mapv vec (u/-diff-entity {:a 1} {:b 2}))))
+  (t/is (= [[:- :a 1] [:+ :a 2]]
+           (mapv vec (u/-diff-entity {:a 1} {:a 2}))))
+  (t/is (= [[[:db/id 1] :- :a 1] [[:db/id 1] :+ :a 2]]
+           (u/-diff-entity [:db/id 1] {:a 1} {:a 2}))))
+
+#_(t/deftest diff-dbs
+  (t/is (= [[[:db/id 1] :+ :b 2] [[:db/id 1] :- :b 2]]
+           (dx/diff-dbs {[:db/id 1] {:a 1} [:db/id 2] {:b 2}} {[:db/id 1] {:a 1 :b 2}}))))
+
+(t/deftest merge-entity
+  (t/is (= {[:db/id 1] {:db/id 1, :name "Ivan", :friend [:db/id 2]}, [:db/id 2] {:db/id 2, :name "Petr" :_friend [:db/id 1]}}
+           (u/-merge-entity {[:db/id 1] {:db/id 1 :name "Ivan"}} {:db/id 1 :friend {:db/id 2 :name "Petr"}}))))
+
+(t/deftest put-entity
+  (t/is (= {[:db/id 1] {:db/id 1, :name "Ivan", :friend [:db/id 2]}, [:db/id 2] {:db/id 2, :name "Petr" :_friend [:db/id 1]}}
+           (u/-put-entity {} {:db/id 1 :name "Ivan" :friend {:db/id 2 :name "Petr"}}))))
+
+(t/deftest safe-put
+  (t/is (= {:db/id 1, :name "Ivan", [:db/id 1] {:db/id 1, :name "Petr"}}
+           (u/-safe-put-kv {:db/id 1 :name "Ivan"} [:db/id 1] :name "Petr"))))
+
+(t/deftest clearing-delete
+  (t/is (= {[:db/id 1] {:db/id 1, :friend [[:db/id 2]]}}
+           (u/-clearing-delete {[:db/id 1] {:db/id 1 :name "Ivan" :friend [[:db/id 2]]}} [[:db/id 1] :name])))
+  (t/is (= {[:db/id 1] {:db/id 1, :name "Ivan"}}
+           (u/-clearing-delete {[:db/id 1] {:db/id 1 :name "Ivan" :friend [[:db/id 2]]}} [[:db/id 1] :friend] [:db/id 2])))
+  (t/is (= {}
+           (u/-clearing-delete {[:db/id 1] {:db/id 1 :name "Ivan"}} [[:db/id 1] :name])))
+  (t/is (= {[:db/id 2] {:db/id 2, :name "Petr"}}
+           (u/-clearing-delete {[:db/id 1] {:db/id 1 :name "Ivan"}
+                                   [:db/id 2] {:db/id 2 :name "Petr"}}
+                               [[:db/id 1] :name]))))
+
+(t/deftest delete-entity
+  (t/is (= {[:db/id 1] {:db/id 1, :name "Ivan"}}
+           (u/-delete-entity {[:db/id 1] {:db/id 1 :name "Ivan" :friend [:db/id 2]}
+                              [:db/id 2] {:db/id 2 :name "Petr" :_friend [:db/id 1]}}
+                             [:db/id 2]))))
 
 (comment
-  (def db (-> (reduce
-               (fn [acc i] (dx/commit acc [:dx/put {:db/id i :name "David" :age (rand-int 100)}]))
-               (dx/create-dx [] {::dx/with-diff? true ::dx/max-txs-count 32})
-               (range 100)))))
-
-(t/deftest db-metadata
-  (let [db (-> (reduce
-                (fn [acc i] (dx/commit acc [:dx/put {:db/id i :name "David"}]))
-                (dx/create-dx [] {::dx/with-diff? true ::dx/max-txs-count 32})
-                (range 100)))]
-    (t/is (some? (some-> db meta ::dx/with-diff?)))
-    (t/is (some? (some-> db meta ::dx/txs)))
-    ;; TODO
-    ;; (t/is (some-> db meta ::dx/txs .-txs_))
-    ))
-
-;; * apply tx
-
-(comment
-  (def db {:db/id {1 {:db/id 1 :name "Petr" :aka ["Devil"]}}}))
+  (def db (dx/create-dx {} [{:db/id 1 :name "Petr" :aka ["Devil"]}])))
 
 (t/deftest commit
-  (let [db {:db/id {1 {:db/id 1 :name "Petr" :aka ["Devil"]}}}]
+  (let [db (dx/create-dx {} [{:db/id 1 :name "Petr" :aka ["Devil"]}])]
     (t/testing "testing put"
-      (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil"]}}
                (dx/commit {} [[:dx/put {:db/id 1 :name "David" :aka ["Devil"]}]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :aka ["Tupen"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :aka ["Tupen"]}}
                (dx/commit {} [[:dx/put [:db/id 1] :aka ["Tupen"]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :aka ["Tupen"] :name "Oleg"}}
+               (dx/commit {} [[:dx/put [:db/id 1] :aka ["Tupen"] :name "Oleg"]])))
+      (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil"]}}
                (dx/commit {} [[:dx/put [:db/id 1] {:name "David" :aka ["Devil"]}]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "David", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil"]}}
                (dx/commit db [[:dx/put [:db/id 1] :name "David"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Tupen"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "David"}}
+               (dx/commit db [[:dx/put [:db/id 1] {:name "David"}]])))
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Tupen"]}}
                (dx/commit db [[:dx/put [:db/id 1] :aka ["Tupen"]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend #{[:db/id 2] [:db/id 3]}}
-                         2 {:db/id 2, :name "Ivan"}
-                         3 {:db/id 3, :name "Lucy"}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"], :friend #{[:db/id 2] [:db/id 3]}}
+                [:db/id 2] {:db/id 2, :name "Ivan" :_friend [:db/id 1]}
+                [:db/id 3] {:db/id 3, :name "Lucy" :_friend [:db/id 1]}}
                (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :a {:b 1, :c 2}}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :a {:b 1, :c 2}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2}]])))
-      (t/is (= #:db{:id {1 {:a [:db/id 2]}, 2 {:b 1, :c 2, :db/id 2}}}
+      (t/is (= {[:db/id 1] {:db/id 1, :a [:db/id 2]}, [:db/id 2] {:b 1, :c 2, :db/id 2, :_a [:db/id 1]}}
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2 :db/id 2}]])))
-      (t/is (= #:db{:id {1 {:a #{[:db/id 2] [:db/id 3]}}, 2 {:b 1, :c 2, :db/id 2}, 3 {:b 3, :c 4, :db/id 3}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :a #{[:db/id 2] [:db/id 3]}}
+                [:db/id 2] {:b 1, :c 2, :db/id 2 :_a [:db/id 1]}
+                [:db/id 3] {:b 3, :c 4, :db/id 3 :_a [:db/id 1]}}
                (dx/commit {} [[:dx/put [:db/id 1] :a [{:b 1 :c 2 :db/id 2}
-                                                      {:b 3 :c 4 :db/id 3}]]]))))
+                                                      {:b 3 :c 4 :db/id 3}]]])))
+      (t/is (= {[:db/id 1] {:db/id 1, :_friend [:db/id 3], :name "Ivan", :friend [:db/id 2]}
+                [:db/id 2] {:db/id 2, :_friend [:db/id 1], :name "Petr", :friend [:db/id 3]}
+                [:db/id 3] {:db/id 3, :_friend [:db/id 2], :name "Lucy", :friend [:db/id 1]}}
+               (dx/commit {} [:dx/put {:db/id 1 :name "Ivan" :friend {:db/id 2 :name "Petr" :friend {:db/id 3 :name "Lucy" :friend [:db/id 1]}}}])))
+      (t/is (= {[:db/id 1] {:_friend #{[:db/id 2] [:db/id 3]}, :db/id 1, :name "Ivan", :friend [:db/id 2]},
+                [:db/id 2] {:_friend [:db/id 1], :db/id 2, :name "Petr", :friend #{[:db/id 1] [:db/id 3]}}
+                [:db/id 3] {:_friend [:db/id 2], :db/id 3, :name "Lucy", :friend [:db/id 1]}},
+               (dx/commit {} [:dx/put {:db/id 1 :name "Ivan" :friend {:db/id 2 :name "Petr" :friend [{:db/id 1} {:db/id 3 :name "Lucy" :friend [:db/id 1]}]}}]))))
+
+    (t/testing "testing merge"
+      (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil" "Devil"]}}
+               (dx/commit db [[:dx/merge {:db/id 1 :name "David" :aka "Devil"}]])))
+      (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil" "Devil"]}}
+               (dx/commit db [[:dx/merge {:db/id 1 :name "David" :aka ["Devil"]}]])))
+      (t/is (= {[:db/id 1] {:db/id 1 :name ["David" "Petr"], :aka ["Devil"]}}
+               (dx/commit db [[:dx/merge {:db/id 1 :name ["David"]}]]))))
 
     (t/testing "testing delete"
       (t/is (= {}
                (dx/commit db [[:dx/delete [:db/id 1]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr"}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr"}}
                (dx/commit db [[:dx/delete [:db/id 1] :aka]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr"}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr"}}
                (dx/commit db [[:dx/delete [:db/id 1] :aka "Devil"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}}
                (dx/commit db [[:dx/delete [:db/id 1] :AKA "Devil"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}}
                (dx/commit db [[:dx/put [:db/id 1] :friend {:db/id 2 :name "Ivan"}]
-                              [:dx/delete [:db/id 2]]])
-               (dx/commit db [[:dx/conj [:db/id 1] :friend {:db/id 2 :name "Ivan"}]
-                              [:dx/delete [:db/id 2]]]))))
-
-    (t/testing "testing conj"
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil" "Tupen"]}}}
-               (dx/commit db [[:dx/conj [:db/id 1] :aka "Tupen"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name ["Petr" "Ivan"], :aka ["Devil"]}}}
-               (dx/commit db [[:dx/conj [:db/id 1] :name "Ivan"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend [[:db/id 2]]}
-                         2 {:db/id 2, :name "Ivan"}}}
-               (dx/commit db [[:dx/conj [:db/id 1] :friend {:db/id 2 :name "Ivan"}]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"], :friend [[:db/id 2] [:db/id 3]]}
-                         2 {:db/id 2, :name "Ivan"}
-                         3 {:db/id 3, :name "Lucy"}}}
-               (dx/commit db [[:dx/conj [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"] :sex ["male"]}}}
-               (dx/commit db [[:dx/conj [:db/id 1] :sex "male"]]))))
-
-    (t/testing "testing merge"
-      (t/is (= #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"], :address {:city "Warsaw"}}}}
-               (dx/commit db [:dx/merge [:db/id 1] :address {:city "Warsaw"}])))
-      (t/is (= #:db{:id {1 {:db/id 1, :name "Petr", :aka "Tupen"}}}
-               (dx/commit db [:dx/merge [:db/id 1] {:aka "Tupen"}])))
-      (t/is (= #:db{:id {1 {:db/id 1, :name "Petr", :aka ["Devil"]}, 2 #:db{:id 2}}}
-               (dx/commit db [:dx/merge [:db/id 2] {}]))))
+                              [:dx/delete [:db/id 2]]])))
+      (t/is (= {[:db/id 2] {:db/id 2, :name "Ivan"}}
+               (dx/commit db [[:dx/put [:db/id 1] :friend {:db/id 2 :name "Ivan"}]
+                              [:dx/delete [:db/id 1]]])))
+      (t/is (= {[:db/id 2] {:db/id 2, :name "Ivan"}, [:db/id 3] {:db/id 3, :name "Petr"}}
+               (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Petr"}]]
+                              [:dx/delete [:db/id 1]]]))))
 
     (t/testing "testing update"
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka "Tupen"}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka "Tupen"}}
                (dx/commit db [[:dx/update [:db/id 1] assoc :aka "Tupen"]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil" "Tupen"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil" "Tupen"]}}
                (dx/commit db [[:dx/update [:db/id 1] :aka conj "Tupen"]]))))
 
     (t/testing "testing match"
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}}
                (dx/commit db [[:dx/match  [:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}}
                (dx/commit db [[:dx/match  [:db/id 1] :aka ["Devil"]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Tupen"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Tupen"]}}
                (dx/commit db [[:dx/match  [:db/id 1] :aka ["Devil"]]
                               [:dx/put    [:db/id 1] :aka ["Tupen"]]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"]}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"]}}
                (dx/commit db [[:dx/match  [:db/id 1] :aka ["Tupen"]]
                               [:dx/delete [:db/id 1] :aka]])))
-      (t/is (= #:db{:id {1 {:db/id 1 :name "Petr", :aka ["Devil"] :sex :male}}}
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"] :sex :male}}
                (dx/commit db [[:dx/match  [:db/id 1] :aka ["Tupen"]]
                               [:dx/put    [:db/id 1] :age 15]
                               [:dx/match  [:db/id 1] :name "Petr"]
@@ -246,12 +195,12 @@
 ;; ** pull
 
 (comment
-  (def db (dx/commit {} (into [] (map (fn [tx] [:dx/put tx]))  (into people-docs part-docs))))
-  (def db2 (dx/commit (dx/create-dx [] {::dx/with-diff? true})
-                      (into [] (map (fn [tx] [:dx/put tx]))  (into people-docs part-docs)))))
+  (def db (dx/create-dx {} (into people-docs part-docs)))
+  #_(def db2 (dx/commit! (dx/create-dx [] {::dx/with-diff? true})
+                         (into [] (map (fn [tx] [:dx/put tx]))  (into people-docs part-docs)))))
 
 (t/deftest test-pull
-  (let [db (dx/commit {} (into [] (map (fn [tx] [:dx/put tx])) (into people-docs part-docs)))]
+  (let [db (dx/create-dx {} (into people-docs part-docs))]
     (t/testing "test pull attr"
       (t/is (= {:name "Petr" :aka ["Devil" "Tupen"]}
                (dx/pull db [:name :aka] [:db/id 1])))
@@ -279,9 +228,9 @@
       (t/is (= {:name "Thomas" :_father [:db/id 6]}
                (dx/pull db [:name :_father] [:db/id 3])))
 
-      (t/is (or (= {:name "Petr" :_father [[:db/id 3] [:db/id 2]]}
+      (t/is (or (= {:name "Petr" :_father #{[:db/id 3] [:db/id 2]}}
                    (dx/pull db [:name :_father] [:db/id 1]))
-                (= {:name "Petr" :_father [[:db/id 2] [:db/id 3]]}
+                (= {:name "Petr" :_father #{[:db/id 2] [:db/id 3]}}
                    (dx/pull db [:name :_father] [:db/id 1]))))
 
       (t/is (= {:name "Thomas" :_father {:name "Matthew"}}
@@ -301,9 +250,9 @@
                (dx/pull db [:part-name {:part-of [:part-name]}] [:db/id 11]))))
 
     (t/testing "test-pull-wildcard"
-      (t/is (= {:db/id 1 :name "Petr" :aka ["Devil" "Tupen"] :child [[:db/id 2] [:db/id 3]]}
+      (t/is (= {:db/id 1, :name "Petr", :aka ["Devil" "Tupen"], :child #{[:db/id 2] [:db/id 3]}}
                (dx/pull db [:*] [:db/id 1])))
-      (t/is (= {:db/id 2 :name "David" :_child [:db/id 1] :father [:db/id 1]}
+      (t/is (= {:db/id 2, :_child [:db/id 1], :name "David", :father [:db/id 1]}
                (dx/pull db [:* :_child] [:db/id 2]))))
 
     (t/testing "test-pull-map"
@@ -335,126 +284,152 @@
     ;;            (dx/pull db {[:db/id 1] [:name]})
     ;;            (dx/pull db [:name] [:db/id 1]))))
 
-    (t/testing "union"
-      (let [tx {:chat/id 0
-                :chat/entries
-                [{:message/id           0
-                  :message/text         "foo"
-                  :chat.entry/timestamp "1234"}
-                 {:message/id           1
-                  :message/text         "bar"
-                  :chat.entry/timestamp "1235"}
-                 {:audio/id             0
-                  :audio/url            "audio://asdf.jkl"
-                  :audio/duration       1234
-                  :chat.entry/timestamp "4567"}
-                 {:photo/id             0
-                  :photo/url            "photo://asdf_10x10.jkl"
-                  :photo/height         10
-                  :photo/width          10
-                  :chat.entry/timestamp "7890"}]}
-            db (dx/db-with [tx])
-            r (dx/pull db [{:chat/entries {:message/id [:message/id :message/text :chat.entry/timestamp]
+    ))
+
+(comment
+  (let [tx {:chat/id 0
+            :chat/entries
+            [{:message/id           0
+              :message/text         "foo"
+              :chat.entry/timestamp "1234"}
+             {:message/id           1
+              :message/text         "bar"
+              :chat.entry/timestamp "1235"}
+             {:audio/id             0
+              :audio/url            "audio://asdf.jkl"
+              :audio/duration       1234
+              :chat.entry/timestamp "4567"}
+             {:photo/id             0
+              :photo/url            "photo://asdf_10x10.jkl"
+              :photo/height         10
+              :photo/width          10
+              :chat.entry/timestamp "7890"}]}]
+    (def db (dx/dx-with [tx]))))
+
+
+(t/deftest pull-union
+  (let [tx {:chat/id 0
+            :chat/entries
+            [{:message/id           0
+              :message/text         "foo"
+              :chat.entry/timestamp "1234"}
+             {:message/id           1
+              :message/text         "bar"
+              :chat.entry/timestamp "1235"}
+             {:audio/id             0
+              :audio/url            "audio://asdf.jkl"
+              :audio/duration       1234
+              :chat.entry/timestamp "4567"}
+             {:photo/id             0
+              :photo/url            "photo://asdf_10x10.jkl"
+              :photo/height         10
+              :photo/width          10
+              :chat.entry/timestamp "7890"}]}
+        db (dx/dx-with [tx])]
+    (t/is (or (= {:chat/entries
+                  [{:photo/id 0, :photo/url "photo://asdf_10x10.jkl" :photo/width 10, :photo/height 10, :chat.entry/timestamp "7890"}
+                   {:message/id 1, :message/text "bar" :chat.entry/timestamp "1235"}
+                   {:message/id 0, :message/text "foo" :chat.entry/timestamp "1234"}]}
+                 (dx/pull db [{:chat/entries {:message/id [:message/id :message/text :chat.entry/timestamp]
                                               :photo/id   [:photo/id :photo/url :photo/width :photo/height :chat.entry/timestamp]}}]
-                          [:chat/id 0])]
-        (t/is (or (= {:chat/entries
-                      [{:photo/id 0, :photo/url "photo://asdf_10x10.jkl" :photo/width 10, :photo/height 10, :chat.entry/timestamp "7890"}
-                       {:message/id 1, :message/text "bar" :chat.entry/timestamp "1235"}
-                       {:message/id 0, :message/text "foo" :chat.entry/timestamp "1234"}]}
-                     r)
-                  ;; cljs
-                  (= {:chat/entries
-                      [{:message/id 0, :message/text "foo" :chat.entry/timestamp "1234"}
-                       {:message/id 1, :message/text "bar" :chat.entry/timestamp "1235"}
-                       {:photo/id 0, :photo/url "photo://asdf_10x10.jkl" :photo/width 10, :photo/height 10, :chat.entry/timestamp "7890"}]}
-                     r)))))))
+                          [:chat/id 0]))
+              ;; cljs
+              (= {:chat/entries
+                  [{:message/id 0, :message/text "foo" :chat.entry/timestamp "1234"}
+                   {:message/id 1, :message/text "bar" :chat.entry/timestamp "1235"}
+                   {:photo/id 0, :photo/url "photo://asdf_10x10.jkl" :photo/width 10, :photo/height 10, :chat.entry/timestamp "7890"}]}
+                 (dx/pull db [{:chat/entries {:message/id [:message/id :message/text :chat.entry/timestamp]
+                                              :photo/id   [:photo/id :photo/url :photo/width :photo/height :chat.entry/timestamp]}}]
+                          [:chat/id 0]))))))
 
 ;; * query
 
 (comment
-  (def db (dx/db-with [{:db/id 1, :name "Ivan" :age 15 :friend [[:db/id 2] [:db/id 3]]}
+  (def db (dx/dx-with [{:db/id 1, :name "Ivan" :age 15 :friend [[:db/id 2] [:db/id 3]]}
                        {:db/id 2, :name "Petr" :age 37 :friend [:db/id 3]}
                        {:db/id 3, :name "Ivan" :age 37}
                        {:db/id 4, :age 15}])))
 
 (t/deftest test-joins
-  (let [db (dx/db-with [{:db/id 1, :name "Ivan", :age 15 :friend [[:db/id 2] [:db/id 3]]}
+  (let [db (dx/dx-with [{:db/id 1, :name "Ivan", :age 15 :friend [[:db/id 2] [:db/id 3]]}
                         {:db/id 2, :name "Petr", :age 37 :friend [:db/id 3]}
                         {:db/id 3, :name "Ivan", :age 37}
                         {:db/id 4, :age 15}])]
 
-    (t/is (= #{[1] [2] [3]}
-             (dx/q [:find ?e
-                    :where [?e :name]] db)))
-    (t/is (= #{[1 15] [3 37]}
-             (dx/q [:find ?e ?v
-                    :where
-                    [?e :name "Ivan"]
-                    [?e :age ?v]] db)
-             (dx/q [:find ?e ?v
-                    :in ?name
-                    :where
-                    [?e :name ?name]
-                    [?e :age ?v]]
+    (t/is (= #{[[:db/id 1]] [[:db/id 3]] [[:db/id 2]]}
+             (dx/q '[:find ?e
+                     :where [?e :name]]
+               db)))
+    (t/is (= #{[[:db/id 1]] [[:db/id 3]]}
+             (dx/q '[:find ?e
+                     :where [?e ?name "Ivan"]]
+               db)))
+    (t/is (= #{[[:db/id 1] 15] [[:db/id 3] 37]}
+             (dx/q '[:find ?e ?v
+                     :where
+                     [?e :name "Ivan"]
+                     [?e :age ?v]] db)
+             (dx/q '[:find ?e ?v
+                     :in ?name
+                     :where
+                     [?e :name ?name]
+                     [?e :age ?v]]
                db "Ivan")
              (let [x "Ivan"]
-               (dx/q [:find ?e ?v
-                      :in ?name
-                      :where
-                      [?e :name ?name]
-                      [?e :age ?v]]
+               (dx/q '[:find ?e ?v
+                       :in ?name
+                       :where
+                       [?e :name ?name]
+                       [?e :age ?v]]
                  db x))))
 
-    (t/is (= #{[2 2] [3 3] [1 1] [1 3] [3 1]}
-             (dx/q [:find ?e1 ?e2
-                    :where
-                    [?e1 :name ?n]
-                    [?e2 :name ?n]] db)))
+    (t/is (= #{[[:db/id 3] [:db/id 1]] [[:db/id 2] [:db/id 2]] [[:db/id 1] [:db/id 1]] [[:db/id 3] [:db/id 3]] [[:db/id 1] [:db/id 3]]}
+             (dx/q '[:find ?e1 ?e2
+                     :where
+                     [?e1 :name ?n]
+                     [?e2 :name ?n]] db)))
 
-    (t/is (= #{[1 1 "Ivan"] [3 3 "Ivan"] [3 2 "Petr"]}
-             (dx/q [:find ?e1 ?e2 ?n
-                    :where
-                    [?e1 :name "Ivan"]
-                    [?e1 :age      ?a]
-                    [?e2 :age      ?a]
-                    [?e2 :name     ?n]]
+    (t/is (= #{[[:db/id 1] [:db/id 1] "Ivan"] [[:db/id 3] [:db/id 3] "Ivan"] [[:db/id 3] [:db/id 2] "Petr"]}
+             (dx/q '[:find ?e1 ?e2 ?n
+                     :where
+                     [?e1 :name "Ivan"]
+                     [?e1 :age      ?a]
+                     [?e2 :age      ?a]
+                     [?e2 :name     ?n]]
                db)))
 
-    (t/is (= #{[2 "Petr"] [3 "Ivan"]}
-             (dx/q [:find ?f ?fname
-                    :where
-                    [?f :name   ?fname]
-                    [?e :name    "Ivan"]
-                    [?e :friend  [_ ?f]]]
+    (t/is (= #{[[:db/id 2] "Petr"] [[:db/id 3] "Ivan"]}
+             (dx/q '[:find ?f ?fname
+                     :where
+                     [?f :name    ?fname]
+                     [?e :name    "Ivan"]
+                     [?e :friend ?friend]
+                     [(some #{?f} ?friend)]]
                db)))
-    (t/is (= #{[1]}
-             (dx/q [:find ?e
-                    :where
-                    [?e :name    "Ivan"]
-                    [?e :friend  [_ ?f]]]
+    (t/is (= #{[[:db/id 1]]}
+             (dx/q '[:find ?e
+                     :where
+                     [?e :name    "Ivan"]
+                     [?e :friend  ?f]]
                db)))
-    (t/is (= #{[1]}
-             (dx/q [:find ?e
-                    :in ?f
-                    :where
-                    [?e :name    "Ivan"]
-                    [?e :friend  [_ ?f]]]
-               db 3)))
-    (t/is (= #{[1]}
-             (dx/q [:find ?e
-                    :where
-                    [?e :name    "Ivan"]
-                    :limit 1]
-               db)))
-    (t/is (= #{[1]}
-             (dx/q [:find ?e
-                    :where
-                    [?e :name    "Ivan"]
-                    :xf (comp (take 1))]
-               db)))))
+    (t/is (= #{[[:db/id 1]]}
+             (dx/q '[:find ?e
+                     :in ?f
+                     :where
+                     [?e :name    "Ivan"]
+                     [?e :friend  ?fs]
+                     [(some #{?f} ?fs)]]
+               db [:db/id 3])))
+    (t/is (= 1
+             (count (dx/q '[:find ?e
+                      :where
+                      [?e :name    "Ivan"]
+                      :limit 1]
+                      db))))))
 
 (comment
-  (def db (dx/db-with [{:db/id 1
+
+  (def db (dx/dx-with [{:db/id 1
                         :name  "Ivan"
                         :aka   ["ivolga" "pi"]}
                        {:db/id 2
@@ -462,53 +437,54 @@
                         :aka   ["porosenok" "pi"]}])))
 
 (t/deftest test-q-many
-  (let [db (dx/db-with [{:db/id 1
+  (let [db (dx/dx-with [{:db/id 1
                          :name  "Ivan"
                          :aka   ["ivolga" "pi"]}
                         {:db/id 2
                          :name  "Petr"
                          :aka   ["porosenok" "pi"]}])]
     (t/is (= #{["Ivan" "Petr"] ["Petr" "Ivan"] ["Petr" "Petr"] ["Ivan" "Ivan"]}
-             (dx/q [:find ?n1 ?n2
-                    :where
-                    [?e1 :aka (m/scan ?x)]
-                    [?e2 :aka (m/scan ?x)]
-                    [?e1 :name ?n1]
-                    [?e2 :name ?n2]]
+             (dx/q '[:find ?n1 ?n2
+                     :where
+                     [?e1 :aka ?xs]
+                     [?e2 :aka ?ys]
+                     [(intersect? ?xs ?ys)]
+                     [?e1 :name ?n1]
+                     [?e2 :name ?n2]]
                db)))))
 
 (comment
-  (def db (dx/db-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
+  (def db (dx/dx-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
                        {:db/id 2, :name "Petr" :age 37 :email "petr@gmail.com"}
                        {:db/id 3, :name "Ivan" :age 37 :email "ivan@mail.ru"}])))
 
 (t/deftest test-q-in
-  (let [db (dx/db-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
+  (let [db (dx/dx-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
                         {:db/id 2, :name "Petr" :age 37 :email "petr@gmail.com"}
                         {:db/id 3, :name "Ivan" :age 37 :email "ivan@mail.ru"}])]
 
-    (t/is (= #{[1] [3]}
-             (dx/q [:find  ?e
-                    :in    ?attr ?value
-                    :where [?e ?attr ?value]]
+    (t/is (= #{[[:db/id 1]] [[:db/id 3]]}
+             (dx/q '[:find  ?e
+                     :in    ?attr ?value
+                     :where [?e ?attr ?value]]
                db :name "Ivan")))
 
-    (t/is (= #{[1] [2] [3]}
-             (dx/q [:find  ?e
+    (t/is (= #{[[:db/id 1]] [[:db/id 3]] [[:db/id 2]]}
+             (dx/q '[:find  ?e
                     :in    ?attr [?value]
                     :where [?e ?attr ?value]]
                db :name ["Ivan" "Petr"])))
 
-    (t/is (= #{[2] [3]}
-             (dx/q [:find ?e
+    (t/is (= #{[[:db/id 3]] [[:db/id 2]]}
+             (dx/q '[:find ?e
                     :in    ?attr ?value
                     :where [?e ?attr ?value]]
                db :age 37)))
 
-    (t/is (= #{[1 "ivan@mail.ru"]
-               [2 "petr@gmail.com"]
-               [3 "ivan@mail.ru"]}
-             (dx/q [:find ?e ?email
+    (t/is (= #{[[:db/id 2] "petr@gmail.com"]
+               [[:db/id 3] "ivan@mail.ru"]
+               [[:db/id 1] "ivan@mail.ru"]}
+             (dx/q '[:find ?e ?email
                     :in [[?n ?email]]
                     :where
                     [?e :name ?n]
@@ -517,31 +493,31 @@
                [["Ivan" "ivan@mail.ru"]
                 ["Petr" "petr@gmail.com"]])))))
 
-(t/deftest test-q-keys
-  (let [db (dx/db-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
-                        {:db/id 2, :name "Petr" :age 37 :email "petr@gmail.com"}
-                        {:db/id 3, :name "Ivan" :age 37 :email "ivan@mail.ru"}])]
-    (t/is (= #{{:name "Ivan" :email "ivan@mail.ru" :age 15}
-               {:name "Petr" :email "petr@gmail.com" :age 37}
-               {:name "Ivan" :email "ivan@mail.ru" :age 37}}
-             (dx/q [:find ?name ?email ?age
-                    :keys [:name :email :age]
-                    :where
-                    [?e :name ?name]
-                    [?e :age ?age]
-                    [?e :email ?email]]
-               db)))))
+;; (t/deftest test-q-keys
+;;   (let [db (dx/dx-with [{:db/id 1, :name "Ivan" :age 15 :email "ivan@mail.ru"}
+;;                         {:db/id 2, :name "Petr" :age 37 :email "petr@gmail.com"}
+;;                         {:db/id 3, :name "Ivan" :age 37 :email "ivan@mail.ru"}])]
+;;     (t/is (= #{{:name "Ivan" :email "ivan@mail.ru" :age 15}
+;;                {:name "Petr" :email "petr@gmail.com" :age 37}
+;;                {:name "Ivan" :email "ivan@mail.ru" :age 37}}
+;;              (dx/q [:find ?name ?email ?age
+;;                     :keys [:name :email :age]
+;;                     :where
+;;                     [?e :name ?name]
+;;                     [?e :age ?age]
+;;                     [?e :email ?email]]
+;;                db)))))
 
 (comment
-  (def db (dx/db-with
+  (def db (dx/dx-with
             [{:db/id 1 :follow [:db/id 2]}
              {:db/id 2 :follow [[:db/id 3] [:db/id 4]]}
              {:db/id 3 :follow [:db/id 4]}
              {:db/id 4 :follow [:db/id 6]}
              {:db/id 5 :follow [:db/id 3]}])))
 
-(t/deftest test-q-rules
-  (let [db (dx/db-with
+#_(t/deftest test-q-rules
+  (let [db (dx/dx-with
             [{:db/id 1 :follow [:db/id 2]}
              {:db/id 2 :follow [[:db/id 3] [:db/id 4]]}
              {:db/id 3 :follow [:db/id 4]}
@@ -597,7 +573,7 @@
                     (follow ?t ?e2)]])))))
 
 (comment
-  (def db (dx/db-with [{:db/id 1 :name "Ivan" :age 10}
+  (def db (dx/dx-with [{:db/id 1 :name "Ivan" :age 10}
                        {:db/id 2 :name "Ivan" :age 20}
                        {:db/id 3 :name "Oleg" :age 10}
                        {:db/id 4 :name "Oleg" :age 20}
@@ -605,105 +581,107 @@
                        {:db/id 6 :name "Ivan" :age 20}])))
 
 (t/deftest test-q-or
-  (let [db (dx/db-with [{:db/id 1 :name "Ivan" :age 10}
+  (let [db (dx/dx-with [{:db/id 1 :name "Ivan" :age 10}
                         {:db/id 2 :name "Ivan" :age 20}
                         {:db/id 3 :name "Oleg" :age 10}
                         {:db/id 4 :name "Oleg" :age 20}
                         {:db/id 5 :name "Ivan" :age 10}
                         {:db/id 6 :name "Ivan" :age 20}])]
-    (t/is (= #{[4] [3] [5] [1]}
-             (dx/q [:find ?e
-                    :where
-                    (or [?e :name "Oleg"]
-                        [?e :age 10])]
+    (t/is (= #{[[:db/id 1]] [[:db/id 3]] [[:db/id 4]] [[:db/id 5]]}
+             (dx/q '[:find ?e
+                     :where
+                     (or [?e :name "Oleg"]
+                         [?e :age 10])]
                db)))
-    (t/is (= #{[4] [3]}
-             (dx/q [:find ?e
-                    :where
-                    (or [?e :name "Oleg"]
-                        [?e :age 30])]
+    (t/is (= #{[[:db/id 3]] [[:db/id 4]]}
+             (dx/q '[:find ?e
+                     :where
+                     (or [?e :name "Oleg"]
+                         [?e :age 30])]
                db)))
     (t/is (= #{}
-             (dx/q [:find ?e
+             (dx/q '[:find ?e
                     :where
                     (or [?e :name "Petr"]
                         [?e :age 30])]
                db)))
-    (t/is (= #{[5] [1]}
-             (dx/q [:find ?e
+    (t/is (= #{[[:db/id 1]] [[:db/id 5]]}
+             (dx/q '[:find ?e
                     :where
                     [?e :name "Ivan"]
                     (or [?e :name "Oleg"]
                         [?e :age 10])]
                db)))
-    (t/is (= #{[5] [1] [4]}
-             (dx/q [:find ?e
-                    :where
-                    [?e :age ?a]
-                    (or (and [?e :name "Ivan"]
-                             [1 :age ?a])
-                        (and [?e :name "Oleg"]
-                             [2 :age ?a]))]
+    #_(t/is (= #{[5] [1] [4]}
+             (dx/q '[:find ?e
+                     :where
+                    (or (and [?e :age ?a]
+                             [?e :name "Ivan"]
+                             [[:db/id 1] :age ?a])
+                        (and [?e :age ?a]
+                             [?e :name "Oleg"]
+                             [[:db/id 2] :age ?a]))]
                db)))
-    (t/is (= #{[5] [1] [4]}
-             (dx/q [:find ?e
+    #_(t/is (= #{[5] [1] [4]}
+             (dx/q '[:find ?e
                     :where
                     (or (and [?e :name "Ivan"]
-                             [1 :age ?a])
+                             [[:db/id 1] :age ?a])
                         (and [?e :name "Oleg"]
-                             [2 :age ?a]))
+                             [[:db/id 1] :age ?a]))
                     [?e :age ?a]]
                db)))
     ;; diffrent order
-    (t/is (= #{[5] [1] [4]}
+    #_(t/is (= #{[5] [1] [4]}
              (dx/q [:find ?e
                     :where
-                    (or (and [1 :age ?a]
+                    (or (and [[:db/id 1] :age ?a]
                              [?e :name "Ivan"])
                         (and [?e :name "Oleg"]
-                             [2 :age ?a]))
+                             [[:db/id 1] :age ?a]))
                     [?e :age ?a]]
                db)))))
 
 ;; crux
 
-#?(:clj
-   (def bond-db
-     (let [data (->> (read-string (slurp "./resources/james-bond.edn"))
-                     (mapv (fn [m]
-                             (-> m
-                                 (update :film/director   (partial vector :db/id))
-                                 (update :film/bond       (partial vector :db/id))
-                                 (update :film/vehicles   (fn [xs] (mapv (partial vector :db/id) xs)))
-                                 (update :film/box        (partial vector :db/id))
-                                 (update :film/bond-girls (fn [xs] (mapv (partial vector :db/id) xs)))
-                                 (update :film/box        (partial vector :db/id))))))]
-       (-> (dx/create-dx {} {:with-diff? true})
-           (dx/commit (into [] (map (fn [tx] [:dx/put tx])) data))))))
+;; #?(:clj
+   ;; (def bond-db
+   ;;   (let [data (->> (read-string (slurp "./resources/james-bond.edn"))
+   ;;                   (mapv (fn [m]
+   ;;                           (-> m
+   ;;                               (update :film/director   (partial vector :db/id))
+   ;;                               (update :film/bond       (partial vector :db/id))
+   ;;                               (update :film/vehicles   (fn [xs] (mapv (partial vector :db/id) xs)))
+   ;;                               (update :film/box        (partial vector :db/id))
+   ;;                               (update :film/bond-girls (fn [xs] (mapv (partial vector :db/id) xs)))
+   ;;                               (update :film/box        (partial vector :db/id))))))]
+   ;;     (-> (dx/create-dx {})
+   ;;         (dx/commit (into [] (map (fn [tx] [:dx/put tx])) data)))))
+   ;; )
 
-#?(:clj
-   (t/testing "project fn"
-     (t/is (= #:film{:name "Spectre", :year "2015"}
-              (dx/pull bond-db [:film/name :film/year] [:db/id :spectre])))))
+;; #?(:clj
+;;    (t/testing "project fn"
+;;      (t/is (= #:film{:name "Spectre", :year "2015"}
+;;               (dx/pull bond-db [:film/name :film/year] [:db/id :spectre])))))
 
-#?(:clj
-   (t/deftest query-pull
-     (t/testing "query"
-       (t/is (= #{{}}
-                (dx/q [:find (pull [] [?table ?e])
-                       :where [?table ?e :vehicle/brand "Aston Martin"]]
-                  bond-db)))
+;; #?(:clj
+;;    (t/deftest query-pull
+;;      (t/testing "query"
+;;        (t/is (= #{{}}
+;;                 (dx/q [:find (pull [] [?table ?e])
+;;                        :where [?table ?e :vehicle/brand "Aston Martin"]]
+;;                   bond-db)))
 
-       (let [expected #{{:vehicle/brand "Aston Martin", :vehicle/model "DB10"}
-                        {:vehicle/brand "Aston Martin", :vehicle/model "DBS V12"}
-                        {:vehicle/brand "Aston Martin", :vehicle/model "DB5"}
-                        {:vehicle/brand "Aston Martin", :vehicle/model "V12 Vanquish"}
-                        {:vehicle/brand "Aston Martin", :vehicle/model "V8 Vantage Volante"}
-                        {:vehicle/brand "Aston Martin", :vehicle/model "DBS"}}]
-         (t/is (= expected
-                  (dx/q [:find  (pull [:vehicle/brand :vehicle/model] [?table ?e])
-                         :where [?table ?e :vehicle/brand "Aston Martin"]]
-                    bond-db)))))))
+;;        (let [expected #{{:vehicle/brand "Aston Martin", :vehicle/model "DB10"}
+;;                         {:vehicle/brand "Aston Martin", :vehicle/model "DBS V12"}
+;;                         {:vehicle/brand "Aston Martin", :vehicle/model "DB5"}
+;;                         {:vehicle/brand "Aston Martin", :vehicle/model "V12 Vanquish"}
+;;                         {:vehicle/brand "Aston Martin", :vehicle/model "V8 Vantage Volante"}
+;;                         {:vehicle/brand "Aston Martin", :vehicle/model "DBS"}}]
+;;          (t/is (= expected
+;;                   (dx/q [:find  (pull [:vehicle/brand :vehicle/model] [?table ?e])
+;;                          :where [?table ?e :vehicle/brand "Aston Martin"]]
+;;                     bond-db)))))))
 
 (t/deftest gh-7
   ;; https://github.com/ribelo/doxa/issues/7
@@ -718,108 +696,105 @@
     (t/is (= {:__typename "release", :created "2021-05-10T09:39:28"}
              (dx/pull db [:__typename :created] [:release/id entity-id])))))
 
-(t/deftest gh-8
-  ;; https://github.com/ribelo/doxa/issues/8
-  (let [person1 {:person/id 1
-                 :gender    "MALE"
-                 :name      "Bob"
-                 :face      {:eyes "BLUE"}}
-        person2 {:person/id 2
-                 :gender    "FEMALE"
-                 :name      "Joanne"
-                 :face      {:eyes "GREEN"}}
-        db      (dx/commit (dx/create-dx) [[:dx/put person1]
-                                           [:dx/put person2]])]
-    (t/is (= #{[1 "Bob" "BLUE"]}
-             (dx/q [:find ?person ?name ?eye-color
-                    :in ?table ?color
-                    :where
-                    [?table ?person :name ?name]
-                    [?table ?person :face {:eyes ?eye-color}]
-                    [(= ?color ?eye-color)]]
-               db :person/id "BLUE")))))
+;; (t/deftest gh-8
+;;   ;; https://github.com/ribelo/doxa/issues/8
+;;   (let [person1 {:person/id 1
+;;                  :gender    "MALE"
+;;                  :name      "Bob"
+;;                  :face      {:eyes "BLUE"}}
+;;         person2 {:person/id 2
+;;                  :gender    "FEMALE"
+;;                  :name      "Joanne"
+;;                  :face      {:eyes "GREEN"}}
+;;         db      (dx/commit (dx/create-dx) [[:dx/put person1]
+;;                                            [:dx/put person2]])]
+;;     (t/is (= #{[1 "Bob" "BLUE"]}
+;;              (dx/q '[:find ?person ?name ?eye-color
+;;                     :in ?table ?color
+;;                     :where
+;;                     [?table ?person :name ?name]
+;;                     [?table ?person :face {:eyes ?eye-color}]
+;;                     [(= ?color ?eye-color)]]
+;;                db :person/id "BLUE")))))
 
 (t/deftest gh-14
-  (let [db  (dx/create-dx [{:db/id 1, :name "Ivan" :age 15}
-                           {:db/id 2, :name "Petr" :age 37}])
+  (let [db  (dx/create-dx {} [{:db/id 1, :name "Ivan" :age 15}
+                              {:db/id 2, :name "Petr" :age 37}])
         age 15]
     (t/is (= #{["Ivan"]}
-             (dx/q [:find ?name
-                    :in ?age
-                    :where
-                    [?e :name ?name]
-                    [?e :age ?age]]
-               db ~age)))))
+             (dx/q '[:find ?name
+                     :in ?age
+                     :where
+                     [?e :name ?name]
+                     [?e :age ?age]]
+               db age)))))
 
 (t/deftest gh-16
   ;; https://github.com/ribelo/doxa/issues/16
-  (let [db (dx/create-dx [{:db/id 1 :name "ivan" :cars [{:db/id 10 :name "tesla"}
-                                                        {:db/id 11 :name "ferrari"}]}
-                          {:db/id 2 :name "petr" :cars [{:db/id 10 :name "peugot"}]}
-                          {:db/id 3 :name "mike" :cars {:db/id 10 :name "peugot"}}
-                          {:db/id 4 :name "mike" :cars []}])]
+  (let [db (dx/create-dx {} [{:db/id 4 :name "mike" :cars []}
+                             {:db/id 1 :name "ivan" :cars [{:db/id 10 :name "tesla"}
+                                                           {:db/id 11 :name "ferrari"}]}
+                             {:db/id 2 :name "petr" :cars [{:db/id 10 :name "peugot"}]}
+                             {:db/id 3 :name "mike" :cars {:db/id 10 :name "peugot"}}])]
 
     (t/is (vector? (:cars (dx/pull db [:name {:cars [:name]}] [:db/id 2])))
           "pull returns vector when 1 entity in join")))
 
 (t/deftest gh-17
   ;; https://github.com/ribelo/doxa/issues/17
-  (let [db (dx/create-dx [{:db/id 1 :name "ivan" :car {:db/id 10 :name "tesla"}}])]
+  (let [db (dx/create-dx {} [{:db/id 1 :name "ivan" :car {:db/id 10 :name "tesla"}}])]
     (t/is (map? (:car (dx/pull db [:name {:car [:name]}] [:db/id 1]))))))
 
-(defmacro generate-matched-tests [datom]
-  (m/rewrite datom
-    (m/or
-     [(m/or (m/and ?table (m/not (m/pred dx/qsymbol?))) (m/let [?table :db/id]))
-      (m/or (m/and ?e     (m/not (m/pred dx/qsymbol?))) (m/let [?e          1]))
-      (m/or (m/and ?a     (m/not (m/pred dx/qsymbol?))) (m/let [?a         :a]))
-      (m/or (m/and ?v     (m/not (m/pred dx/qsymbol?))) (m/let [?v          1]))]
-     (m/and
-      (m/let [?table :db/id])
-      [(m/or (m/and ?e     (m/not (m/pred dx/qsymbol?))) (m/let [?e         1]))
-       (m/or (m/and ?a     (m/not (m/pred dx/qsymbol?))) (m/let [?a        :a]))
-       (m/or (m/and ?v     (m/not (m/pred dx/qsymbol?))) (m/let [?v         1]))]))
-    (do (t/is (true?
-               (dx/-datoms-match-datom?
-                (dx/-edits->datoms [[[~?table] :+ {~?e {~?a ~?v}}]])
-                ~datom)))
-        (t/is (true?
-               (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[[~?table] :r {~?e {~?a ~?v}}]])
-                ~datom)))
-        (t/is (true?
-               (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[[~?table ~?e] :+ {~?a ~?v}]])
-                ~datom)))
-        (t/is (true?
-               (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[[~?table ~?e] :r {~?a ~?v}]])
-                ~datom)))
-        (t/is (true?
-               (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[[~?table ~?e ~?a] :+ ~?v]])
-                ~datom)))
-        (t/is (true?
-               (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[[~?table ~?e ~?a] :r ~?v]])
-                ~datom)))
-        (t/is (true?
-               (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[[~?table] :-]])
-                ~datom)))
-        (t/is (true?
-               (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[[~?table ~?e] :-]])
-                ~datom)))
-        (t/is (true?
-               (dx/-datoms-match-datom?
-                (dx/-edits->datoms  [[[~?table ~?e ~?a] :-]])
-                ~datom))))))
+;; (defmacro generate-matched-tests [datom]
+;;   (m/rewrite datom
+;;     (m/or
+;;      [(m/or (m/and ?table (m/not (m/pred dx/qsymbol?))) (m/let [?table :db/id]))
+;;       (m/or (m/and ?e     (m/not (m/pred dx/qsymbol?))) (m/let [?e          1]))
+;;       (m/or (m/and ?a     (m/not (m/pred dx/qsymbol?))) (m/let [?a         :a]))
+;;       (m/or (m/and ?v     (m/not (m/pred dx/qsymbol?))) (m/let [?v          1]))]
+;;      (m/and
+;;       (m/let [?table :db/id])
+;;       [(m/or (m/and ?e     (m/not (m/pred dx/qsymbol?))) (m/let [?e         1]))
+;;        (m/or (m/and ?a     (m/not (m/pred dx/qsymbol?))) (m/let [?a        :a]))
+;;        (m/or (m/and ?v     (m/not (m/pred dx/qsymbol?))) (m/let [?v         1]))]))
+;;     (do (t/is (true?
+;;                (dx/-datoms-match-datom?
+;;                 (dx/-edits->datoms [[[~?table] :+ {~?e {~?a ~?v}}]])
+;;                 ~datom)))
+;;         (t/is (true?
+;;                (dx/-datoms-match-datom?
+;;                 (dx/-edits->datoms  [[[~?table] :r {~?e {~?a ~?v}}]])
+;;                 ~datom)))
+;;         (t/is (true?
+;;                (dx/-datoms-match-datom?
+;;                 (dx/-edits->datoms  [[[~?table ~?e] :+ {~?a ~?v}]])
+;;                 ~datom)))
+;;         (t/is (true?
+;;                (dx/-datoms-match-datom?
+;;                 (dx/-edits->datoms  [[[~?table ~?e] :r {~?a ~?v}]])
+;;                 ~datom)))
+;;         (t/is (true?
+;;                (dx/-datoms-match-datom?
+;;                 (dx/-edits->datoms  [[[~?table ~?e ~?a] :+ ~?v]])
+;;                 ~datom)))
+;;         (t/is (true?
+;;                (dx/-datoms-match-datom?
+;;                 (dx/-edits->datoms  [[[~?table ~?e ~?a] :r ~?v]])
+;;                 ~datom)))
+;;         (t/is (true?
+;;                (dx/-datoms-match-datom?
+;;                 (dx/-edits->datoms  [[[~?table] :-]])
+;;                 ~datom)))
+;;         (t/is (true?
+;;                (dx/-datoms-match-datom?
+;;                 (dx/-edits->datoms  [[[~?table ~?e] :-]])
+;;                 ~datom)))
+;;         (t/is (true?
+;;                (dx/-datoms-match-datom?
+;;                 (dx/-edits->datoms  [[[~?table ~?e ~?a] :-]])
+;;                 ~datom))))))
 
-(comment
-  (def db (dx/create-dx [] {::dx/with-diff? true})))
-
-(t/deftest match-changes
+#_(t/deftest match-changes
   (let [db (dx/create-dx [] {::dx/with-diff? true})]
     (t/testing "generated maching tests"
       (doseq [table ['?table :db/id]
@@ -1189,21 +1164,21 @@
                      tables)))))))))
 
 (comment
-  (def conn_ (atom (dx/create-dx [] {::dx/with-diff? true}))))
+  (def conn_ (dx/connect! (dx/create-dx {} [] {::dx/cache (atom (dxc/doxa-cache))}))))
 
-(t/deftest cached-query
-  (let [conn_ (atom (dx/create-dx [] {::dx/with-diff? true}))]
-    (dx/commit! conn_ [:dx/put [:db/id 1] {:name "ivan"}])
-    (Thread/sleep 10)
-    (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
-    (t/is (false? (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
-    (dx/commit! conn_ [:dx/put [:db/id 2] {:name "ivan"}])
-    (Thread/sleep 10)
-    (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
-    (dx/commit! conn_ [:dx/put [:dog/id 1] {:name "pixel"}])
-    (t/is (false? (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
-    (dx/commit! conn_ [:dx/put [:db/id 3] {:name "ivan"}])
-    (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))))
+;; (t/deftest cached-query
+;;   (let [conn_ (dx/connect! (dx/create-dx {} [] {::dx/cache (atom (dxc/doxa-cache))}))]
+;;     (dx/commit! conn_ [:dx/put [:db/id 1] {:name "ivan"}])
+;;     (Thread/sleep 10)
+;;     (t/is (true?  (::dx/fresh? (dx/mq '[:find [?e ...] :where [?e :name "ivan"]] @conn_))))
+;;     (t/is (false? (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
+;;     (dx/commit! conn_ [:dx/put [:db/id 2] {:name "ivan"}])
+;;     (Thread/sleep 10)
+;;     (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
+;;     (dx/commit! conn_ [:dx/put [:dog/id 1] {:name "pixel"}])
+;;     (t/is (false? (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))
+;;     (dx/commit! conn_ [:dx/put [:db/id 3] {:name "ivan"}])
+;;     (t/is (true?  (::dx/fresh? (meta ^{::dx/cache? true} (dx/q [:find ?e ... :where [?e :name "ivan"]] @conn_)))))))
 
 (t/deftest gh-23
   ;; https://github.com/ribelo/doxa/issues/23
@@ -1223,48 +1198,43 @@
              (dx/pull db [:name {:car [:autombile/id :name]}] [:person/id "10"])))))
 
 (t/deftest gh-24 []
-  (let [db1 (dx/create-dx [] {::dx/with-diff? true})
+  (let [db1 (dxm/empty-db {:cache (dxc/doxa-cache)})
         people (fn [db]
-                 (->
-                   ^{::dx/cache ::people} ; comment this out to see correct behaviour
-                   (dx/q [:find ?name ...
-                          :where
-                          [?e :name ?name]]
-                     db)))
+                 (dxq/-mq '[:find [?name ...]
+                            :where
+                            [?e :name ?name]]
+                          db))
         r1 (people db1)
-        db2 (->> [{:id   "20"
+        db2 (->> [{:person/id   "20"
                    :name "Chris"
                    :age  15}]
                  (vector :dx/put)
-                 (dx/commit db1))
-        r2 (people db2)]
-    (t/is (= #{} r1))
-    (t/is (= #{"Chris"} r2))))
+                 (dx/commit db1)
+                 )
+        r2 (people db2)
+        r3 (people db2)]
+    (t/is (= [] r1))
+    (t/is (= ["Chris"] r2 r3))))
 
-(t/deftest gh-26
-  (let [db (dx/create-dx [{:id 1
-                           :name "Steve"
-                           :languages/spoken [{:id 2
-                                               :name "english"}
-                                              {:id 3
-                                               :name "dutch"}]
-                           :languages/computer [{:id 4
-                                                 :name "clojure"}
-                                                {:id 5
-                                                 :name "typescript"}]}])]
-    (t/is (= {:id 1
-              :languages/spoken [{:id 2, :name "english"} {:id 3, :name "dutch"}]
-              :languages/computer [{:id 4, :name "clojure"} {:id 5, :name "typescript"}]}
-             (dx/-pull db [:id {:languages/spoken [:*]} {:languages/computer [:*]}] [:id 1])))))
+(t/deftest gh-33 []
+  (let [db (dx/create-dx {} [{:db/id 1
+                              :name     "Olympics"
+                              :sports   [{:db/id 2
+                                          :name     "Boardercross"}
+                                         {:db/id 3
+                                          :name     "Curling"}]}])]
+    (t/is (= {[:db/id 2] {:_sports [:db/id 1], :db/id 2, :name "Boardercross"}
+              [:db/id 1] {:db/id 1, :name "Olympics", :sports #{[:db/id 2]}}}
+             (dx/commit db [[:dx/delete [:db/id 3]]])))))
 
-(t/deftest gh-27 []
-  (let [db (dx/create-dx [{:id       1
-                           :name   "Olympics"
-                           :sports [{:id   2
-                                     :name "Boardercross"}
-                                    {:id   3
-                                     :name "Curling"}]}]
-                         {::dx/with-diff? true})]
-    (t/is (= {:id 1, :sports [{:id 2, :name "Boardercross"} {:id 3, :name "Curling"}]}
-             ^{::dx/cache :sports-event}
-             (dx/pull db [:id {:sports [:id :name]}] [:id 1])))))
+(comment
+  (def db (dx/commit {} [:dx/merge [{:product/id 1
+                                     :product/name "product1"
+                                     :product/offer {:offer/id 1 :offer/name "offer1" :offer/price 1.0 :offer/market {:market/id 1 :market/name "market"}}}
+                                    {:product/id 2
+                                     :product/name "product2"
+                                     :product/offer {:offer/id 2 :offer/name "offer1" :offer/price 2.0 :offer/market {:market/id 1 :market/name "market"}}}]]))
+  (dx/pick db [:market/name] [:market/id 1])
+  (tap> [:ok (dx/pick db {:offer/_market [:offer/price {:product/_offer [:product/name]}]} [:market/id 1])])
+  (tap> (+ 1 1))
+  )
