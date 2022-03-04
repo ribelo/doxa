@@ -1,0 +1,18 @@
+#+TITLE: Creation
+
+#+begin_src clojure :results silent :exports code
+
+(require '[ribelo.doxa :as dx])
+
+#+end_src
+
+as =doxa= does not use any special data type, there is no need to create a db, you
+can simply use a ={}=. however, =dx/create-dx= allows you to populate the db with
+data and also allows you to simply add the metadata.
+
+#+begin_src clojure :results silent :exports code
+
+(dx/create-dx {} [{:db/id 1 :name "Petr" :aka ["Devil"]}])
+(dx/create-dx {} [{:db/id 1 :name "Petr" :aka ["Devil"]}] {::dx/cache (atom (dxc/doxa-cache))})
+
+#+end_src
