@@ -33,7 +33,7 @@
 
 (def lib (symbol "com.github.ribelo" "doxa"))
 (def basis (b/create-basis {:project "deps.edn"}))
-(def version (format "0.0.%s" (git-branch-commit-count)))
+(def version (format "0.1.%s" (git-branch-commit-count)))
 (def class-dir "target/classes")
 (def jar-file (format "target/%s-%s.jar" (git-branch-name) version))
 
