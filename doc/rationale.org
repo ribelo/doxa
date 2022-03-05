@@ -57,7 +57,7 @@ order of insertion.
 no special =deftype= is used, but the implementation is based on =protocols=, which
 allows =doxa= to be used together with any =kv store=, like =redis=, =firestore= or =lmdb=.
 
-in the standard implementation =hasmap= is extended, and =doxa= keeps all the
+in the standard implementation =hashmap= is extended, and =doxa= keeps all the
 necessary stuff in the map =metadata=, including index, last transaction, cache
 etc.
 
@@ -74,6 +74,31 @@ excluding this with multiple joins, =doxa= is the fastest available db for
 =clojurescript=. nevertheless, this single index allows to reduce the amount of
 data searched, which can speed up queries by an order of magnitude and the
 overall result is really good.
+
+* track changes
+
+due to the db structure, =[ref k v]= each change in the =db= can be represented by a
+datom, e.g =[[:db/id 1] :+/:- :name "Ivan" 1646520008503]=. =:+= and =:-= means
+addition and deletion of the key respectively. swapping a value under a key is
+successively deleting and then adding a new value. theoretical duplication of
+representation may be needed for more complex queries.
+
+during each transaction the original document is compared with the modified
+document using =ribelo.doxa/-diff-entity= and for each difference it produces a
+=DoxaDBChange= type as above. such a collection shall be stored in the metadata
+under key =:ribelo.doxa/tx=. full transaction history is not stored, only the
+latest transaction.
+
+=materialised query= uses the parsed =:where= as a key under which the result is
+stored in the cache. in the case of =materialised pull=, the entire query is first
+converted into a sequence of =datoms=.
+
+after each transaction, if a cache exists, each key is matched with the changes
+made after the transaction. if match, the stored result is deleted from the
+cache. the comparison is made in the most pessimistic way and there is no
+possibility of false negatives, false positives are possible. this means that in
+the worst case the query will recalculate, but there will never be a case that
+despite changes in the DB you will get an old outdated result.
 
 * materialised views
 
