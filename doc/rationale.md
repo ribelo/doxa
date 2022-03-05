@@ -14,7 +14,7 @@ one of the biggest challenges when working on the front end is state management.
 
 the ideal solution seems to be `datascript`, but there have been several attempts to incorporate it into the `re-frame` ecosystem, eg. [posh](https://github.com/mpdairy/posh) and [re-posh](https://github.com/denistakeda/re-posh), and in my humble opinion, despite much desire and hard work, the transplant has failed. `datascript` seems to be too heavy for the frontend. biggest inconvenience is that `datascript` is built around its own data types. `re-frame` has a whole bunch of tools with [re-frame-10x](https://github.com/day8/re-frame-10x) that allow you to preview `app-db` in real time. `shadow-cljs` also offers `tap>` and there is no problem to spit out entire `app-db` and check each individual map, leaf and node.
 
-`doxa` is an attempt to create a `db` that can be treated as a simple `hashmap`, which makes it possible to use a whole set of Clojure functions on it, from `filter` to `transreducers`, but also using transactions similar to `datascript`, `datalog query` and `pull query`.
+`doxa` is an attempt to create a `db` that can be treated as a simple `hashmap`, which makes it possible to use a whole set of Clojure functions on it, from `filter` to `transducers`, but also using transactions similar to `datascript`, `datalog query` and `pull query`.
 
 
 <a id="org434d26f"></a>
@@ -51,7 +51,7 @@ references and back references are a own implementation of `ordered/set` based o
 
 no special `deftype` is used, but the implementation is based on `protocols`, which allows `doxa` to be used together with any `kv store`, like `redis`, `firestore` or `lmdb`.
 
-in the standard implementation `hasmap` is extended, and `doxa` keeps all the necessary stuff in the map `metadata`, including index, last transaction, cache etc.
+in the standard implementation `hashmap` is extended, and `doxa` keeps all the necessary stuff in the map `metadata`, including index, last transaction, cache etc.
 
 `doxa` has been optimised to work on relatively small amounts of data and if you mostly query the database using multiple joins, a probably better choice would be to use another db like `datascript` or `asami`, but IMHO the frontend is not the right place to crawl through a lot of data using super complex queries.
 
