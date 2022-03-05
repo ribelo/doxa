@@ -35,18 +35,6 @@
                            [:db/id 2] {:db/id 2 :name "Ivan"}}
                           1))))
 
-#_(t/deftest diff-entity
-  (t/is (= [[:- :a 1] [:+ :b 2]]
-           (mapv vec (u/-diff-entity {:a 1} {:b 2}))))
-  (t/is (= [[:- :a 1] [:+ :a 2]]
-           (mapv vec (u/-diff-entity {:a 1} {:a 2}))))
-  (t/is (= [[[:db/id 1] :- :a 1] [[:db/id 1] :+ :a 2]]
-           (u/-diff-entity [:db/id 1] {:a 1} {:a 2}))))
-
-#_(t/deftest diff-dbs
-  (t/is (= [[[:db/id 1] :+ :b 2] [[:db/id 1] :- :b 2]]
-           (dx/diff-dbs {[:db/id 1] {:a 1} [:db/id 2] {:b 2}} {[:db/id 1] {:a 1 :b 2}}))))
-
 (t/deftest merge-entity
   (t/is (= {[:db/id 1] {:db/id 1, :name "Ivan", :friend [:db/id 2]}, [:db/id 2] {:db/id 2, :name "Petr" :_friend [:db/id 1]}}
            (u/-merge-entity {[:db/id 1] {:db/id 1 :name "Ivan"}} {:db/id 1 :friend {:db/id 2 :name "Petr"}}))))
@@ -97,9 +85,9 @@
                (dx/commit db [[:dx/put [:db/id 1] {:name "David"}]])))
       (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Tupen"]}}
                (dx/commit db [[:dx/put [:db/id 1] :aka ["Tupen"]]])))
-      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil"], :friend #{[:db/id 2] [:db/id 3]}}
-                [:db/id 2] {:db/id 2, :name "Ivan" :_friend [:db/id 1]}
-                [:db/id 3] {:db/id 3, :name "Lucy" :_friend [:db/id 1]}}
+      (t/is (= {[:db/id 1] {:db/id 1, :name "Petr", :aka ["Devil"], :friend #{[:db/id 2] [:db/id 3]}},
+                [:db/id 2] {:db/id 2, :name "Ivan", :_friend [:db/id 1]},
+                [:db/id 3] {:db/id 3, :name "Lucy", :_friend [:db/id 1]}}
                (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Lucy"}]]])))
       (t/is (= {[:db/id 1] {:db/id 1 :a {:b 1, :c 2}}}
                (dx/commit {} [[:dx/put [:db/id 1] :a {:b 1 :c 2}]])))
@@ -404,7 +392,7 @@
                      [?f :name    ?fname]
                      [?e :name    "Ivan"]
                      [?e :friend ?friend]
-                     [(some #{?f} ?friend)]]
+                     [(contains? ?friend ?f)]]
                db)))
     (t/is (= #{[[:db/id 1]]}
              (dx/q '[:find ?e
@@ -418,7 +406,7 @@
                      :where
                      [?e :name    "Ivan"]
                      [?e :friend  ?fs]
-                     [(some #{?f} ?fs)]]
+                     [(contains? ?fs ?f)]]
                db [:db/id 3])))
     (t/is (= 1
              (count (dx/q '[:find ?e
