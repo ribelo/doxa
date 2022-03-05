@@ -10,45 +10,12 @@ being damn fast and lightweight.
 
 * rationale
 
-one of the biggest challenges when working on the front end is state management.
-[[https://github.com/day8/re-frame][re-frame]] was one of the first solutions to propose one central =app-db=, one source of
-truth. solution works great, but as the application grows, there is a problem
-with data denormalization and fatigue with multiple nested maps.
-
-the ideal solution seems to be =datascript=, but there have been several attempts
-to incorporate it into the =re-frame= ecosystem, eg. [[https://github.com/mpdairy/posh][posh]] and [[https://github.com/denistakeda/re-posh][re-posh]], and in my
-humble opinion, despite much desire and hard work, the transplant has failed.
-=datascript= seems to be too heavy for the frontend. biggest inconvenience is that
-=datascript= is built around its own data types. =re-frame= has a whole bunch of
-tools with [[https://github.com/day8/re-frame-10x][re-frame-10x]] that allow you to preview =app-db= in real time.
-=shadow-cljs= also offers =tap>= and there is no problem to spit out entire =app-db=
-and check each individual map, leaf and node.
-
-=doxa= is an attempt to create a =db= that can be treated as a simple =hashmap=, which
-makes it possible to use a whole set of Clojure functions on it, from =filter= to
-=transreducers=, but also using transactions similar to =datascript=, =datalog query=
-and =pull query=.
 
 * db structure
 :PROPERTIES:
 :ID:       b281c1be-a657-4a21-a828-99e929558302
 :END:
 
-#+begin_src clojure :results silent :exports code
-
-(require '[ribelo.doxa     :as dx])
-(require '[ribelo.doxa     :as dx])
-
-#+end_src
-
-=db= is a simple map with two levels of nesting
-
-#+begin_src clojure :results silent :exports code
-
-{[:person/id 1] {:person/id 1 :name "ivan" :age 18}
- [:person/id 2] {:person/id 2 :name "petr" :age 24 :friend [:person/id 1]}}
-
-#+end_src
 
 * usage examples
 

@@ -1163,8 +1163,6 @@
                        [?table ?e :name "ivan"]]
                      tables)))))))))
 
-(comment
-  (def conn_ (dx/connect! (dx/create-dx {} [] {::dx/cache (atom (dxc/doxa-cache))}))))
 
 ;; (t/deftest cached-query
 ;;   (let [conn_ (dx/connect! (dx/create-dx {} [] {::dx/cache (atom (dxc/doxa-cache))}))]
@@ -1196,6 +1194,9 @@
              (dx/commit (dx/create-dx)))]
     (t/is (= {:name "Enzo", :car {:name "Audi"}}
              (dx/pull db [:name {:car [:autombile/id :name]}] [:person/id "10"])))))
+;; => #'ribelo.doxa-test/gh-23
+;; => #'ribelo.doxa-test/gh-23
+;; => #'ribelo.doxa-test/gh-23
 
 (t/deftest gh-24 []
   (let [db1 (dxm/empty-db {:cache (dxc/doxa-cache)})
