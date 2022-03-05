@@ -1,23 +1,24 @@
-- [transactions](#orgaef344e)
-  - [adding data one transaction at a time](#orgd597f6c)
-  - [add all data in single transaction](#org26a50c2)
-- [query](#orgf7ec01c)
-  - [one condition](#org2f7d78c)
-  - [two conditions](#org77ba411)
-  - [three conditions](#org70d3fe7)
-  - [four conditions](#orgcf93b82)
-  - [one pred](#org3c31a5c)
-  - [two preds](#org9d43f14)
-  - [three preds](#org3aab5ef)
+- [transactions](#org07591a5)
+  - [adding data one transaction at a time](#orgb4f1ca8)
+  - [add all data in single transaction](#org5169aed)
+- [query](#org7edf225)
+  - [one condition](#org0c1c4e6)
+  - [two conditions](#org9acb09d)
+  - [three conditions](#orgd70bc04)
+  - [four conditions](#org8fce681)
+  - [one pred](#orgcf02878)
+  - [two preds](#org171ad4f)
+  - [three preds](#org4136aac)
+- [pull](#orgdf3589a)
 
 
 
-<a id="orgaef344e"></a>
+<a id="org07591a5"></a>
 
 # transactions
 
 
-<a id="orgd597f6c"></a>
+<a id="orgb4f1ca8"></a>
 
 ## adding data one transaction at a time
 
@@ -49,7 +50,7 @@
 ```
 
 
-<a id="org26a50c2"></a>
+<a id="org5169aed"></a>
 
 ## add all data in single transaction
 
@@ -76,7 +77,7 @@
 ```
 
 
-<a id="orgf7ec01c"></a>
+<a id="org7edf225"></a>
 
 # query
 
@@ -103,7 +104,7 @@
 ```
 
 
-<a id="org2f7d78c"></a>
+<a id="org0c1c4e6"></a>
 
 ## one condition
 
@@ -161,7 +162,7 @@
 ```
 
 
-<a id="org77ba411"></a>
+<a id="org9acb09d"></a>
 
 ## two conditions
 
@@ -226,7 +227,7 @@
 ```
 
 
-<a id="org70d3fe7"></a>
+<a id="orgd70bc04"></a>
 
 ## three conditions
 
@@ -288,7 +289,7 @@
 ```
 
 
-<a id="orgcf93b82"></a>
+<a id="org8fce681"></a>
 
 ## four conditions
 
@@ -354,7 +355,7 @@
 ```
 
 
-<a id="org3c31a5c"></a>
+<a id="orgcf02878"></a>
 
 ## one pred
 
@@ -416,7 +417,7 @@
 ```
 
 
-<a id="org9d43f14"></a>
+<a id="org171ad4f"></a>
 
 ## two preds
 
@@ -497,7 +498,7 @@
 ```
 
 
-<a id="org3aab5ef"></a>
+<a id="org4136aac"></a>
 
 ## three preds
 
@@ -585,4 +586,108 @@
 ;;     :doxa-with-table 142.62,
 ;;     :transduce 88.63}
 
+```
+
+
+<a id="orgdf3589a"></a>
+
+# pull
+
+```clojure
+(defn people
+  ([n] (people n 1))
+  ([n i]
+   (if (< i n)
+     {:db/id i
+      :name (rand-nth ["Ivan" "Petr" "Sergei" "Oleg" "Yuri" "Dmitry" "Fedor" "Denis"])
+      :friend (people n (inc i))}
+     {:db/id i
+      :name (rand-nth ["Ivan" "Petr" "Sergei" "Oleg" "Yuri" "Dmitry" "Fedor" "Denis"])})))
+
+(def data1k (people 1001))
+
+(def schema
+  {:friend {:db/valueType   :db.type/ref}})
+
+(def db1k
+  (d/db-with (d/empty-db schema) [data1k]))
+
+(def dx1k  (dx/create-dx {} [data1k]))
+(def mdx1k (dx/create-dx {} [data1k] {::dx/cache (atom (dxc/doxa-cache))}))
+
+```
+
+```clojure
+
+(defn make-query
+  ([n] [(make-query n 1)])
+  ([n i]
+   (if (< i n)
+     {:friend [(make-query n (inc i))]}
+     {:friend [:name]})))
+
+(make-query 3)
+;; => [{:friend [{:friend [{:friend [:name]}]}]}]
+
+(def q1   (make-query 1))
+(def q10  (make-query 10))
+(def q100 (make-query 100))
+(def q999 (make-query 999))
+
+(defn datascript-pull1 []
+  (ex/-qb 1e3 (d/pull db1k q1 1)))
+
+(defn dx-pull1 []
+  (ex/-qb 1e3 (dx/pull dx1k q1 [:db/id 1])))
+
+(defn dx-mpull1 []
+  (ex/-qb 1e3 (dx/mpull mdx1k q1 [:db/id 1])))
+
+(def ks [:datascript :doxa :materialised-doxa])
+(zipmap ks [(datascript-pull1) (dx-pull1) (dx-mpull1)])
+;; => {:datascript 6.16,
+;;     :doxa 2.2,
+;;     :materialised-doxa 1.62}
+
+(defn datascript-pull10 []
+  (ex/-qb 1e3 (d/pull db1k q10 1)))
+
+(defn dx-pull10 []
+  (ex/-qb 1e3 (dx/pull dx1k q10 [:db/id 1])))
+
+(defn dx-mpull10 []
+  (ex/-qb 1e3 (dx/mpull mdx1k q10 [:db/id 1])))
+
+(zipmap ks [(datascript-pull10) (dx-pull10) (dx-mpull10)])
+;; => {:datascript 7.82,
+;;     :doxa 6.51,
+;;     :materialised-doxa 3.18}
+
+(defn datascript-pull100 []
+  (ex/-qb 1e3 (d/pull db1k q100 1)))
+
+(defn dx-pull100 []
+  (ex/-qb 1e3 (dx/pull dx1k q100 [:db/id 1])))
+
+(defn dx-mpull100 []
+  (ex/-qb 1e3 (dx/mpull mdx1k q100 [:db/id 1])))
+
+(zipmap ks [(datascript-pull100) (dx-pull100) (dx-mpull100)])
+;; => {:datascript 68.56,
+;;     :doxa 56.78,
+;;     :materialised-doxa 18.04}
+
+(defn datascript-pull999 []
+  (ex/-qb 1e3 (d/pull db1k q999 1)))
+
+(defn dx-pull999 []
+  (ex/-qb 1e3 (dx/pull dx1k q999 [:db/id 1])))
+
+(defn dx-mpull999 []
+  (ex/-qb 1e3 (dx/mpull mdx1k q999 [:db/id 1])))
+
+(zipmap ks [#_(datascript-pull999) (dx-pull999) (dx-mpull999)])
+;; => {:datascript java.lang.StackOverflowError
+;;     :doxa 581.97,
+;;     :materialised-doxa 170.57}
 ```
