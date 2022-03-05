@@ -1,2 +1,7 @@
 {:cljdoc.doc/tree
- [["readme" {:file "readme.org"}]]}
+ [["readme" {:file "README.md"}]
+  ["rationale" {:file "doc/rationale.md"}]
+  ["creation" {:file "doc/creation.md"}]
+  ["transactions" {:file "doc/transactions.md"}]
+  ["datalog" {:file "doc/datalog.md"}]
+  ["benchmark" {:file "doc/benchmark.md"}]]}
