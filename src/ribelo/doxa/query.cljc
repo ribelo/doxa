@@ -169,15 +169,27 @@
             [me stack])
           [me (ex/-assoc stack v (ex/-get* m a))])))))
 
+(defn -apply [f xs]
+  (case (count xs)
+    0
+    (f)
+    1
+    (f (nth xs 1))
+    2
+    (f (nth xs 0) (nth xs 1))
+    3
+    (f (nth xs 0) (nth xs 1) (nth xs 2))
+    4
+    (f (nth xs 0) (nth xs 1) (nth xs 2) (nth xs 3))
+    (apply f xs)))
+
 ;; [(> ?age 15)]
 (defmethod -filterer :filter
   [[[f & args]]]
   (if-let [f (or (-resolve-fn f) (-query-fn f))]
-    (fn [[[_ref _m :as me] stack]]
+    (fn [[me stack]]
       (when stack
-        (when (apply f (mapv (fn [x] (if (seqable? x)
-                                          (into (empty x) (map (fn [y] (ex/-get* stack y y))) x)
-                                          (ex/-get* stack x x))) args))
+        (when (-apply f (mapv (fn [k] (if (u/-variable? k) (ex/-get* stack k) k)) args))
           [me stack])))
     (throw (ex-info "can't resolve function" {:f f}))))
 

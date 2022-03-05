@@ -10,11 +10,10 @@ with data denormalization and fatigue with multiple nested maps.
 the ideal solution seems to be =datascript=, but there have been several attempts
 to incorporate it into the =re-frame= ecosystem, eg. [[https://github.com/mpdairy/posh][posh]] and [[https://github.com/denistakeda/re-posh][re-posh]], and in my
 humble opinion, despite much desire and hard work, the transplant has failed.
-=datascript= seems to be too heavy for the frontend. biggest inconvenience is that
-=datascript= is built around its own data types. =re-frame= has a whole bunch of
-tools with [[https://github.com/day8/re-frame-10x][re-frame-10x]] that allow you to preview =app-db= in real time.
-=shadow-cljs= also offers =tap>= and there is no problem to spit out entire =app-db=
-and check each individual map, leaf and node.
+=datascript= seems to be too heavy for the frontend, especially for mobile. also
+big inconvenience is that =datascript= is built around its own data types.
+=re-frame= has a whole bunch of tools with [[https://github.com/day8/re-frame-10x][re-frame-10x]] that allow you to preview
+=app-db= in real time.
 
 =doxa= is an attempt to create a =db= that can be treated as a simple =hashmap=, which
 makes it possible to use a whole set of Clojure functions on it, from =filter= to
@@ -53,7 +52,6 @@ references and back references are a own implementation of =ordered/set= based o
 rewrite it. the use of =ordered/set= ensures distinct values, while preserving the
 order of insertion.
 
-
 * about implementation
 
 no special =deftype= is used, but the implementation is based on =protocols=, which
@@ -65,8 +63,7 @@ etc.
 
 =doxa= has been optimised to work on relatively small amounts of data and if you
 mostly query the database using multiple joins, a probably better choice would
-be to use another db like =datascript= or =asami=, but IMHO the frontend is not the
-right place to crawl through a lot of data using super complex queries.
+be to use another db like =datascript= or =asami=. test before you choose.
 
 =doxa= uses one index on =table-id=. i tested the use of multiple indexes, but such
 a =db= exists and is called =datascript= and =asami=. creating the same thing a second

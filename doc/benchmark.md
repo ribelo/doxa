@@ -1,0 +1,481 @@
+- [random data](#org28effe1)
+- [transactions](#orgbf6eab3)
+  - [adding data one transaction at a time](#orgb105e46)
+  - [add all data in single transaction](#orgc5b432b)
+- [query](#org0927000)
+  - [one condition](#orgef33896)
+  - [two conditions](#orga8adebd)
+  - [three conditions](#org9849d5d)
+  - [four conditions](#org904c0fa)
+  - [one pred](#org8f6d1de)
+  - [two preds](#org54bc2b8)
+  - [three preds](#org130a7c0)
+
+
+
+<a id="org28effe1"></a>
+
+# random data
+
+```clojure
+
+(require '[ribelo.extropy  :as  ex])
+(require '[datascript.core :as   d])
+(require '[ribelo.doxa     :as  dx])
+
+```
+
+```clojure
+
+(let [next-eid (volatile! 0)]
+
+  (defn random-man []
+    {:db/id     (vswap! next-eid inc)
+     :name      (rand-nth ["Ivan" "Petr" "Sergei" "Oleg" "Yuri" "Dmitry" "Fedor" "Denis"])
+     :last-name (rand-nth ["Ivanov" "Petrov" "Sidorov" "Kovalev" "Kuznetsov" "Voronoi"])
+     :alias     (vec (repeatedly (rand-int 10) #(rand-nth ["A. C. Q. W." "A. J. Finn" "A.A. Fair" "Aapeli" "Aaron Wolfe" "Abigail Van Buren" "Jeanne Phillips" "Abram Tertz" "Abu Nuwas" "Acton Bell" "Adunis"])))
+     :age       (rand-int 100)
+     :sex       (rand-nth [:male :female])
+     :salary    (rand-int 100000)
+     :friend    {:db/ref-id (rand-int 20000)}})
+
+  (defn random-fruit []
+    {:fruit/id  (vswap! next-eid inc)
+     :name      (rand-nth ["Avocado" "Grape" "Plum" "Apple" "Orange"])
+     :price     (rand-int 100)})
+
+  (defn random-vegetable []
+    {:vegetable/id (vswap! next-eid inc)
+     :name         (rand-nth ["Onion" "Cabbage" "Pea" "Tomatto" "Lettuce"])
+     :price        (rand-int 100)})
+
+  (defn random-car []
+    {:car/id    (vswap! next-eid inc)
+     :name      (rand-nth ["Audi" "Mercedes" "BMW" "Ford" "Honda" "Toyota"])
+     :price     (rand-int 100)})
+
+  (defn random-animal []
+    {:animal/id (vswap! next-eid inc)
+     :name      (rand-nth ["Otter" "Dog" "Panda" "Lynx" "Cat" "Lion"])
+     :price     (rand-int 100)})
+
+  (defn random-cat []
+    {:cat/id    (vswap! next-eid inc)
+     :name      (rand-nth ["Traditional Persian" "Ocicat" "Munchkin cat" "Persian cat" "Burmese cat"])
+     :price     (rand-int 100)})
+
+  (defn random-dog []
+    {:dog/id    (vswap! next-eid inc)
+     :name      (rand-nth ["Croatian Shepherd" "Deutch Langhaar" "Miniature Pincher" "Italian Sighthound" "Jack Russell Terrier"])
+     :price     (rand-int 100)})
+
+  (defn random-country []
+    {:country/id (vswap! next-eid inc)
+     :name       (rand-nth ["Seychelles" "Greenland" "Iceland" "Bahrain" "Bhutan"])
+     :price      (rand-int 100)})
+
+  (defn random-language []
+    {:language/id (vswap! next-eid inc)
+     :name        (rand-nth ["Malagasy" "Kashmiri" "Amharic" "Inuktitut" "Esperanto"])
+     :price       (rand-int 100)})
+
+  (defn random-marijuana-strain []
+    {:marijuana/id (vswap! next-eid inc)
+     :name         (rand-nth ["Lemonder" "Black-Mamba" "Blueberry-Space-Cake" "Strawberry-Amnesia"])
+     :price        (rand-int 100)})
+
+  (defn random-planet []
+    {:planet/id (vswap! next-eid inc)
+     :name      (rand-nth ["Pluto" "Saturn" "Venus" "Mars" "Jupyter"])
+     :price     (rand-int 100)}))
+
+(def people           (repeatedly random-man))
+(def fruit            (repeatedly random-fruit))
+(def vegetable        (repeatedly random-vegetable))
+(def car              (repeatedly random-car))
+(def animal           (repeatedly random-animal))
+(def cat              (repeatedly random-cat))
+(def dog              (repeatedly random-dog))
+(def country          (repeatedly random-country))
+(def language         (repeatedly random-language))
+(def marijuana-strain (repeatedly random-marijuana-strain))
+(def planet           (repeatedly random-planet))
+
+(def people50k           (shuffle (take 50000 people)))
+
+(def fruit10k            (shuffle (take 10000 fruit)))
+(def vegetable10k        (shuffle (take 10000 vegetable)))
+(def car10k              (shuffle (take 10000 car)))
+(def animal10k           (shuffle (take 10000 animal)))
+(def cat10k              (shuffle (take 10000 cat)))
+(def dog10k              (shuffle (take 10000 dog)))
+(def country10k          (shuffle (take 10000 country)))
+(def language10k         (shuffle (take 10000 language)))
+(def marijuana-strain10k (shuffle (take 10000 marijuana-strain)))
+(def planet10k           (shuffle (take 10000 planet)))
+
+(def data100k (ex/-into-all []
+                            fruit10k vegetable10k car10k animal10k cat10k dog10k
+                            country10k language10k marijuana-strain10k planet10k))
+
+(def schema
+  {:friend {:db/valueType   :db.type/ref
+            :db/cardinality :db.cardinality/many}
+   :alias   {:db/cardinality :db.cardinality/many}})
+
+```
+
+
+<a id="orgbf6eab3"></a>
+
+# transactions
+
+
+<a id="orgb105e46"></a>
+
+## adding data one transaction at a time
+
+```clojure
+
+(defn datascript-add-1 [data]
+  (ex/-qb 1
+    (reduce
+     (fn [db p]
+       (-> db
+           (d/db-with [[:db/add (:db/id p) :name      (:name p)]])
+           (d/db-with [[:db/add (:db/id p) :last-name (:last-name p)]])
+           (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
+           (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
+     (d/empty-db schema)
+     data)))
+
+(defn doxa-add-1 [data]
+  (ex/-qb 1
+    (reduce
+     (fn [db p]
+       (dx/commit db [[:dx/put p]]))
+     {}
+     data)))
+
+;; result in ms
+[(datascript-add-1 people50k) (doxa-add-1 people50k)]
+;; => [1020.39 334.32]
+```
+
+
+<a id="orgc5b432b"></a>
+
+## add all data in single transaction
+
+```clojure
+
+(defn datascript-add-all []
+  (ex/-qb 1
+    (d/db-with (d/empty-db schema) people50k)))
+
+(defn doxa-add-all []
+  (ex/-qb 1
+    (->> (into []
+               (map (fn [p] [:dx/put p]))
+               people50k)
+         (dx/commit {}))))
+
+(defn doxa-add-all []
+  (ex/-qb 1
+    (dx/commit {} [:dx/put people50k])))
+
+[(datascript-add-all) (doxa-add-all)]
+;; => [2817.18 274.18]
+
+```
+
+
+<a id="org0927000"></a>
+
+# query
+
+```clojure
+
+(def ds50k
+  (d/db-with (d/empty-db)
+             (mapv
+              (fn [m]
+                (reduce-kv
+                 (fn [acc k v]
+                   (if (= :id (name k))
+                     (assoc acc :db/id v)
+                     (assoc acc k v)))
+                 {}
+                 m))
+              people50k)))
+
+(def dx50k (dx/create-dx {} people50k))
+
+
+```
+
+
+<a id="orgef33896"></a>
+
+## one condition
+
+```clojure
+
+(defn datascript-q1 []
+  (ex/-qb 1e1
+    (d/q '[:find ?e
+           :where [?e :name "Ivan"]]
+      db50k)))
+
+(defn dx-q1 []
+  (ex/-qb 1e1
+    (dx/q '[:find  ?e
+            :where [?e :name "Ivan"]]
+      dx50k)))
+
+(defn transduce-q1 []
+  (ex/-qb 1e1
+    (into []
+      (comp
+        (filter (fn [m] (= "Ivan" (m :name))))
+        (map :db/id))
+      (vals dx50k))))
+
+[(datascript-q1) (dx-q1) (transduce-q1)]
+;; => [43.81 109.9 68.02]
+
+```
+
+
+<a id="orga8adebd"></a>
+
+## two conditions
+
+```clojure
+
+(defn datascript-q2 []
+  (ex/-qb 1e1
+    (d/q '[:find ?e ?age
+           :where
+           [?e :name "Ivan"]
+           [?e :age ?age]]
+      ds50k)))
+
+(defn dx-q2 []
+  (ex/-qb 1e1
+    (dx/q '[:find ?e ?age
+           :where
+           [?e :name "Ivan"]
+           [?e :age ?age]]
+      dx50k)))
+
+(defn transduce-q2 []
+  (ex/-qb 1e1
+    (into []
+      (comp
+        (filter (fn [m] (= "Ivan" (m :name))))
+        (map (juxt :db/id :age)))
+      (vals dx50k))))
+
+[(datascript-q2) (dx-q2) (transduce-q2)]
+;; => [107.59 121.89 62.16]
+
+```
+
+
+<a id="org9849d5d"></a>
+
+## three conditions
+
+```clojure
+
+(defn datascript-q3 []
+  (ex/-qb 1e1
+    (d/q '[:find ?e ?age
+           :where
+           [?e :name "Ivan"]
+           [?e :age ?age]
+           [?e :sex :male]]
+      ds50k)))
+
+(defn dx-q3 []
+  (ex/-qb 1e1
+    (dx/q '[:find ?e ?age
+            :where
+            [?e :name "Ivan"]
+            [?e :age ?age]
+            [?e :sex :male]]
+      dx50k)))
+
+(defn transduce-q3 []
+  (ex/-qb 1e1
+    (into []
+      (comp
+        (filter (fn [m] (and (= "Ivan" (m :name))
+                            (= :male (m :sex)))))
+        (map (juxt :db/id :age)))
+      (vals dx50k))))
+
+[(datascript-q3) (dx-q3) (transduce-q3)]
+;; => [157.78 112.95 61.66]
+
+```
+
+
+<a id="org904c0fa"></a>
+
+## four conditions
+
+```clojure
+
+(defn datascript-q4 []
+  (ex/-qb 1e1
+    (d/q '[:find ?e ?l ?age
+           :where
+           [?e :name "Ivan"]
+           [?e :last-name ?l]
+           [?e :age ?age]
+           [?e :sex :male]]
+      ds50k)))
+
+(defn dx-q4 []
+  (ex/-qb 1e1
+    (dx/q '[:find ?e ? ?age
+            :where
+            [?e :name "Ivan"]
+            [?e :last-name ?l]
+            [?e :age ?age]
+            [?e :sex :male]]
+      dx50k)))
+
+(defn transduce-q4 []
+  (ex/-qb 1e1
+    (into []
+      (comp
+        (filter (fn [m] (and (= "Ivan" (m :name))
+                            (= :male (m :sex)))))
+        (map (juxt :db/id :last-name :age)))
+      (vals dx50k))))
+
+[(datascript-q4) (dx-q4) (transduce-q4)]
+;; => [234.65 126.54 60.74]
+
+```
+
+
+<a id="org8f6d1de"></a>
+
+## one pred
+
+```clojure
+
+(defn datascript-pred1 []
+  (ex/-qb 1e1
+    (d/q '[:find ?e ?s
+           :where [?e :salary ?s]
+           [(> ?s 50000)]]
+      ds50k)))
+
+(defn dx-pred1 []
+  (ex/-qb 1e1
+    (dx/q '[:find ?e ?s
+           :where [?e :salary ?s]
+           [(> ?s 50000)]]
+      dx50k)))
+
+(defn transduce-pred1 []
+  (ex/-qb 1e1
+    (into []
+      (comp
+        (filter (fn [m] (> (m :salary) 50000)))
+        (map (juxt :db/id :salary)))
+      (vals dx50k))))
+
+[(datascript-pred1) (dx-pred1) (transduce-pred1)]
+;; => [234.99 450.17 127.55]
+
+```
+
+
+<a id="org54bc2b8"></a>
+
+## two preds
+
+```clojure
+
+(defn datascript-pred2 []
+  (ex/-qb 1e1
+    (d/q '[:find ?e ?s ?a
+           :where
+           [?e :salary ?s]
+           [(> ?s 50000)]
+           [?e :age ?a]
+           [(> ?a 18)]]
+      ds50k)))
+
+(defn dx-pred2 []
+  (ex/-qb 1e1
+    (dx/q '[:find ?e ?s ?a
+           :where
+           [?e :salary ?s]
+           [(> ?s 50000)]
+           [?e :age ?a]
+           [(> ?a 18)]]
+      dx50k)))
+
+(defn transduce-pred2 []
+  (ex/-qb 1e1
+    (into []
+      (comp
+        (filter (fn [m] (and (> (m :salary) 50000)
+                            (> (m :age) 18))))
+        (map (juxt :db/id :salary)))
+      (vals dx50k))))
+
+[(datascript-pred2) (dx-pred2) (transduce-pred2)]
+;; => [511.99 538.86 125.76]
+
+```
+
+
+<a id="org130a7c0"></a>
+
+## three preds
+
+```clojure
+
+(defn datascript-pred3 []
+  (ex/-qb 1e1
+    (d/q '[:find ?e ?s ?a
+            :where
+            [?e :salary ?s]
+            [(> ?s 50000)]
+            [(< ?s 60000)]
+            [?e :age ?a]
+            [(> ?a 18)]]
+      ds50k)))
+
+(defn dx-pred3 []
+  (ex/-qb 1e1
+    (dx/q '[:find ?e ?s ?a
+            :where
+            [?e :salary ?s]
+            [(> ?s 50000)]
+            [(< ?s 60000)]
+            [?e :age ?a]
+            [(> ?a 18)]]
+      dx50k)))
+
+(defn transduce-pred3 []
+  (ex/-qb 1e1
+    (into []
+      (comp
+        (filter (fn [m] (and (> (m :salary) 50000)
+                            (< (m :salary) 60000)
+                            (> (m :age) 18))))
+        (map (juxt :db/id :salary)))
+      (vals dx50k))))
+
+[(datascript-pred3) (dx-pred3) (transduce-pred3)]
+;; => [318.0 418.57 115.3]
+```
