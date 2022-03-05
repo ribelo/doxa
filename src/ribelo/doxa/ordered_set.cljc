@@ -58,6 +58,8 @@
        (reduce f v (ex/-remove (partial identical? ex/-sentinel) xs)))
 
      clojure.lang.IPersistentSet
+     (contains [_ k]
+       (boolean (.valAt m k)))
      (disjoin [this v]
        (if-let [i (.valAt m v)]
          (OrderedSet. meta (dissoc m v) (.assoc xs i ex/-sentinel))
