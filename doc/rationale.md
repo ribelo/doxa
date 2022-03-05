@@ -1,5 +1,74 @@
+- [rationale](#org3b3e470)
+- [db structure](#org434d26f)
+- [about implementation](#orgdbe26d6)
+- [materialised views](#orgf61b7b9)
+- [lazy views](#org9dfe151)
+
+
+
+<a id="org3b3e470"></a>
+
+# rationale
+
 one of the biggest challenges when working on the front end is state management. [re-frame](https://github.com/day8/re-frame) was one of the first solutions to propose one central `app-db`, one source of truth. solution works great, but as the application grows, there is a problem with data denormalization and fatigue with multiple nested maps.
 
 the ideal solution seems to be `datascript`, but there have been several attempts to incorporate it into the `re-frame` ecosystem, eg. [posh](https://github.com/mpdairy/posh) and [re-posh](https://github.com/denistakeda/re-posh), and in my humble opinion, despite much desire and hard work, the transplant has failed. `datascript` seems to be too heavy for the frontend. biggest inconvenience is that `datascript` is built around its own data types. `re-frame` has a whole bunch of tools with [re-frame-10x](https://github.com/day8/re-frame-10x) that allow you to preview `app-db` in real time. `shadow-cljs` also offers `tap>` and there is no problem to spit out entire `app-db` and check each individual map, leaf and node.
 
 `doxa` is an attempt to create a `db` that can be treated as a simple `hashmap`, which makes it possible to use a whole set of Clojure functions on it, from `filter` to `transreducers`, but also using transactions similar to `datascript`, `datalog query` and `pull query`.
+
+
+<a id="org434d26f"></a>
+
+# db structure
+
+`db` is a simple map with two levels of nesting.
+
+```clojure
+
+{[?table-id ?entity-id :as ref] {?key ?value}}
+
+```
+
+example
+
+```clojure
+
+{[:person/id 1] {:person/id 1 :name "ivan" :age 18 :_friend #{[:person/id 2]}}
+ [:person/id 2] {:person/id 2 :name "petr" :age 24 :friend #{[:person/id 1]}}}
+
+```
+
+reference, is always a two-element vector. table-id must be a keyword where `(name ?k)` returns `id`, i.e `db/id`, `people/id`, etc. in the case of several keys that satisfy a condition, the behaviour will be unpredictable.
+
+entity-id can by any value, which allows a great flexibility, and importantly is descriptive, e.g `[:country/id :andora]`, `[:people/id [:marketing "zbyszek.nowak@gmail.com"]]`.
+
+references and back references are a own implementation of `ordered/set` based on [flatland/ordered](https://github.com/clj-commons/ordered/tree/master/src/flatland/ordered). unfortunately `flatland` it doesn&rsquo;t support `cljs`, so i decided to rewrite it. the use of `ordered/set` ensures distinct values, while preserving the order of insertion.
+
+
+<a id="orgdbe26d6"></a>
+
+# about implementation
+
+no special `deftype` is used, but the implementation is based on `protocols`, which allows `doxa` to be used together with any `kv store`, like `redis`, `firestore` or `lmdb`.
+
+in the standard implementation `hasmap` is extended, and `doxa` keeps all the necessary stuff in the map `metadata`, including index, last transaction, cache etc.
+
+`doxa` has been optimised to work on relatively small amounts of data and if you mostly query the database using multiple joins, a probably better choice would be to use another db like `datascript` or `asami`, but IMHO the frontend is not the right place to crawl through a lot of data using super complex queries.
+
+`doxa` uses one index on `table-id`. i tested the use of multiple indexes, but such a `db` exists and is called `datascript` and `asami`. creating the same thing a second time, only worse, is pointless. one index affects the `datalog` query where the search uses simple bruteforce however, all loops are as tight as possible and `clojure/script` `protocols` or `java` `interfaces` are used directly. for most queries excluding this with multiple joins, `doxa` is the fastest available db for `clojurescript`. nevertheless, this single index allows to reduce the amount of data searched, which can speed up queries by an order of magnitude and the overall result is really good.
+
+
+<a id="orgf61b7b9"></a>
+
+# materialised views
+
+in addition, `doxa` has the ability to cache both `pull` and `q` results. each transaction is broken down into a sequence of datoms which are compared with the stored queries in the cache and if they match, the result is deleted. this results in a recalculation of only those queries whose result will be changed. clearing the cache during a transaction rather than before a search makes returning materialised results as fast as picking from a map.
+
+the cache implementation uses a protocols, and the functions are standard hit & miss. i did not use `clojure/cache` because there is no `cljs` version. instead, the implementation available in [ptaoussanis/encore](https://github.com/ptaoussanis/encore/blob/master/src/taoensso/encore.cljc) was adopted, and supports either `ttl`, `cache-size` and `gc`. [peter](https://github.com/ptaoussanis) is a king and his contribution to `clojure` is invaluable.
+
+
+<a id="org9dfe151"></a>
+
+# lazy views
+
+`doxa` has the ability to return a lazy document as well as a lazy query result. this is especially useful for implementations that retrieve data from an external source, e.g. `lmdb`. `reify` is returned, which has all the basic `map` protocols implemented, allowing the retrieval of data to be delayed until needed. lazy view can also be denormalised, thats allowing you to move along the edges of a graph using, for example, [portal](https://github.com/djblue/portal). cyclic graphs do not cause buffer overflow despite denormalisation.
