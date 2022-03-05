@@ -1,23 +1,24 @@
-- [rationale](#org3b3e470)
-- [db structure](#org434d26f)
-- [about implementation](#orgdbe26d6)
-- [materialised views](#orgf61b7b9)
-- [lazy views](#org9dfe151)
+- [rationale](#org90bb9f9)
+- [db structure](#org6d5394e)
+- [about implementation](#org3be37e7)
+- [track changes](#orgb50a8b7)
+- [materialised views](#org1791c37)
+- [lazy views](#orgf53885d)
 
 
 
-<a id="org3b3e470"></a>
+<a id="org90bb9f9"></a>
 
 # rationale
 
 one of the biggest challenges when working on the front end is state management. [re-frame](https://github.com/day8/re-frame) was one of the first solutions to propose one central `app-db`, one source of truth. solution works great, but as the application grows, there is a problem with data denormalization and fatigue with multiple nested maps.
 
-the ideal solution seems to be `datascript`, but there have been several attempts to incorporate it into the `re-frame` ecosystem, eg. [posh](https://github.com/mpdairy/posh) and [re-posh](https://github.com/denistakeda/re-posh), and in my humble opinion, despite much desire and hard work, the transplant has failed. `datascript` seems to be too heavy for the frontend. biggest inconvenience is that `datascript` is built around its own data types. `re-frame` has a whole bunch of tools with [re-frame-10x](https://github.com/day8/re-frame-10x) that allow you to preview `app-db` in real time. `shadow-cljs` also offers `tap>` and there is no problem to spit out entire `app-db` and check each individual map, leaf and node.
+the ideal solution seems to be `datascript`, but there have been several attempts to incorporate it into the `re-frame` ecosystem, eg. [posh](https://github.com/mpdairy/posh) and [re-posh](https://github.com/denistakeda/re-posh), and in my humble opinion, despite much desire and hard work, the transplant has failed. `datascript` seems to be too heavy for the frontend, especially for mobile. also big inconvenience is that `datascript` is built around its own data types. `re-frame` has a whole bunch of tools with [re-frame-10x](https://github.com/day8/re-frame-10x) that allow you to preview `app-db` in real time.
 
-`doxa` is an attempt to create a `db` that can be treated as a simple `hashmap`, which makes it possible to use a whole set of Clojure functions on it, from `filter` to `transducers`, but also using transactions similar to `datascript`, `datalog query` and `pull query`.
+`doxa` is an attempt to create a `db` that can be treated as a simple `hashmap`, which makes it possible to use a whole set of Clojure functions on it, from `filter` to `transreducers`, but also using transactions similar to `datascript`, `datalog query` and `pull query`.
 
 
-<a id="org434d26f"></a>
+<a id="org6d5394e"></a>
 
 # db structure
 
@@ -45,7 +46,7 @@ entity-id can by any value, which allows a great flexibility, and importantly is
 references and back references are a own implementation of `ordered/set` based on [flatland/ordered](https://github.com/clj-commons/ordered/tree/master/src/flatland/ordered). unfortunately `flatland` it doesn&rsquo;t support `cljs`, so i decided to rewrite it. the use of `ordered/set` ensures distinct values, while preserving the order of insertion.
 
 
-<a id="orgdbe26d6"></a>
+<a id="org3be37e7"></a>
 
 # about implementation
 
@@ -53,12 +54,25 @@ no special `deftype` is used, but the implementation is based on `protocols`, wh
 
 in the standard implementation `hashmap` is extended, and `doxa` keeps all the necessary stuff in the map `metadata`, including index, last transaction, cache etc.
 
-`doxa` has been optimised to work on relatively small amounts of data and if you mostly query the database using multiple joins, a probably better choice would be to use another db like `datascript` or `asami`, but IMHO the frontend is not the right place to crawl through a lot of data using super complex queries.
+`doxa` has been optimised to work on relatively small amounts of data and if you mostly query the database using multiple joins, a probably better choice would be to use another db like `datascript` or `asami`. test before you choose.
 
 `doxa` uses one index on `table-id`. i tested the use of multiple indexes, but such a `db` exists and is called `datascript` and `asami`. creating the same thing a second time, only worse, is pointless. one index affects the `datalog` query where the search uses simple bruteforce however, all loops are as tight as possible and `clojure/script` `protocols` or `java` `interfaces` are used directly. for most queries excluding this with multiple joins, `doxa` is the fastest available db for `clojurescript`. nevertheless, this single index allows to reduce the amount of data searched, which can speed up queries by an order of magnitude and the overall result is really good.
 
 
-<a id="orgf61b7b9"></a>
+<a id="orgb50a8b7"></a>
+
+# track changes
+
+due to the db structure, `[ref k v]` each change in the `db` can be represented by a datom, e.g `[[:db/id 1] :+/:- :name "Ivan" 1646520008503]`. `:+` and `:-` means addition and deletion of the key respectively. swapping a value under a key is successively deleting and then adding a new value. theoretical duplication of representation may be needed for more complex queries.
+
+during each transaction the original document is compared with the modified document using `ribelo.doxa/-diff-entity` and for each difference it produces a `DoxaDBChange` type as above. such a collection shall be stored in the metadata under key `:ribelo.doxa/tx`. full transaction history is not stored, only the latest transaction.
+
+`materialised query` uses the parsed `:where` as a key under which the result is stored in the cache. in the case of `materialised pull`, the entire query is first converted into a sequence of `datoms`.
+
+after each transaction, if a cache exists, each key is matched with the changes made after the transaction. if match, the stored result is deleted from the cache. the comparison is made in the most pessimistic way and there is no possibility of false negatives, false positives are possible. this means that in the worst case the query will recalculate, but there will never be a case that despite changes in the DB you will get an old outdated result.
+
+
+<a id="org1791c37"></a>
 
 # materialised views
 
@@ -67,7 +81,7 @@ in addition, `doxa` has the ability to cache both `pull` and `q` results. each t
 the cache implementation uses a protocols, and the functions are standard hit & miss. i did not use `clojure/cache` because there is no `cljs` version. instead, the implementation available in [ptaoussanis/encore](https://github.com/ptaoussanis/encore/blob/master/src/taoensso/encore.cljc) was adopted, and supports either `ttl`, `cache-size` and `gc`. [peter](https://github.com/ptaoussanis) is a king and his contribution to `clojure` is invaluable.
 
 
-<a id="org9dfe151"></a>
+<a id="orgf53885d"></a>
 
 # lazy views
 

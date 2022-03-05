@@ -25,7 +25,7 @@
   <scm>
     <connection>scm:git:git://github.com/ribelo/doxa.git</connection>
     <developerConnection>scm:git:ssh://git@github.com/ribelo/doxa.git</developerConnection>
-    <tag>026c63288149c5c6bd760ee21a0850808a9a4ef5</tag>
+    <tag>d07971d3fe73b9e9dac40036da7bf52e1444b60f</tag>
     <url>https://github.com/ribelo/doxa</url>
   </scm>
 </project>
