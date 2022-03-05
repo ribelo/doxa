@@ -89,9 +89,9 @@ document using =ribelo.doxa/-diff-entity= and for each difference it produces a
 under key =:ribelo.doxa/tx=. full transaction history is not stored, only the
 latest transaction.
 
-=materialised query= uses the parsed =:where= as a key under which the result is
-stored in the cache. in the case of =materialised pull=, the entire query is first
-converted into a sequence of =datoms=.
+=materialised q query= uses the parsed =:where= as a key under which the result is
+stored in the cache. in the case of =materialised pull=, the entire =query= is first
+converted into a sequence of =datoms=, which takes time.
 
 after each transaction, if a cache exists, each key is matched with the changes
 made after the transaction. if match, the stored result is deleted from the
@@ -99,6 +99,11 @@ cache. the comparison is made in the most pessimistic way and there is no
 possibility of false negatives, false positives are possible. this means that in
 the worst case the query will recalculate, but there will never be a case that
 despite changes in the DB you will get an old outdated result.
+
+at the moment it is not possible to use =materialised pull= inside =q= or
+=materialised q=, but this can be achieved by combining both functions.
+
+the use of =pull= inside =materialised q= query can lead to false negative results.
 
 * materialised views
 
