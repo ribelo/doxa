@@ -141,20 +141,22 @@
               (walk/postwalk (fn [x] (if (satisfies? IDeref x) @x x)) @cache_))))
        @cache_))))
 
-(defn- -pull->datalog
-  ([query id] (persistent! (-pull->datalog (transient []) id query)))
-  ([acc id query]
-   (ex/-loop [q query :let [acc acc]]
-     (cond
-       (map-entry? q)
-       (recur (-pull->datalog (conj! acc [id (ex/-k* q) '_]) id (ex/-v* q)))
-       (vector? q)
-       (recur (ex/-mapv (partial -pull->datalog acc id) q))
-       (keyword? q)
-       (recur (conj! acc [id q '_]))
-       (map? q)
-       (recur (-pull->datalog acc '_ q)))
-     acc)))
+(def -pull->datalog
+  (ex/-memoize
+    (fn
+      ([query id] (persistent! (-pull->datalog (transient #{}) id query)))
+      ([acc id query]
+       (ex/-loop [q query :let [acc acc]]
+         (cond
+           (map-entry? q)
+           (recur (-pull->datalog (conj! acc [id (ex/-k* q) '_]) id (ex/-v* q)))
+           (vector? q)
+           (recur (ex/-mapv (partial -pull->datalog acc id) q))
+           (keyword? q)
+           (recur (conj! acc [id q '_]))
+           (map? q)
+           (recur (-pull->datalog acc '_ q)))
+         acc)))))
 
 (defn -mpull [db query parent]
   (let [k [query parent]
