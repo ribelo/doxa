@@ -1,24 +1,24 @@
-- [transactions](#org07591a5)
-  - [adding data one transaction at a time](#orgb4f1ca8)
-  - [add all data in single transaction](#org5169aed)
-- [query](#org7edf225)
-  - [one condition](#org0c1c4e6)
-  - [two conditions](#org9acb09d)
-  - [three conditions](#orgd70bc04)
-  - [four conditions](#org8fce681)
-  - [one pred](#orgcf02878)
-  - [two preds](#org171ad4f)
-  - [three preds](#org4136aac)
-- [pull](#orgdf3589a)
+- [transactions](#orgc22d62a)
+  - [adding data one transaction at a time](#org3895a8a)
+  - [add all data in single transaction](#orgdbe65dc)
+- [query](#orgf1ebf94)
+  - [one condition](#org01fdce0)
+  - [two conditions](#org6ce0378)
+  - [three conditions](#orgaa142dc)
+  - [four conditions](#org3533c62)
+  - [one pred](#org4d480aa)
+  - [two preds](#orgce64739)
+  - [three preds](#org92ec387)
+- [pull](#org084957d)
 
 
 
-<a id="org07591a5"></a>
+<a id="orgc22d62a"></a>
 
 # transactions
 
 
-<a id="orgb4f1ca8"></a>
+<a id="org3895a8a"></a>
 
 ## adding data one transaction at a time
 
@@ -50,7 +50,7 @@
 ```
 
 
-<a id="org5169aed"></a>
+<a id="orgdbe65dc"></a>
 
 ## add all data in single transaction
 
@@ -77,7 +77,7 @@
 ```
 
 
-<a id="org7edf225"></a>
+<a id="orgf1ebf94"></a>
 
 # query
 
@@ -104,7 +104,7 @@
 ```
 
 
-<a id="org0c1c4e6"></a>
+<a id="org01fdce0"></a>
 
 ## one condition
 
@@ -162,7 +162,7 @@
 ```
 
 
-<a id="org9acb09d"></a>
+<a id="org6ce0378"></a>
 
 ## two conditions
 
@@ -227,7 +227,7 @@
 ```
 
 
-<a id="orgd70bc04"></a>
+<a id="orgaa142dc"></a>
 
 ## three conditions
 
@@ -289,7 +289,7 @@
 ```
 
 
-<a id="org8fce681"></a>
+<a id="org3533c62"></a>
 
 ## four conditions
 
@@ -355,7 +355,7 @@
 ```
 
 
-<a id="orgcf02878"></a>
+<a id="org4d480aa"></a>
 
 ## one pred
 
@@ -417,7 +417,7 @@
 ```
 
 
-<a id="org171ad4f"></a>
+<a id="orgce64739"></a>
 
 ## two preds
 
@@ -498,7 +498,7 @@
 ```
 
 
-<a id="org4136aac"></a>
+<a id="org92ec387"></a>
 
 ## three preds
 
@@ -589,7 +589,7 @@
 ```
 
 
-<a id="orgdf3589a"></a>
+<a id="org084957d"></a>
 
 # pull
 
@@ -691,3 +691,5 @@
 ;;     :doxa 581.97,
 ;;     :materialised-doxa 170.57}
 ```
+
+why does the materialised pull time increase with the length of the query? because the query must be parsed and a collection of datoms must be created. parsing takes time.

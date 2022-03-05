@@ -709,3 +709,7 @@
 ;;     :doxa 581.97,
 ;;     :materialised-doxa 170.57}
 #+end_src
+
+why does the materialised pull time increase with the length of the query?
+because the query must be parsed and a collection of datoms must be created.
+parsing takes time.
