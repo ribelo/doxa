@@ -341,9 +341,7 @@
 
 (defn table [dx table]
   (if-let [xs (some-> dx p/-index (ex/-get table))]
-    (ex/-loop [ref xs :let [acc (transient {})]]
-      (recur (ex/-assoc!* acc ref (entity dx ref)))
-      (persistent! acc))
+    (ex/-select-keys dx xs)
     (empty dx)))
 
 ;; (defn- -filter [pred dx]
