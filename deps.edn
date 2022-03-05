@@ -1,6 +1,6 @@
 {:paths ["src" "resources"]
  :deps  {ribelo/extropy {:git/url "https://github.com/ribelo/extropy"
-                         :sha "dda3f11ebbc69eadf3b3e331b295dcbd29cf8938"}}
+                         :sha "cd83f431995eb3d5ac993ec125222aa6b7d99ab9"}}
  :aliases
  {:test  {:extra-paths ["test"]}
   :run-tests
