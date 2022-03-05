@@ -1,137 +1,23 @@
-- [random data](#org28effe1)
-- [transactions](#orgbf6eab3)
-  - [adding data one transaction at a time](#orgb105e46)
-  - [add all data in single transaction](#orgc5b432b)
-- [query](#org0927000)
-  - [one condition](#orgef33896)
-  - [two conditions](#orga8adebd)
-  - [three conditions](#org9849d5d)
-  - [four conditions](#org904c0fa)
-  - [one pred](#org8f6d1de)
-  - [two preds](#org54bc2b8)
-  - [three preds](#org130a7c0)
+- [transactions](#orgaef344e)
+  - [adding data one transaction at a time](#orgd597f6c)
+  - [add all data in single transaction](#org26a50c2)
+- [query](#orgf7ec01c)
+  - [one condition](#org2f7d78c)
+  - [two conditions](#org77ba411)
+  - [three conditions](#org70d3fe7)
+  - [four conditions](#orgcf93b82)
+  - [one pred](#org3c31a5c)
+  - [two preds](#org9d43f14)
+  - [three preds](#org3aab5ef)
 
 
 
-<a id="org28effe1"></a>
-
-# random data
-
-```clojure
-
-(require '[ribelo.extropy  :as  ex])
-(require '[datascript.core :as   d])
-(require '[ribelo.doxa     :as  dx])
-
-```
-
-```clojure
-
-(let [next-eid (volatile! 0)]
-
-  (defn random-man []
-    {:db/id     (vswap! next-eid inc)
-     :name      (rand-nth ["Ivan" "Petr" "Sergei" "Oleg" "Yuri" "Dmitry" "Fedor" "Denis"])
-     :last-name (rand-nth ["Ivanov" "Petrov" "Sidorov" "Kovalev" "Kuznetsov" "Voronoi"])
-     :alias     (vec (repeatedly (rand-int 10) #(rand-nth ["A. C. Q. W." "A. J. Finn" "A.A. Fair" "Aapeli" "Aaron Wolfe" "Abigail Van Buren" "Jeanne Phillips" "Abram Tertz" "Abu Nuwas" "Acton Bell" "Adunis"])))
-     :age       (rand-int 100)
-     :sex       (rand-nth [:male :female])
-     :salary    (rand-int 100000)
-     :friend    {:db/ref-id (rand-int 20000)}})
-
-  (defn random-fruit []
-    {:fruit/id  (vswap! next-eid inc)
-     :name      (rand-nth ["Avocado" "Grape" "Plum" "Apple" "Orange"])
-     :price     (rand-int 100)})
-
-  (defn random-vegetable []
-    {:vegetable/id (vswap! next-eid inc)
-     :name         (rand-nth ["Onion" "Cabbage" "Pea" "Tomatto" "Lettuce"])
-     :price        (rand-int 100)})
-
-  (defn random-car []
-    {:car/id    (vswap! next-eid inc)
-     :name      (rand-nth ["Audi" "Mercedes" "BMW" "Ford" "Honda" "Toyota"])
-     :price     (rand-int 100)})
-
-  (defn random-animal []
-    {:animal/id (vswap! next-eid inc)
-     :name      (rand-nth ["Otter" "Dog" "Panda" "Lynx" "Cat" "Lion"])
-     :price     (rand-int 100)})
-
-  (defn random-cat []
-    {:cat/id    (vswap! next-eid inc)
-     :name      (rand-nth ["Traditional Persian" "Ocicat" "Munchkin cat" "Persian cat" "Burmese cat"])
-     :price     (rand-int 100)})
-
-  (defn random-dog []
-    {:dog/id    (vswap! next-eid inc)
-     :name      (rand-nth ["Croatian Shepherd" "Deutch Langhaar" "Miniature Pincher" "Italian Sighthound" "Jack Russell Terrier"])
-     :price     (rand-int 100)})
-
-  (defn random-country []
-    {:country/id (vswap! next-eid inc)
-     :name       (rand-nth ["Seychelles" "Greenland" "Iceland" "Bahrain" "Bhutan"])
-     :price      (rand-int 100)})
-
-  (defn random-language []
-    {:language/id (vswap! next-eid inc)
-     :name        (rand-nth ["Malagasy" "Kashmiri" "Amharic" "Inuktitut" "Esperanto"])
-     :price       (rand-int 100)})
-
-  (defn random-marijuana-strain []
-    {:marijuana/id (vswap! next-eid inc)
-     :name         (rand-nth ["Lemonder" "Black-Mamba" "Blueberry-Space-Cake" "Strawberry-Amnesia"])
-     :price        (rand-int 100)})
-
-  (defn random-planet []
-    {:planet/id (vswap! next-eid inc)
-     :name      (rand-nth ["Pluto" "Saturn" "Venus" "Mars" "Jupyter"])
-     :price     (rand-int 100)}))
-
-(def people           (repeatedly random-man))
-(def fruit            (repeatedly random-fruit))
-(def vegetable        (repeatedly random-vegetable))
-(def car              (repeatedly random-car))
-(def animal           (repeatedly random-animal))
-(def cat              (repeatedly random-cat))
-(def dog              (repeatedly random-dog))
-(def country          (repeatedly random-country))
-(def language         (repeatedly random-language))
-(def marijuana-strain (repeatedly random-marijuana-strain))
-(def planet           (repeatedly random-planet))
-
-(def people50k           (shuffle (take 50000 people)))
-
-(def fruit10k            (shuffle (take 10000 fruit)))
-(def vegetable10k        (shuffle (take 10000 vegetable)))
-(def car10k              (shuffle (take 10000 car)))
-(def animal10k           (shuffle (take 10000 animal)))
-(def cat10k              (shuffle (take 10000 cat)))
-(def dog10k              (shuffle (take 10000 dog)))
-(def country10k          (shuffle (take 10000 country)))
-(def language10k         (shuffle (take 10000 language)))
-(def marijuana-strain10k (shuffle (take 10000 marijuana-strain)))
-(def planet10k           (shuffle (take 10000 planet)))
-
-(def data100k (ex/-into-all []
-                            fruit10k vegetable10k car10k animal10k cat10k dog10k
-                            country10k language10k marijuana-strain10k planet10k))
-
-(def schema
-  {:friend {:db/valueType   :db.type/ref
-            :db/cardinality :db.cardinality/many}
-   :alias   {:db/cardinality :db.cardinality/many}})
-
-```
-
-
-<a id="orgbf6eab3"></a>
+<a id="orgaef344e"></a>
 
 # transactions
 
 
-<a id="orgb105e46"></a>
+<a id="orgd597f6c"></a>
 
 ## adding data one transaction at a time
 
@@ -163,7 +49,7 @@
 ```
 
 
-<a id="orgc5b432b"></a>
+<a id="org26a50c2"></a>
 
 ## add all data in single transaction
 
@@ -190,32 +76,34 @@
 ```
 
 
-<a id="org0927000"></a>
+<a id="orgf7ec01c"></a>
 
 # query
 
 ```clojure
 
-(def ds50k
+(def ds100k
   (d/db-with (d/empty-db)
              (mapv
-              (fn [m]
-                (reduce-kv
-                 (fn [acc k v]
-                   (if (= :id (name k))
-                     (assoc acc :db/id v)
-                     (assoc acc k v)))
-                 {}
-                 m))
-              people50k)))
+               (fn [m]
+                 (reduce-kv
+                   (fn [acc k v]
+                     (if (= :id (name k))
+                       (assoc acc :db/id v)
+                       (assoc acc k v)))
+                   {}
+                   m))
+               data100k)))
 
-(def dx50k (dx/create-dx {} people50k))
+(def dx100k (dx/create-dx {} data100k))
 
+(require '[ribelo.doxa.cache :as dxc])
+(def mdx100k (dx/create-dx {} data100k {::dx/cache (atom (dxc/doxa-cache))}))
 
 ```
 
 
-<a id="orgef33896"></a>
+<a id="org2f7d78c"></a>
 
 ## one condition
 
@@ -224,30 +112,56 @@
 (defn datascript-q1 []
   (ex/-qb 1e1
     (d/q '[:find ?e
-           :where [?e :name "Ivan"]]
-      db50k)))
+           :where [?e :name "Apple"]]
+      ds100k)))
 
 (defn dx-q1 []
   (ex/-qb 1e1
     (dx/q '[:find  ?e
-            :where [?e :name "Ivan"]]
-      dx50k)))
+            :where [?e :name "Apple"]]
+      dx100k)))
+
+(defn dx-q1-table []
+  (ex/-qb 1e1
+    (dx/q '[:find  ?e
+            :where [?e :name "Apple"]]
+      (dx/table dx100k :fruit/id))))
+
+(defn dx-mq1 []
+  (ex/-qb 1e1
+    (dx/mq '[:find  ?e
+            :where [?e :name "Apple"]]
+      mdx100k)))
 
 (defn transduce-q1 []
   (ex/-qb 1e1
     (into []
       (comp
-        (filter (fn [m] (= "Ivan" (m :name))))
+        (filter (fn [m] (= "Apple" (m :name))))
         (map :db/id))
-      (vals dx50k))))
+      (vals dx100k))))
 
-[(datascript-q1) (dx-q1) (transduce-q1)]
-;; => [43.81 109.9 68.02]
+(defn transduce-q1-table []
+  (ex/-qb 1e1
+    (into []
+      (comp
+        (filter (fn [m] (= "Apple" (m :name))))
+        (map :db/id))
+      (vals (dx/table dx100k :fruit/id)))))
+
+(def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
+
+(zipmap ks [(datascript-q1) (dx-q1) (dx-mq1) (dx-q1-table) (transduce-q1)])
+;; => {:datascript 33.01,
+;;     :doxa 127.04,
+;;     :memoized-doxa 0.04,
+;;     :doxa-with-table 119.83,
+;;     :transduce 85.87}
 
 ```
 
 
-<a id="orga8adebd"></a>
+<a id="org77ba411"></a>
 
 ## two conditions
 
@@ -255,35 +169,64 @@
 
 (defn datascript-q2 []
   (ex/-qb 1e1
-    (d/q '[:find ?e ?age
+    (d/q '[:find ?e ?p
            :where
-           [?e :name "Ivan"]
-           [?e :age ?age]]
-      ds50k)))
+           [?e :name "Apple"]
+           [?e :price ?p]]
+      ds100k)))
 
 (defn dx-q2 []
   (ex/-qb 1e1
-    (dx/q '[:find ?e ?age
-           :where
-           [?e :name "Ivan"]
-           [?e :age ?age]]
-      dx50k)))
+    (dx/q '[:find ?e ?p
+            :where
+            [?e :name "Apple"]
+            [?e :price ?p]]
+      dx100k)))
+
+(defn dx-mq2 []
+  (ex/-qb 1e1
+    (dx/mq '[:find ?e ?p
+             :where
+             [?e :name "Apple"]
+             [?e :price ?p]]
+      mdx100k)))
+
+(defn dx-q2-table []
+  (ex/-qb 1e1
+    (dx/q '[:find ?e ?p
+            :where
+            [?e :name "Apple"]
+            [?e :price ?p]]
+      (dx/table dx100k :fruit/id))))
 
 (defn transduce-q2 []
   (ex/-qb 1e1
     (into []
       (comp
-        (filter (fn [m] (= "Ivan" (m :name))))
-        (map (juxt :db/id :age)))
-      (vals dx50k))))
+        (filter (fn [m] (= "Apple" (m :name))))
+        (map (juxt :fruit/id :price)))
+      (vals dx100k))))
 
-[(datascript-q2) (dx-q2) (transduce-q2)]
-;; => [107.59 121.89 62.16]
+(defn transduce-q2-table []
+  (ex/-qb 1e1
+    (into []
+      (comp
+        (filter (fn [m] (= "Apple" (m :name))))
+        (map (juxt :fruit/id :price)))
+      (vals (dx/table dx100k :fruit/id)))))
+
+(def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
+(zipmap ks [(datascript-q2) (dx-q2) (dx-mq2) (dx-q2-table) (transduce-q2)])
+;; => {:datascript 123.66,
+;;     :doxa 147.0,
+;;     :memoized-doxa 0.04,
+;;     :doxa-with-table 130.35,
+;;     :transduce 91.19}
 
 ```
 
 
-<a id="org9849d5d"></a>
+<a id="org70d3fe7"></a>
 
 ## three conditions
 
@@ -291,38 +234,61 @@
 
 (defn datascript-q3 []
   (ex/-qb 1e1
-    (d/q '[:find ?e ?age
+    (d/q '[:find ?e ?p
            :where
-           [?e :name "Ivan"]
-           [?e :age ?age]
-           [?e :sex :male]]
-      ds50k)))
+           [?e :name "Apple"]
+           [?e :price ?p]
+           [?e :weight 50]]
+      ds100k)))
 
 (defn dx-q3 []
   (ex/-qb 1e1
-    (dx/q '[:find ?e ?age
+    (dx/q '[:find ?e ?p
             :where
-            [?e :name "Ivan"]
-            [?e :age ?age]
-            [?e :sex :male]]
-      dx50k)))
+            [?e :name "Apple"]
+            [?e :price ?p]
+            [?e :weight 50]]
+      dx100k)))
+
+(defn dx-mq3 []
+  (ex/-qb 1e1
+    (dx/mq '[:find ?e ?p
+             :where
+             [?e :name "Apple"]
+             [?e :price ?p]
+             [?e :weight 50]]
+      mdx100k)))
+
+(defn dx-q3-table []
+  (ex/-qb 1e1
+    (dx/q '[:find ?e ?p
+            :where
+            [?e :name "Apple"]
+            [?e :price ?p]
+            [?e :weight 50]]
+      (dx/table dx100k :fruit/id))))
 
 (defn transduce-q3 []
   (ex/-qb 1e1
     (into []
       (comp
-        (filter (fn [m] (and (= "Ivan" (m :name))
-                            (= :male (m :sex)))))
-        (map (juxt :db/id :age)))
-      (vals dx50k))))
+        (filter (fn [m] (and (= "Apple" (m :name))
+                            (= 50 (m :weight)))))
+        (map (juxt :fruit/id :price)))
+      (vals dx100k))))
 
-[(datascript-q3) (dx-q3) (transduce-q3)]
-;; => [157.78 112.95 61.66]
+(def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
+(zipmap ks [(datascript-q3) (dx-q3) (dx-mq3) (dx-q3-table) (transduce-q3)])
+;; => {:datascript 159.36,
+;;     :doxa 146.08,
+;;     :memoized-doxa 0.04,
+;;     :doxa-with-table 111.84,
+;;     :transduce 88.09}
 
 ```
 
 
-<a id="org904c0fa"></a>
+<a id="orgcf93b82"></a>
 
 ## four conditions
 
@@ -330,152 +296,293 @@
 
 (defn datascript-q4 []
   (ex/-qb 1e1
-    (d/q '[:find ?e ?l ?age
+    (d/q '[:find ?e ?p
            :where
-           [?e :name "Ivan"]
-           [?e :last-name ?l]
-           [?e :age ?age]
-           [?e :sex :male]]
-      ds50k)))
+           [?e :name "Apple"]
+           [?e :price ?p]
+           [?e :weight 50]
+           [?e :size 50]]
+      ds100k)))
 
 (defn dx-q4 []
   (ex/-qb 1e1
-    (dx/q '[:find ?e ? ?age
+    (dx/q '[:find ?e ?p
             :where
-            [?e :name "Ivan"]
-            [?e :last-name ?l]
-            [?e :age ?age]
-            [?e :sex :male]]
-      dx50k)))
+            [?e :name "Apple"]
+            [?e :price ?p]
+            [?e :weight 50]
+            [?e :size 50]]
+      dx100k)))
+
+(defn dx-mq4 []
+  (ex/-qb 1e1
+    (dx/mq '[:find ?e ?p
+             :where
+             [?e :name "Apple"]
+             [?e :price ?p]
+             [?e :weight 50]
+             [?e :size 50]]
+      mdx100k)))
+
+(defn dx-q4-table []
+  (ex/-qb 1e1
+    (dx/q '[:find ?e ?p
+            :where
+            [?e :name "Apple"]
+            [?e :price ?p]
+            [?e :weight 50]]
+      (dx/table dx100k :fruit/id))))
 
 (defn transduce-q4 []
   (ex/-qb 1e1
     (into []
       (comp
-        (filter (fn [m] (and (= "Ivan" (m :name))
-                            (= :male (m :sex)))))
-        (map (juxt :db/id :last-name :age)))
-      (vals dx50k))))
+        (filter (fn [m] (and (= "Apple" (m :name))
+                            (= 50 (m :weight))
+                            (= 50 (m :size)))))
+        (map (juxt :fruit/id :price)))
+      (vals dx100k))))
 
-[(datascript-q4) (dx-q4) (transduce-q4)]
-;; => [234.65 126.54 60.74]
+(def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
+(zipmap ks [(datascript-q4) (dx-q4) (dx-mq4) (dx-q4-table) (transduce-q4)])
+;; => {:datascript 203.11,
+;;     :doxa 152.02,
+;;     :memoized-doxa 0.04,
+;;     :doxa-with-table 109.87,
+;;     :transduce 85.63}
 
 ```
 
 
-<a id="org8f6d1de"></a>
+<a id="org3c31a5c"></a>
 
 ## one pred
 
 ```clojure
 
-(defn datascript-pred1 []
+(defn datascript-qpred1 []
   (ex/-qb 1e1
-    (d/q '[:find ?e ?s
-           :where [?e :salary ?s]
-           [(> ?s 50000)]]
-      ds50k)))
+    (d/q '[:find ?e ?p
+           :where
+           [?e :name "Apple"]
+           [?e :price ?p]
+           [(> ?p 50)]]
+      ds100k)))
 
-(defn dx-pred1 []
+(defn dx-qpred1 []
   (ex/-qb 1e1
-    (dx/q '[:find ?e ?s
-           :where [?e :salary ?s]
-           [(> ?s 50000)]]
-      dx50k)))
+    (dx/q '[:find ?e ?p
+            :where
+            [?e :name "Apple"]
+            [?e :price ?p]
+            [(> ?p 50)]]
+      dx100k)))
 
-(defn transduce-pred1 []
+(defn dx-mqpred1 []
+  (ex/-qb 1e1
+    (dx/mq '[:find ?e ?p
+             :where
+             [?e :name "Apple"]
+             [?e :price ?p]
+             [(> ?p 50)]]
+      mdx100k)))
+
+(defn dx-qpred1-table []
+  (ex/-qb 1e1
+    (dx/q '[:find ?e ?p
+            :where
+            [?e :name "Apple"]
+            [?e :price ?p]
+            [?e :weight 50]]
+      (dx/table dx100k :fruit/id))))
+
+(defn transduce-qpred1 []
   (ex/-qb 1e1
     (into []
       (comp
-        (filter (fn [m] (> (m :salary) 50000)))
-        (map (juxt :db/id :salary)))
-      (vals dx50k))))
+        (filter (fn [m] (and (= "Apple" (m :name))
+                            (> (m :price) 50))))
+        (map (juxt :fruit/id :price)))
+      (vals dx100k))))
 
-[(datascript-pred1) (dx-pred1) (transduce-pred1)]
-;; => [234.99 450.17 127.55]
+(def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
+(zipmap ks [(datascript-qpred1) (dx-qpred1) (dx-mqpred1) (dx-qpred1-table) (transduce-qpred1)])
+;; => {:datascript 128.0,
+;;     :doxa 159.31,
+;;     :memoized-doxa 0.04,
+;;     :doxa-with-table 109.35,
+;;     :transduce 89.37}
 
 ```
 
 
-<a id="org54bc2b8"></a>
+<a id="org9d43f14"></a>
 
 ## two preds
 
 ```clojure
 
-(defn datascript-pred2 []
+(defn datascript-qpred2 []
   (ex/-qb 1e1
-    (d/q '[:find ?e ?s ?a
+    (d/q '[:find ?e ?p
            :where
-           [?e :salary ?s]
-           [(> ?s 50000)]
-           [?e :age ?a]
-           [(> ?a 18)]]
-      ds50k)))
+           [?e :name "Apple"]
+           [?e :price ?p]
+           [(> ?p 50)]
+           [?e :weight ?w]
+           [(> ?w 50)]]
+      ds100k)))
 
-(defn dx-pred2 []
+(defn dx-qpred2 []
   (ex/-qb 1e1
-    (dx/q '[:find ?e ?s ?a
-           :where
-           [?e :salary ?s]
-           [(> ?s 50000)]
-           [?e :age ?a]
-           [(> ?a 18)]]
-      dx50k)))
+    (dx/q '[:find ?e ?p
+            :where
+            [?e :name "Apple"]
+            [?e :price ?p]
+            [(> ?p 50)]
+            [?e :weight ?w]
+            [(> ?w 50)]]
+      dx100k)))
 
-(defn transduce-pred2 []
+(defn dx-mqpred2 []
+  (ex/-qb 1e1
+    (dx/mq '[:find ?e ?p
+             :where
+             [?e :name "Apple"]
+             [?e :price ?p]
+             [(> ?p 50)]
+             [?e :weight ?w]
+             [(> ?w 50)]]
+      mdx100k)))
+
+(defn dx-qpred2-table []
+  (ex/-qb 1e1
+    (dx/q '[:find ?e ?p
+            :where
+            [?e :name "Apple"]
+            [?e :price ?p]
+            [(> ?p 50)]
+            [?e :weight ?w]
+            [(> ?w 50)]]
+      (dx/table dx100k :fruit/id))))
+
+(defn transduce-qpred2 []
   (ex/-qb 1e1
     (into []
       (comp
-        (filter (fn [m] (and (> (m :salary) 50000)
-                            (> (m :age) 18))))
-        (map (juxt :db/id :salary)))
-      (vals dx50k))))
+        (filter (fn [m] (and (= "Apple" (m :name))
+                            (> (m :price) 50)
+                            (> (m :weight) 50))))
+        (map (juxt :fruit/id :price)))
+      (vals dx100k))))
 
-[(datascript-pred2) (dx-pred2) (transduce-pred2)]
-;; => [511.99 538.86 125.76]
+(defn transduce-qpred2-table []
+  (ex/-qb 1e1
+    (into []
+      (comp
+        (filter (fn [m] (and (= "Apple" (m :name))
+                            (> (m :price) 50)
+                            (> (m :weight) 50))))
+        (map (juxt :fruit/id :price)))
+      (vals (dx/table dx100k :fruit/id)))))
+
+(def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
+(zipmap ks [(datascript-qpred2) (dx-qpred2) (dx-mqpred2) (dx-qpred2-table) (transduce-qpred2)])
+;; => {:datascript 207.46,
+;;     :doxa 172.97,
+;;     :memoized-doxa 0.04,
+;;     :doxa-with-table 136.76,
+;;     :transduce 88.25}
 
 ```
 
 
-<a id="org130a7c0"></a>
+<a id="org3aab5ef"></a>
 
 ## three preds
 
 ```clojure
 
-(defn datascript-pred3 []
+(defn datascript-qpred3 []
   (ex/-qb 1e1
-    (d/q '[:find ?e ?s ?a
-            :where
-            [?e :salary ?s]
-            [(> ?s 50000)]
-            [(< ?s 60000)]
-            [?e :age ?a]
-            [(> ?a 18)]]
-      ds50k)))
+    (d/q '[:find ?e ?p
+           :where
+           [?e :name "Apple"]
+           [?e :price ?p]
+           [(> ?p 50)]
+           [?e :weight ?w]
+           [(> ?w 50)]
+           [?e :size ?s]
+           [(> ?s 50)]]
+      ds100k)))
 
-(defn dx-pred3 []
+(defn dx-qpred3 []
   (ex/-qb 1e1
-    (dx/q '[:find ?e ?s ?a
+    (dx/q '[:find ?e ?p
             :where
-            [?e :salary ?s]
-            [(> ?s 50000)]
-            [(< ?s 60000)]
-            [?e :age ?a]
-            [(> ?a 18)]]
-      dx50k)))
+            [?e :name "Apple"]
+            [?e :price ?p]
+            [(> ?p 50)]
+            [?e :weight ?w]
+            [(> ?w 50)]
+            [?e :size ?s]
+            [(> ?s 50)]]
+      dx100k)))
 
-(defn transduce-pred3 []
+(defn dx-mqpred3 []
+  (ex/-qb 1e1
+    (dx/mq '[:find ?e ?p
+             :where
+             [?e :name "Apple"]
+             [?e :price ?p]
+             [(> ?p 50)]
+             [?e :weight ?w]
+             [(> ?w 50)]
+             [?e :size ?s]
+             [(> ?s 50)]]
+      mdx100k)))
+
+(defn dx-qpred3-table []
+  (ex/-qb 1e1
+    (dx/q '[:find ?e ?p
+            :where
+            [?e :name "Apple"]
+            [?e :price ?p]
+            [(> ?p 50)]
+            [?e :weight ?w]
+            [(> ?w 50)]
+            [?e :size ?s]
+            [(> ?s 50)]]
+      (dx/table dx100k :fruit/id))))
+
+(defn transduce-qpred3 []
   (ex/-qb 1e1
     (into []
       (comp
-        (filter (fn [m] (and (> (m :salary) 50000)
-                            (< (m :salary) 60000)
-                            (> (m :age) 18))))
-        (map (juxt :db/id :salary)))
-      (vals dx50k))))
+        (filter (fn [m] (and (= "Apple" (m :name))
+                            (> (m :price) 50)
+                            (> (m :weight) 50)
+                            (> (m :size) 50))))
+        (map (juxt :fruit/id :price)))
+      (vals dx100k))))
 
-[(datascript-pred3) (dx-pred3) (transduce-pred3)]
-;; => [318.0 418.57 115.3]
+(defn transduce-qpred3-table []
+  (ex/-qb 1e1
+    (into []
+      (comp
+        (filter (fn [m] (and (= "Apple" (m :name))
+                            (> (m :price) 50)
+                            (> (m :weight) 50)
+                            (> (m :size) 50))))
+        (map (juxt :fruit/id :price)))
+      (vals (dx/table dx100k :fruit/id)))))
+
+(def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
+(zipmap ks [(datascript-qpred3) (dx-qpred3) (dx-mqpred3) (dx-qpred3-table) (transduce-qpred3)])
+;; => {:datascript 280.67,
+;;     :doxa 195.71,
+;;     :memoized-doxa 0.04,
+;;     :doxa-with-table 142.62,
+;;     :transduce 88.63}
+
 ```
