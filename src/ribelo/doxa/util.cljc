@@ -70,7 +70,7 @@
       (transient {})
       m)))
 
-(deftype DoxaDBChange [e kind a v udt])
+(defrecord DoxaDBChange [e kind a v udt])
 
 #?(:cljs
    (def tranit-write-handlers
