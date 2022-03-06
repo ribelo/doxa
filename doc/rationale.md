@@ -1,13 +1,13 @@
-- [rationale](#org90bb9f9)
-- [db structure](#org6d5394e)
-- [about implementation](#org3be37e7)
-- [track changes](#orgb50a8b7)
-- [materialised views](#org1791c37)
-- [lazy views](#orgf53885d)
+- [rationale](#org385edce)
+- [db structure](#org6946351)
+- [about implementation](#orgf24ef38)
+- [track changes](#org7807dfa)
+- [materialised views](#orge4bb9d9)
+- [lazy views](#org8852fb8)
 
 
 
-<a id="org90bb9f9"></a>
+<a id="org385edce"></a>
 
 # rationale
 
@@ -18,7 +18,7 @@ the ideal solution seems to be `datascript`, but there have been several attempt
 `doxa` is an attempt to create a `db` that can be treated as a simple `hashmap`, which makes it possible to use a whole set of Clojure functions on it, from `filter` to `transreducers`, but also using transactions similar to `datascript`, `datalog query` and `pull query`.
 
 
-<a id="org6d5394e"></a>
+<a id="org6946351"></a>
 
 # db structure
 
@@ -46,7 +46,7 @@ entity-id can by any value, which allows a great flexibility, and importantly is
 references and back references are a own implementation of `ordered/set` based on [flatland/ordered](https://github.com/clj-commons/ordered/tree/master/src/flatland/ordered). unfortunately `flatland` it doesn&rsquo;t support `cljs`, so i decided to rewrite it. the use of `ordered/set` ensures distinct values, while preserving the order of insertion.
 
 
-<a id="org3be37e7"></a>
+<a id="orgf24ef38"></a>
 
 # about implementation
 
@@ -59,7 +59,7 @@ in the standard implementation `hashmap` is extended, and `doxa` keeps all the n
 `doxa` uses one index on `table-id`. i tested the use of multiple indexes, but such a `db` exists and is called `datascript` and `asami`. creating the same thing a second time, only worse, is pointless. one index affects the `datalog` query where the search uses simple bruteforce however, all loops are as tight as possible and `clojure/script` `protocols` or `java` `interfaces` are used directly. for most queries excluding this with multiple joins, `doxa` is the fastest available db for `clojurescript`. nevertheless, this single index allows to reduce the amount of data searched, which can speed up queries by an order of magnitude and the overall result is really good.
 
 
-<a id="orgb50a8b7"></a>
+<a id="org7807dfa"></a>
 
 # track changes
 
@@ -67,12 +67,16 @@ due to the db structure, `[ref k v]` each change in the `db` can be represented 
 
 during each transaction the original document is compared with the modified document using `ribelo.doxa/-diff-entity` and for each difference it produces a `DoxaDBChange` type as above. such a collection shall be stored in the metadata under key `:ribelo.doxa/tx`. full transaction history is not stored, only the latest transaction.
 
-`materialised query` uses the parsed `:where` as a key under which the result is stored in the cache. in the case of `materialised pull`, the entire query is first converted into a sequence of `datoms`.
+`materialised q query` uses the parsed `:where` as a key under which the result is stored in the cache. in the case of `materialised pull`, the entire `query` is first converted into a sequence of `datoms`, which takes time.
 
 after each transaction, if a cache exists, each key is matched with the changes made after the transaction. if match, the stored result is deleted from the cache. the comparison is made in the most pessimistic way and there is no possibility of false negatives, false positives are possible. this means that in the worst case the query will recalculate, but there will never be a case that despite changes in the DB you will get an old outdated result.
 
+at the moment it is not possible to use `materialised pull` inside `q` or `materialised q`, but this can be achieved by combining both functions.
 
-<a id="org1791c37"></a>
+the use of `pull` inside `materialised q` query can lead to false negative results.
+
+
+<a id="orge4bb9d9"></a>
 
 # materialised views
 
@@ -81,7 +85,7 @@ in addition, `doxa` has the ability to cache both `pull` and `q` results. each t
 the cache implementation uses a protocols, and the functions are standard hit & miss. i did not use `clojure/cache` because there is no `cljs` version. instead, the implementation available in [ptaoussanis/encore](https://github.com/ptaoussanis/encore/blob/master/src/taoensso/encore.cljc) was adopted, and supports either `ttl`, `cache-size` and `gc`. [peter](https://github.com/ptaoussanis) is a king and his contribution to `clojure` is invaluable.
 
 
-<a id="orgf53885d"></a>
+<a id="org8852fb8"></a>
 
 # lazy views
 

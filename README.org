@@ -4,7 +4,7 @@
 #+TITLE: doxa
 
 [[https://clojars.org/com.github.ribelo/doxa][https://img.shields.io/clojars/v/com.github.ribelo/doxa.svg]]
-[[https://cljdoc.org/d/missionary/missionary/CURRENT][https://cljdoc.org/badge/ribelo/doxa]]
+[[https://cljdoc.org/d/com.github.ribelo/doxa/CURRENT][https://cljdoc.org/badge/ribelo/doxa]]
 
 
 a simple in-memory database, trying to copy the best solutions from [[https://github.com/tonsky/datascript][datascript]],

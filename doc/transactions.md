@@ -1,8 +1,8 @@
-- [dx/put](#org7aaccc9)
-- [dx/delete](#org9f9b748)
-- [dx/merge](#org5aa0f9d)
-- [dx/update](#orgb8b7bdb)
-- [dx/match](#orgfad3c93)
+- [dx/put](#orgb4320f1)
+- [dx/delete](#orgfd05f9b)
+- [dx/merge](#org4f168e2)
+- [dx/update](#org9f38158)
+- [dx/match](#org3a6caff)
 
 the commit function which is used for transactions has been implemented using `defmulti`, allowing you to easily implement your own transactions. a transaction must be a vector, where the first element is used to dispatch the transaction to the corresponding `defmethod`.
 
@@ -11,7 +11,7 @@ the five basic transaction types are `:dx/put` `:dx/delete` `:dx/merge`, `:dx/up
 `commit` accepts either a single transaction and a collection of transactions
 
 
-<a id="org7aaccc9"></a>
+<a id="orgb4320f1"></a>
 
 # dx/put
 
@@ -70,7 +70,7 @@ references are created automatically and data is normalised
 for improved performance, back references are kept explicitly in the map.
 
 
-<a id="org9f9b748"></a>
+<a id="orgfd05f9b"></a>
 
 # dx/delete
 
@@ -135,7 +135,7 @@ db
 ```
 
 
-<a id="org5aa0f9d"></a>
+<a id="org4f168e2"></a>
 
 # dx/merge
 
@@ -157,7 +157,7 @@ db
 ```
 
 
-<a id="orgb8b7bdb"></a>
+<a id="org9f38158"></a>
 
 # dx/update
 
@@ -184,7 +184,7 @@ if the third argument to a transaction is a key and the fourth argument is a fun
 ```
 
 
-<a id="orgfad3c93"></a>
+<a id="org3a6caff"></a>
 
 # dx/match
 

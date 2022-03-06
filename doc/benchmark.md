@@ -1,24 +1,24 @@
-- [transactions](#orgc22d62a)
-  - [adding data one transaction at a time](#org3895a8a)
-  - [add all data in single transaction](#orgdbe65dc)
-- [query](#orgf1ebf94)
-  - [one condition](#org01fdce0)
-  - [two conditions](#org6ce0378)
-  - [three conditions](#orgaa142dc)
-  - [four conditions](#org3533c62)
-  - [one pred](#org4d480aa)
-  - [two preds](#orgce64739)
-  - [three preds](#org92ec387)
-- [pull](#org084957d)
+- [transactions](#org5074a25)
+  - [adding data one transaction at a time](#org6c4992e)
+  - [add all data in single transaction](#org3141a9d)
+- [query](#org38092eb)
+  - [one condition](#org641ee8b)
+  - [two conditions](#org7a29920)
+  - [three conditions](#orge71a7fa)
+  - [four conditions](#org7fd12d0)
+  - [one pred](#org4b77929)
+  - [two preds](#org23c4bda)
+  - [three preds](#orge1ab765)
+- [pull](#orga3ac6ab)
 
 
 
-<a id="orgc22d62a"></a>
+<a id="org5074a25"></a>
 
 # transactions
 
 
-<a id="org3895a8a"></a>
+<a id="org6c4992e"></a>
 
 ## adding data one transaction at a time
 
@@ -50,7 +50,7 @@
 ```
 
 
-<a id="orgdbe65dc"></a>
+<a id="org3141a9d"></a>
 
 ## add all data in single transaction
 
@@ -77,7 +77,7 @@
 ```
 
 
-<a id="orgf1ebf94"></a>
+<a id="org38092eb"></a>
 
 # query
 
@@ -104,7 +104,7 @@
 ```
 
 
-<a id="org01fdce0"></a>
+<a id="org641ee8b"></a>
 
 ## one condition
 
@@ -162,7 +162,7 @@
 ```
 
 
-<a id="org6ce0378"></a>
+<a id="org7a29920"></a>
 
 ## two conditions
 
@@ -227,7 +227,7 @@
 ```
 
 
-<a id="orgaa142dc"></a>
+<a id="orge71a7fa"></a>
 
 ## three conditions
 
@@ -289,7 +289,7 @@
 ```
 
 
-<a id="org3533c62"></a>
+<a id="org7fd12d0"></a>
 
 ## four conditions
 
@@ -355,7 +355,7 @@
 ```
 
 
-<a id="org4d480aa"></a>
+<a id="org4b77929"></a>
 
 ## one pred
 
@@ -417,7 +417,7 @@
 ```
 
 
-<a id="orgce64739"></a>
+<a id="org23c4bda"></a>
 
 ## two preds
 
@@ -498,7 +498,7 @@
 ```
 
 
-<a id="org92ec387"></a>
+<a id="orge1ab765"></a>
 
 ## three preds
 
@@ -589,7 +589,7 @@
 ```
 
 
-<a id="org084957d"></a>
+<a id="orga3ac6ab"></a>
 
 # pull
 
@@ -690,6 +690,5 @@
 ;; => {:datascript java.lang.StackOverflowError
 ;;     :doxa 581.97,
 ;;     :materialised-doxa 170.57}
-```
 
-why does the materialised pull time increase with the length of the query? because the query must be parsed and a collection of datoms must be created. parsing takes time.
+```
