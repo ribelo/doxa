@@ -7,7 +7,6 @@
    [ribelo.doxa.pull-api :refer [-pull -mpull]]
    [ribelo.doxa.query :refer [-q -mq]]
    [ribelo.doxa.pick-api :refer [-pick]]
-   [ribelo.doxa.ordered-set :as os]
    [ribelo.doxa.util :as u]))
 
 (comment
@@ -24,8 +23,6 @@
 (def q -q)
 (def mq -mq)
 (def pick -pick)
-(def ordered-set os/ordered-set)
-(def ordered-set? os/ordered-set?)
 
 (defmulti -submit-commit (fn [_db ^clojure.lang.IPersistentVector tx] (nth tx 0)))
 
