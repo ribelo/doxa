@@ -22,11 +22,12 @@
        (ex/-mapv #(recur-pull db query %) parent)
 
        (= [:*] query)
-       (persistent!
-        (ex/-reduce-kv
-         (fn [acc k v] (if (not (u/-rev->key k)) (ex/-assoc!* acc k v) acc))
-         (transient {})
-         (ex/-get* db parent)))
+       (when-let [m (ex/-get db parent)]
+         (persistent!
+           (ex/-reduce-kv
+             (fn [acc k v] (if (not (u/-rev->key k)) (ex/-assoc!* acc k v) acc))
+             (transient {})
+             m)))
 
        (not (u/-ref-lookup? parent))
        (ex/-mapv #(recur-pull db query %) (u/-eid-search db parent))
