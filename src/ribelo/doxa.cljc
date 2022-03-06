@@ -253,8 +253,11 @@
                    (recur db' match?)
                    (throw (ex-info "db is nil!" {})))
                  (recur acc match?))))
-           acc)]
-     (-> (p/-set-cache! dx' (p/-refresh (some-> (p/-cache dx') deref) (p/-tx dx'))) (p/-reindex)))))
+           acc)
+         dx' (-> (p/-set-cache! dx' (p/-refresh (some-> (p/-cache dx') deref) (p/-tx dx'))) (p/-reindex))]
+     (when-let [listeners (some-> dx' meta ::listeners deref)]
+       (ex/-run! (fn [[_ f]] (f dx')) listeners))
+     dx')))
 
 (defn commit! [conn_ txs]
   (swap! conn_ commit txs))
@@ -271,9 +274,10 @@
   ([empty-db data]
    (create-dx empty-db data {}))
   ([empty-db data meta]
-   (if (not-empty data)
-     (vary-meta (dx-with empty-db data) ex/-merge meta)
-     (vary-meta empty-db ex/-merge meta))))
+   (let [default-meta {::listeners (atom {})}]
+     (if (not-empty data)
+       (vary-meta (dx-with empty-db data) ex/-merge default-meta meta)
+       (vary-meta empty-db ex/-merge default-meta meta)))))
 
 (defn connect!
   ([dx]
@@ -282,6 +286,17 @@
    (p/-connect dx x)))
 
 (declare entity)
+
+(defn listen! [dx k f]
+  (if-let [atm_ (some-> dx meta ::listeners)]
+    (do (swap! atm_ assoc k f)
+        (fn [] (swap! atm_ dissoc k)))
+    (throw (ex-info "cannot add the listener, the atom does not exist" {:meta (meta dx)}))))
+
+(defn unlisten! [dx k]
+  (if-let [atm_ (some-> dx meta ::listeners)]
+    (do (swap! atm_ dissoc k) true)
+    (throw (ex-info "cannot remove the listener, the atom does not exist" {:meta (meta dx)}))))
 
 (defn -entity-lookup [dx ref k denormalize?]
   (let [e (ex/-get* dx ref)]
