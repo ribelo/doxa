@@ -1,0 +1,21 @@
+{
+  "scripts": {
+    "postcss:watch": "TAILWIND_MODE=watch postcss src/css/style.css -o ./resources/public/css/main.css --verbose -w",
+    "postcss:release": "NODE_ENV=production postcss src/css/style.css -o ./resources/public/css/main.css --verbose",
+    "build": "yarn install && yarn run shadow-cljs release app && yarn postcss:release",
+    "server": "yarn run shadow-cljs server"
+  },
+  "dependencies": {
+    "react": "17.0.2",
+    "react-dom": "17.0.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/forms": "^0.5.0",
+    "cssnano": "^5.0.1",
+    "autoprefixer": "^10.3.6",
+    "postcss": "^8.3.8",
+    "postcss-cli": "^9.0.1",
+    "shadow-cljs": "^2.16.12",
+    "tailwindcss": "^3.0.23"
+  }
+}

@@ -1,0 +1,10 @@
+{:deps  {:aliases [:cljs]}
+ :nrepl {:port 3333}
+ :builds
+ {:app {:target     :browser
+        :output-dir "resources/public/js"
+        :asset-path "/js"
+        :modules    {:main {:init-fn doxa-page.core/init}}
+        :devtools   {:after-load     doxa-page.core/mount-components
+                     :http-root "resources/public"
+                     :http-port 3000}}}}
