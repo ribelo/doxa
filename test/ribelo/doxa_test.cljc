@@ -1182,9 +1182,6 @@
              (dx/commit (dx/create-dx)))]
     (t/is (= {:name "Enzo", :car {:name "Audi"}}
              (dx/pull db [:name {:car [:autombile/id :name]}] [:person/id "10"])))))
-;; => #'ribelo.doxa-test/gh-23
-;; => #'ribelo.doxa-test/gh-23
-;; => #'ribelo.doxa-test/gh-23
 
 (t/deftest gh-24 []
   (let [db1 (dxm/empty-db {:cache (dxc/doxa-cache)})
@@ -1215,15 +1212,3 @@
     (t/is (= {[:db/id 2] {:_sports [:db/id 1], :db/id 2, :name "Boardercross"}
               [:db/id 1] {:db/id 1, :name "Olympics", :sports #{[:db/id 2]}}}
              (dx/commit db [[:dx/delete [:db/id 3]]])))))
-
-(comment
-  (def db (dx/commit {} [:dx/merge [{:product/id 1
-                                     :product/name "product1"
-                                     :product/offer {:offer/id 1 :offer/name "offer1" :offer/price 1.0 :offer/market {:market/id 1 :market/name "market"}}}
-                                    {:product/id 2
-                                     :product/name "product2"
-                                     :product/offer {:offer/id 2 :offer/name "offer1" :offer/price 2.0 :offer/market {:market/id 1 :market/name "market"}}}]]))
-  (dx/pick db [:market/name] [:market/id 1])
-  (tap> [:ok (dx/pick db {:offer/_market [:offer/price {:product/_offer [:product/name]}]} [:market/id 1])])
-  (tap> (+ 1 1))
-  )
