@@ -28,7 +28,7 @@
 
 (defmulti -query-fn (fn [x] x))
 
-(defn- -find-patern [xs]
+(defn- -find-pattern [xs]
   (cond
     (ex/-every? u/-variable? xs)
     :rel
@@ -47,7 +47,7 @@
 
     :else (throw (ex-info "unrecognized input" {:xs xs}))))
 
-(defmulti -reducer (fn [xs _opts] (-find-patern xs)))
+(defmulti -reducer (fn [xs _opts] (-find-pattern xs)))
 
 (defmethod -reducer :rel
   [xs {:keys [limit]}]
@@ -94,7 +94,7 @@
 
 (defmethod -reducer :default
   [xs _opts]
-  (ex-info "unrecognized patern" {:xs xs}))
+  (ex-info "unrecognized pattern" {:xs xs}))
 
 (defn- -query->map [body]
   (ex/-loop [elem body :let [acc {} flag nil]]
@@ -219,7 +219,7 @@
         (or (fx [me stack]) (fy [me stack]))))))
 
 (defn -create-acc [find]
-  (case (-find-patern find)
+  (case (-find-pattern find)
     :rel (transient #{})
     :rel-first (transient [])
     :rel-coll (transient [])

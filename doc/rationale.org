@@ -114,7 +114,7 @@ results in a recalculation of only those queries whose result will be changed.
 clearing the cache during a transaction rather than before a search makes
 returning materialised results as fast as picking from a map.
 
-the cache implementation uses a protocols, and the functions are standard hit &
+the cache implementation uses a protocol, and the functions are standard hit &
 miss. i did not use =clojure/cache= because there is no =cljs= version. instead, the
 implementation available in [[https://github.com/ptaoussanis/encore/blob/master/src/taoensso/encore.cljc][ptaoussanis/encore]] was adopted, and supports either
 =ttl=, =cache-size= and =gc=. [[https://github.com/ptaoussanis][peter]] is a king and his contribution to =clojure= is

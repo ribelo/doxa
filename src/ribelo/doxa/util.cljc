@@ -135,7 +135,7 @@
 (defn -fn? [x]
   (not (symbol? x)))
 
-(defn -patern [x]
+(defn -pattern [x]
   (cond
     (-variable? x) :?
     (-underscore? x) :_
@@ -146,7 +146,7 @@
 (defn -parse-double [[x y]]
   (if (list? x)
     :bind
-    [(-patern x) (-patern y) nil]))
+    [(-pattern x) (-pattern y) nil]))
 
 (defn -parse-datom [datom]
   (case (count datom)
@@ -154,7 +154,7 @@
     2 (-parse-double datom)
     3 (cond
         (vector? datom)
-        (ex/-mapv -patern datom)
+        (ex/-mapv -pattern datom)
         (list? datom)
         (condp = (ex/-first datom)
           'and :and

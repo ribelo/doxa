@@ -1,13 +1,13 @@
-- [rationale](#org385edce)
-- [db structure](#org6946351)
-- [about implementation](#orgf24ef38)
-- [track changes](#org7807dfa)
-- [materialised views](#orge4bb9d9)
-- [lazy views](#org8852fb8)
+- [rationale](#org4565985)
+- [db structure](#org31e156b)
+- [about implementation](#orgf563305)
+- [track changes](#orgd7ae820)
+- [materialised views](#orgc21b5e0)
+- [lazy views](#orgfb78981)
 
 
 
-<a id="org385edce"></a>
+<a id="org4565985"></a>
 
 # rationale
 
@@ -18,7 +18,7 @@ the ideal solution seems to be `datascript`, but there have been several attempt
 `doxa` is an attempt to create a `db` that can be treated as a simple `hashmap`, which makes it possible to use a whole set of Clojure functions on it, from `filter` to `transreducers`, but also using transactions similar to `datascript`, `datalog query` and `pull query`.
 
 
-<a id="org6946351"></a>
+<a id="org31e156b"></a>
 
 # db structure
 
@@ -46,7 +46,7 @@ entity-id can by any value, which allows a great flexibility, and importantly is
 references and back references are a own implementation of `ordered/set` based on [flatland/ordered](https://github.com/clj-commons/ordered/tree/master/src/flatland/ordered). unfortunately `flatland` it doesn&rsquo;t support `cljs`, so i decided to rewrite it. the use of `ordered/set` ensures distinct values, while preserving the order of insertion.
 
 
-<a id="orgf24ef38"></a>
+<a id="orgf563305"></a>
 
 # about implementation
 
@@ -59,7 +59,7 @@ in the standard implementation `hashmap` is extended, and `doxa` keeps all the n
 `doxa` uses one index on `table-id`. i tested the use of multiple indexes, but such a `db` exists and is called `datascript` and `asami`. creating the same thing a second time, only worse, is pointless. one index affects the `datalog` query where the search uses simple bruteforce however, all loops are as tight as possible and `clojure/script` `protocols` or `java` `interfaces` are used directly. for most queries excluding this with multiple joins, `doxa` is the fastest available db for `clojurescript`. nevertheless, this single index allows to reduce the amount of data searched, which can speed up queries by an order of magnitude and the overall result is really good.
 
 
-<a id="org7807dfa"></a>
+<a id="orgd7ae820"></a>
 
 # track changes
 
@@ -76,16 +76,16 @@ at the moment it is not possible to use `materialised pull` inside `q` or `mater
 the use of `pull` inside `materialised q` query can lead to false negative results.
 
 
-<a id="orge4bb9d9"></a>
+<a id="orgc21b5e0"></a>
 
 # materialised views
 
 in addition, `doxa` has the ability to cache both `pull` and `q` results. each transaction is broken down into a sequence of datoms which are compared with the stored queries in the cache and if they match, the result is deleted. this results in a recalculation of only those queries whose result will be changed. clearing the cache during a transaction rather than before a search makes returning materialised results as fast as picking from a map.
 
-the cache implementation uses a protocols, and the functions are standard hit & miss. i did not use `clojure/cache` because there is no `cljs` version. instead, the implementation available in [ptaoussanis/encore](https://github.com/ptaoussanis/encore/blob/master/src/taoensso/encore.cljc) was adopted, and supports either `ttl`, `cache-size` and `gc`. [peter](https://github.com/ptaoussanis) is a king and his contribution to `clojure` is invaluable.
+the cache implementation uses a protocol, and the functions are standard hit & miss. i did not use `clojure/cache` because there is no `cljs` version. instead, the implementation available in [ptaoussanis/encore](https://github.com/ptaoussanis/encore/blob/master/src/taoensso/encore.cljc) was adopted, and supports either `ttl`, `cache-size` and `gc`. [peter](https://github.com/ptaoussanis) is a king and his contribution to `clojure` is invaluable.
 
 
-<a id="org8852fb8"></a>
+<a id="orgfb78981"></a>
 
 # lazy views
 
