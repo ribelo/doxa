@@ -1,7 +1,7 @@
 {:paths ["src/main" "resources"]
  :deps  {re-frame/re-frame          {:mvn/version "1.2.0"}
          reagent/reagent            {:mvn/version "1.0.0" :exclusions [cljsjs/react cljsjs/react-dom]}
-         com.github.ribelo/doxa     {:mvn/version "0.1.132"}
+         com.github.ribelo/doxa     {:mvn/version "0.1.133"}
          ribelo/extropy             {:git/url "https://github.com/ribelo/extropy"
                                      :sha "cd83f431995eb3d5ac993ec125222aa6b7d99ab9"}}
  :aliases

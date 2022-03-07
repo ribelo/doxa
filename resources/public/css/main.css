@@ -515,6 +515,11 @@ Ensure the default browser behavior of the `hidden` attribute.
   margin: 1rem;
 }
 
+.mx-1 {
+  margin-left: 0.25rem;
+  margin-right: 0.25rem;
+}
+
 .mx-4 {
   margin-left: 1rem;
   margin-right: 1rem;
@@ -525,9 +530,9 @@ Ensure the default browser behavior of the `hidden` attribute.
   margin-bottom: 0.5rem;
 }
 
-.mx-1 {
-  margin-left: 0.25rem;
-  margin-right: 0.25rem;
+.my-4 {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
 }
 
 .mb-12 {
@@ -594,6 +599,10 @@ Ensure the default browser behavior of the `hidden` attribute.
   width: 9rem;
 }
 
+.w-32 {
+  width: 8rem;
+}
+
 .grow {
   flex-grow: 1;
 }
@@ -632,6 +641,14 @@ Ensure the default browser behavior of the `hidden` attribute.
 
 .self-end {
   align-self: flex-end;
+}
+
+.self-center {
+  align-self: center;
+}
+
+.overflow-y-auto {
+  overflow-y: auto;
 }
 
 .truncate {
@@ -708,16 +725,6 @@ Ensure the default browser behavior of the `hidden` attribute.
   color: rgb(216 222 233 / var(--tw-text-opacity));
 }
 
-.text-nord-5 {
-  --tw-text-opacity: 1;
-  color: rgb(229 233 240 / var(--tw-text-opacity));
-}
-
-.text-nord-14 {
-  --tw-text-opacity: 1;
-  color: rgb(163 190 140 / var(--tw-text-opacity));
-}
-
 .text-nord-11 {
   --tw-text-opacity: 1;
   color: rgb(191 97 106 / var(--tw-text-opacity));
@@ -726,6 +733,11 @@ Ensure the default browser behavior of the `hidden` attribute.
 .text-nord-9 {
   --tw-text-opacity: 1;
   color: rgb(129 161 193 / var(--tw-text-opacity));
+}
+
+.text-nord-5 {
+  --tw-text-opacity: 1;
+  color: rgb(229 233 240 / var(--tw-text-opacity));
 }
 
 .underline {

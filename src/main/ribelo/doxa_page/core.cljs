@@ -19,7 +19,7 @@
       [ui/sidebar]
       [:div {:class [:flex :w-full :h-full]}
        (case screen
-         :binary-clock
+         (nil :binary-clock)
          [binary-clock/view]
 
          :transaction

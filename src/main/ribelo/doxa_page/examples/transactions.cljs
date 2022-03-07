@@ -68,7 +68,6 @@
 (rf/reg-event-fx
   ::delete-aka
   (fn [_ [_ ref aka]]
-    (println :ref ref :aka aka)
     {:commit [:dx/delete ref :aka aka]}))
 
 (rf/reg-event-fx
@@ -93,13 +92,13 @@
 
 (defn db-view []
   (let [table @(rf/subscribe [::people])]
-    [:div
+    [:div {:class [:overflow-y-auto]}
      (doall
        (for [[i [ref m]] (map-indexed vector table)]
          ^{:key i}
          [:div {:class [:flex :flex-row]}
           [:div "{"]
-          [:div {:class [:w-24 :hover:text-nord-11 :cursor-pointer]
+          [:div {:class [:w-32 :hover:text-nord-11 :cursor-pointer]
                  :on-click #(rf/dispatch [::delete-person ref])}
            (str ref)]
           [:div {:class [:flex]}
@@ -191,4 +190,6 @@
     [:div {:class [:bg-nord-2 :hover:bg-nord-3 :text-nord-5 :px-2 :mx-4 :cursor-pointer]
            :on-click #(rf/dispatch-sync [::clear-people])}
      "delete all person"]]
+   [:p {:class [:my-4 :self-center]}
+    "try clicking here and there"]
    [db-view]])

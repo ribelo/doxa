@@ -7,7 +7,6 @@
 (rf/reg-event-fx
   ::update-clock
   (fn [_ [_ time]]
-    (js/console.log :time time)
     {:commit [:dx/put [:app/id :binary-clock] :time time]}))
 
 (rf/reg-sub
