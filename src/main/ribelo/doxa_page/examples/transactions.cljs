@@ -2,7 +2,8 @@
   (:require
    [reagent.core :as r]
    [re-frame.core :as rf]
-   [ribelo.doxa :as dx]))
+   [ribelo.doxa :as dx]
+   [ribelo.doxa.util :as dxu]))
 
 (defn random-name []
   (rand-nth ["Ivan" "Petr" "Ivan" "Oleg" "Lucy"]))
@@ -159,12 +160,18 @@
                     [:div {:class [:flex]}
                      [:div {:class [:flex]}
                       [:div "#ordered/set #{"]
-                      (doall
-                        (for [[i x] (map-indexed vector v)]
-                          ^{:key i}
-                          [:div {:class [:mx-1 :hover:text-nord-11 :cursor-pointer]
-                                 :on-click #(rf/dispatch [::delete-child ref k x])}
-                           (str x)]))
+                      (cond
+                        (dxu/-ref-lookup? v)
+                        [:div {:class [:mx-1 :hover:text-nord-11 :cursor-pointer]
+                               :on-click #(rf/dispatch [::delete-child ref k v])}
+                         (str v)]
+                        (dxu/-ref-lookups? v)
+                        (doall
+                          (for [[i x] (map-indexed vector v)]
+                            ^{:key i}
+                            [:div {:class [:mx-1 :hover:text-nord-11 :cursor-pointer]
+                                   :on-click #(rf/dispatch [::delete-child ref k x])}
+                             (str x)])))
                       [:div "}"]]]]
 
                    [:div {:class [:flex :flex-row]}
