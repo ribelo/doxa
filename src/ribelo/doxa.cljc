@@ -77,11 +77,11 @@
                   v (nth tx 3)]
               (if (u/-entity? v)
                 (-> (u/-safe-put-kv dx ref k (u/-entity-ref v))
-                    (u/-put-entity (u/-safe-assoc v (u/-key->rev k) ref)))
+                    (u/-put-entity (u/-safe-assoc v (u/-key->rvd k) ref)))
 
                 (if-let [ids (u/-entities-refs v)]
                   (-> (u/-safe-put-kv dx ref k ids)
-                      (u/-put-entities (ex/-mapv (fn [m] (ex/-assoc* m (u/-key->rev k) ref)) v)))
+                      (u/-put-entities (ex/-mapv (fn [m] (ex/-assoc* m (u/-key->rvd k) ref)) v)))
 
                   (if (u/-ref-lookup? v)
                     (if (ex/-get* dx v)
@@ -139,8 +139,7 @@
                     (if (ex/-get* dx v)
                       (u/-safe-put-kv dx ref k v)
                       (-submit-failure tx))
-                    (let [m (ex/-get* dx ref)]
-                      (p/-put dx ref (u/-safe-put-v m k v)))))))
+                    (u/-safe-merge-kv dx ref k v)))))
 
           (if (pos? cnt)
             (apply u/-safe-put-kvs dx ref (into [] (drop 2) tx))
@@ -172,15 +171,15 @@
               k (nth tx 2)]
           (if (vector? k)
             (ex/-loop [j k :let [acc dx]]
-              (recur (u/-clearing-delete acc [ref j]))
+              (recur (u/-delete-key acc ref j))
               acc)
 
-            (u/-clearing-delete dx [ref k])))
+            (u/-delete-key dx ref k)))
 
       4 (let [ref (nth tx 1)
               k (nth tx 2)
               x (nth tx 3)]
-          (u/-clearing-delete dx [ref k] x)))))
+          (u/-delete-val dx ref k x)))))
 
 (defmethod -submit-commit :dx/update
   [dx tx]

@@ -19,15 +19,14 @@
        (-key-id? (nth xs 0))))
 
 (defn -ref-lookups? [xs]
-  (ordered-set? xs))
+  (and (ordered-set? xs) (-ref-lookup? (ex/-first xs))))
 
 (defn -entity? [m]
-  (or
-    (ex/-get (meta m) :ribelo.doxa/entity-key)
-    (and (map? m) (ex/-reduce-kv (fn [_ k _] (if (-key-id? k) (reduced true) false)) false m))))
+  (or (ex/-get (meta m) :ribelo.doxa/entity-key)
+      (and (map? m) (ex/-reduce-kv (fn [_ k _] (if (-key-id? k) (reduced true) false)) false m))))
 
 (defn -entities? [xs]
-  (and (seqable? xs) (ex/-every? -entity? xs)))
+  (and (coll? xs) (ex/-every? -entity? xs)))
 
 (defn -dx? [dx]
   (satisfies? p/IDoxa dx))
@@ -48,13 +47,13 @@
         m))))
 
 (defn -entities-refs [xs]
-  (when (vector? xs)
+  (when (coll? xs)
     (ex/-not-empty (ordered-set (ex/-keep -entity-ref xs)))))
 
-(defn -key->rev [k]
+(defn -key->rvd [k]
   (keyword (namespace k) (str "_" (name k))))
 
-(defn -rev->key [k]
+(defn -rvd->key [k]
   (when (keyword? k)
     (let [s (name k)]
       (when (and (not (ex/-str-starts-with? s "__")) (ex/-str-starts-with? s "_"))
@@ -190,18 +189,6 @@
        (recur acc))
      (persistent! acc))))
 
-(defn -search-in-map
-  ([m x]
-   (ex/-keep (fn [me] (-search-in-map m (ex/-k me) x)) m))
-  ([m k x]
-   (let [v (ex/-get m k)]
-     (when (or (= v x)
-               (cond
-                 (set? v) (v x)
-                 (ordered-set? v) (contains? v x)
-                 (seqable? v) (ex/-some= x v)))
-       k))))
-
 (defn -eid-search [dx eid]
   (persistent!
     (ex/-reduce-kv
@@ -245,26 +232,26 @@
                  (if-let [eid (-entity-ref v)]
                    (recur
                      (ex/-assoc!* m k eid)
-                     (ex/-reduce conj! r (-normalize v {(-key->rev k) (-entity-ref data)})) id)
+                     (ex/-reduce conj! r (-normalize v {(-key->rvd k) (-entity-ref data)})) id)
 
                    (if-let [eids (-entities-refs v)]
                      (recur
                        (ex/-assoc!* m k eids)
-                       (ex/-reduce (fn [acc m'] (ex/-reduce conj! acc (-normalize m' {(-key->rev k) (-entity-ref data)}))) r v) id)
+                       (ex/-reduce (fn [acc m'] (ex/-reduce conj! acc (-normalize m' {(-key->rvd k) (-entity-ref data)}))) r v) id)
 
                      (cond
-                       (and (not (-rev->key k)) (-ref-lookup? v))
+                       (and (not (-rvd->key k)) (-ref-lookup? v))
                        (recur
                          (ex/-assoc!* m k v)
-                         (conj! r [v {(ex/-first v) (ex/-second v) (-key->rev k) id}])
+                         (conj! r [v {(ex/-first v) (ex/-second v) (-key->rvd k) id}])
                          id)
 
-                       (and (not (-rev->key k)) (and (coll? v) (ex/-every? -ref-lookup? v)))
+                       (and (not (-rvd->key k)) (and (coll? v) (ex/-every? -ref-lookup? v)))
                        (recur
                          (ex/-assoc!* m k (ordered-set v))
                          (ex/-reduce
                            (fn [acc [tid eid :as ref']]
-                             (conj! acc [ref' {tid eid (-key->rev k) id}]))
+                             (conj! acc [ref' {tid eid (-key->rvd k) id}]))
                            r
                            v)
                          id)
@@ -297,47 +284,18 @@
              :else
              (recur (ex/-assoc!* m k v)))))))))
 
-(defn -safe-put-v [m k v]
-  (if-some [ov (and m (ex/-get* m k))]
-    (cond
-      (-ref-lookup? ov)
-      (ex/-assoc* m k (ordered-set [ov v]))
+(declare -safe-merge)
 
-      (and (-ref-lookups? ov) (-ref-lookup? v))
-      (ex/-assoc* m k (conj ov v))
-
-      (and (-ref-lookups? ov) (-ref-lookups? v))
-      (ex/-assoc* m k (set/union ov v))
-
-      (and (not (-key-id? k))
-           (or (vector? ov) (set? ov))
-           (not (or (vector? v) (set? v))))
-      (ex/-assoc* m k (conj ov v))
-        
-      (and (not (-key-id? k)) (not (-key-id? k))
-           (or (vector? ov) (set? ov))
-           (or (vector? v) (set? v)))
-      (ex/-assoc* m k (into ov v))
-
-      (and (not (-key-id? k))
-           (not (or (vector? ov) (set? ov)))
-           (or (vector? v) (set? v)))
-      (ex/-assoc* m k (conj v ov))
-
-      :else
-      (ex/-assoc* m k v))
-    (ex/-assoc* m k v)))
-
-(defn -safe-merge-entity [e1 e2]
+(defn -safe-merge-entities [e1 e2]
   (ex/-reduce-kv
-    (fn [acc k v] (-safe-put-v acc k v))
+    (fn [acc k v] (-safe-merge acc k v))
     e1
     e2))
 
 (defn -merge-entity [dx m]
   (ex/-reduce
    (fn [acc [ref m]]
-     (let [merged (-safe-merge-entity (ex/-get* dx ref {}) m)]
+     (let [merged (-safe-merge-entities (ex/-get* dx ref {}) m)]
        (p/-put acc ref merged)))
    dx (-normalize m)))
 
@@ -350,73 +308,166 @@
 (defn -put-entities [dx xs]
   (ex/-reduce -put-entity dx xs))
 
+(defn -safe-merge
+  ([m k v]
+   (let [x (ex/-get* m k)]
+     (if x
+       (cond
+         (and (-ref-lookups? x) (-ref-lookups? v))
+         (ex/-assoc* m k (into x v))
+
+         (and (-ref-lookups? x) (-ref-lookup? v))
+         (ex/-assoc* m k (conj x v))
+
+         (and (-ref-lookup? x) (-ref-lookup? v))
+         (ex/-assoc* m k (ordered-set [x v]))
+
+         (and (-ref-lookup? x) (-ref-lookups? v))
+         (ex/-assoc* m k (into [x] v))
+
+         (and (not (-ref-lookup? x)) (vector? x) (not (vector? v)))
+         (ex/-assoc* m k (conj x v))
+
+         (and (not (-ref-lookup? x)) (vector? x) (vector? v))
+         (ex/-assoc* m k (into x v))
+
+         (and (not (-ref-lookup? x)) (not (vector? x)) (vector? v))
+         (ex/-assoc* m k (into v [x]))
+
+         :else
+         (ex/-assoc* m k v))
+       (ex/-assoc* m k v))))
+  ([dx ref k v]
+   (p/-put dx ref (-safe-merge (ex/-get* dx ref) k v))))
+
 (defn -safe-put-kv [dx [tid eid :as ref] k v]
   (if (ex/-get* dx ref)
     (p/-put dx ref (ex/-assoc* (ex/-get* dx ref) k v))
     (p/-put dx ref {tid eid k v})))
 
+(defn -safe-merge-kv [dx [tid eid :as ref] k v]
+  (if (ex/-get* dx ref)
+    (p/-put dx ref (-safe-merge (ex/-get* dx ref) k v))
+    (p/-put dx ref {tid eid k v})))
+
 (defn -safe-put-kvs [dx ref & kvs]
   (ex/-reduce-kvs (fn [acc k v] (-safe-put-kv acc ref k v)) dx kvs))
 
-(defn -safe-assoc
-  ([m k v]
-   (let [x (ex/-get* m k)]
+(defn -safe-dissoc
+  ([dx ref k]
+   (let [m (ex/-get* dx ref {})]
+     (p/-put dx ref (ex/-dissoc* m k))))
+  ([dx ref k v]
+   (let [m (ex/-get* dx ref)
+         x (ex/-get* m k)]
      (if x
        (cond
          (-ref-lookups? x)
-         (ex/-assoc* m k (conj x v))
+         (p/-put dx ref (ex/-assoc* m k (disj x v)))
 
          (and (not (-ref-lookup? x)) (vector? x))
-         (ex/-assoc* m k (conj x v))
+         (p/-put dx ref (ex/-assoc* m k (ex/-remove (partial = v) x)))
+
+         (= x v)
+         (p/-put dx ref (ex/-dissoc* m k))
 
          :else
-         (ex/-assoc* m k (into x v)))
-       (ex/-assoc* m k v))))
+         (throw (ex-info "unexpected!" {})))
+       dx))))
+
+;; (ribelo.doxa/commit {} [:dx/merge {:db/id 1 :name "Ivan" :friend [{:db/id 2 :name "Petr"}]}])
+;; => {[:db/id 2] {:_friend [:db/id 1], :db/id 2, :name "Petr"}, [:db/id 1] {:db/id 1, :name "Ivan", :friend #ordered/set #{[:db/id 2]}}}
+
+;; -delete-backref dx [:db/id 1] :_friend
+(defn -delete-backref
+  ([dx ref k]
+   (let [xs (ex/-get-in dx [ref k])
+         fvd (-rvd->key k)]
+     (cond
+       (-ref-lookup? xs)
+       (-> (-safe-dissoc dx ref k) (-safe-dissoc xs fvd ref))
+
+       (-ref-lookups? xs)
+       (ex/-loop [x xs :let [acc (-safe-dissoc dx ref k)]]
+         (recur (-safe-dissoc acc x fvd ref))
+         acc))))
   ([dx ref k v]
-   (ex/-assoc* dx ref (-safe-assoc (ex/-get* dx ref) k v))))
+   (let [fvd (-rvd->key k)]
+     (-> (-safe-dissoc dx ref k v) (-safe-dissoc v fvd ref)))))
 
-(defn -safe-dissoc [dx ref k v]
-  (let [m (ex/-get* dx ref)
-        x (ex/-get* m k)]
-    (if x
-      (cond
-        (-ref-lookups? x)
-        (ex/-assoc* dx ref (ex/-assoc* m k (disj x v)))
+(defn -delete-ref
+  ([dx ref k]
+   (let [xs (ex/-get-in dx [ref k])
+         rvd (-key->rvd k)]
+     (cond
+       (-ref-lookup? xs)
+       (-> (-safe-dissoc dx ref k) (-safe-dissoc xs rvd ref))
 
-        (and (not (-ref-lookup? x)) (vector? x))
-        (ex/-assoc* dx ref (ex/-assoc* m k (ex/-remove (partial = v) x)))
+       (-ref-lookups? xs)
+       (ex/-loop [x xs :let [acc (-safe-dissoc dx ref k)]]
+         (recur (-safe-dissoc acc x rvd ref))
+         acc))))
+  ([dx ref k v]
+   (let [fvd (-key->rvd k)]
+     (-> (-safe-dissoc dx ref k v) (-safe-dissoc v fvd ref)))))
 
-        :else
-        (ex/-assoc* dx ref (ex/-dissoc* m k)))
-      dx)))
+(defn -delete-key
+  [dx ref k]
+  (if-let [m (ex/-get* dx ref)]
+    (let [x (ex/-get* m k)
+          dx'
+          (cond
+            (and (not (-rvd->key k)) (or (-ref-lookup? x) (-ref-lookups? x)))
+            (-delete-ref dx ref k)
 
-(defn -clearing-delete
-  ([dx path] (-clearing-delete dx path ::dissoc))
-  ([dx [ref k] v]
-   (let [dissoc? (ex/-kw-identical? ::dissoc v)
-         dx' (if dissoc? (ex/-dissoc-in dx [ref k]) (-safe-dissoc dx ref k v))]
-     (if-some [x (if dissoc? (ex/-get* dx' ref) (ex/-get-in dx' [ref k]))]
-       (if (map? x)
-         ;; more than :db/id
-         (if (> (count x) 1) dx' (if dissoc? (p/-del dx' ref) (ex/-dissoc-in dx' [ref k])))
-         (if (> (count x) 0) dx' (if dissoc? (p/-del dx' ref) (ex/-dissoc-in dx' [ref k]))))
-       dx'))))
+            (and (-rvd->key k) (or (-ref-lookup? x) (-ref-lookups? x)))
+            (-delete-backref dx ref k)
+
+            :else
+            (-safe-dissoc dx ref k))]
+      (if (not-empty (ex/-get dx' ref)) dx' (p/-del dx' ref)))
+    dx))
+
+(defn -delete-val
+  [dx ref k v]
+  (if-let [m (ex/-get* dx ref)]
+    (let [x (ex/-get m k)
+          dx'
+          (cond
+            (and (not (-rvd->key k)) (or (-ref-lookup? x) (-ref-lookups? x)))
+            (-delete-ref dx ref k v)
+
+            (and (-rvd->key k) (or (-ref-lookup? x) (-ref-lookups? x)))
+            (-delete-backref dx ref k v)
+
+            (coll? x)
+            (if-let [xs (ex/-not-empty (ex/-remove (partial = v) x))]
+              (p/-put dx ref (ex/-assoc* m k xs))
+              (p/-put dx ref (ex/-dissoc* m k)))
+
+            (= x v)
+            (p/-put dx ref (ex/-dissoc* m k))
+
+            :else
+            dx)]
+      (if (not-empty (ex/-get dx' ref)) dx' (p/-del dx' ref)))
+    dx))
 
 (defn -delete-entity
   ([dx ref]
    (-> (ex/-reduce-kv
         (fn [acc k v]
-          (if-let [rev (-rev->key k)]
+          (if-let [rvd (-rvd->key k)]
             (cond
               (-ref-lookup? v)
-              (-clearing-delete acc [v rev] ref)
+              (-delete-val acc v rvd ref)
               (-ref-lookups? v)
-              (reduce (fn [acc x] (-clearing-delete acc [x rev] ref)) acc v))
+              (reduce (fn [acc x] (-delete-val acc x rvd ref)) acc v))
             (cond
               (-ref-lookup? v)
-              (-clearing-delete acc [v (-key->rev k)] ref)
+              (-delete-val acc v (-key->rvd k) ref)
               (-ref-lookups? v)
-              (reduce (fn [acc x] (-clearing-delete acc [x (-key->rev k)] ref)) acc v)
+              (reduce (fn [acc x] (-delete-val acc x (-key->rvd k) ref)) acc v)
               :else
               acc)))
         dx

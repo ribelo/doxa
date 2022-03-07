@@ -47,18 +47,6 @@
   (t/is (= {:db/id 1, :name "Ivan", [:db/id 1] {:db/id 1, :name "Petr"}}
            (u/-safe-put-kv {:db/id 1 :name "Ivan"} [:db/id 1] :name "Petr"))))
 
-(t/deftest clearing-delete
-  (t/is (= {[:db/id 1] {:db/id 1, :friend [[:db/id 2]]}}
-           (u/-clearing-delete {[:db/id 1] {:db/id 1 :name "Ivan" :friend [[:db/id 2]]}} [[:db/id 1] :name])))
-  (t/is (= {[:db/id 1] {:db/id 1, :name "Ivan"}}
-           (u/-clearing-delete {[:db/id 1] {:db/id 1 :name "Ivan" :friend [[:db/id 2]]}} [[:db/id 1] :friend] [:db/id 2])))
-  (t/is (= {}
-           (u/-clearing-delete {[:db/id 1] {:db/id 1 :name "Ivan"}} [[:db/id 1] :name])))
-  (t/is (= {[:db/id 2] {:db/id 2, :name "Petr"}}
-           (u/-clearing-delete {[:db/id 1] {:db/id 1 :name "Ivan"}
-                                   [:db/id 2] {:db/id 2 :name "Petr"}}
-                               [[:db/id 1] :name]))))
-
 (t/deftest delete-entity
   (t/is (= {[:db/id 1] {:db/id 1, :name "Ivan"}}
            (u/-delete-entity {[:db/id 1] {:db/id 1 :name "Ivan" :friend [:db/id 2]}
@@ -134,7 +122,17 @@
                               [:dx/delete [:db/id 1]]])))
       (t/is (= {[:db/id 2] {:db/id 2, :name "Ivan"}, [:db/id 3] {:db/id 3, :name "Petr"}}
                (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Petr"}]]
-                              [:dx/delete [:db/id 1]]]))))
+                              [:dx/delete [:db/id 1]]])))
+      (t/is (= {[:db/id 1] {:db/id 1, :name "Petr", :aka ["Devil"]},
+                [:db/id 2] {:db/id 2, :name "Ivan"},
+                [:db/id 3] {:db/id 3, :name "Petr"}}
+               (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Petr"}]]
+                              [:dx/delete [:db/id 1] :friend]])))
+      (t/is (= {[:db/id 1] {:db/id 1, :name "Petr", :aka ["Devil"], :friend #{[:db/id 3]}},
+                [:db/id 2] {:db/id 2, :name "Ivan"},
+                [:db/id 3] {:db/id 3, :name "Petr", :_friend [:db/id 1]}}
+               (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Petr"}]]
+                              [:dx/delete [:db/id 2] :_friend]]))))
 
     (t/testing "testing update"
       (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka "Tupen"}}
@@ -158,6 +156,7 @@
                               [:dx/put    [:db/id 1] :age 15]
                               [:dx/match  [:db/id 1] :name "Petr"]
                               [:dx/put    [:db/id 1] :sex :male]]))))))
+;; => #'ribelo.doxa-test/commit
 
 (def people-docs
   [{:db/id 1, :name "Petr", :aka ["Devil" "Tupen"] :child [[:db/id 2] [:db/id 3]]}

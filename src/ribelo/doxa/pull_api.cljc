@@ -25,7 +25,7 @@
        (when-let [m (ex/-get db parent)]
          (persistent!
            (ex/-reduce-kv
-             (fn [acc k v] (if (not (u/-rev->key k)) (ex/-assoc!* acc k v) acc))
+             (fn [acc k v] (if (not (u/-rvd->key k)) (ex/-assoc!* acc k v) acc))
              (transient {})
              m)))
 
@@ -45,7 +45,7 @@
                  (recur (u/-flatten-map (ex/-get* db ref)) ref)
 
                  :else
-                 (let [k (u/-rev->key elem)]
+                 (let [k (u/-rvd->key elem)]
                    (cond
                      (some? k)
                      (let [x (ex/-get-in db [ref elem])]
@@ -61,7 +61,7 @@
 
                      (and ref (map? elem))
                      (let [k (ex/-first-key elem)
-                           ?rk (u/-rev->key k)
+                           ?rk (u/-rvd->key k)
                            ref' (if-not ?rk
                                   (ex/-get-in db [parent k])
                                   (ex/-get-in db [ref k]))
