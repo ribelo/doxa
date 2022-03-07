@@ -139,7 +139,8 @@
                     (if (ex/-get* dx v)
                       (u/-safe-put-kv dx ref k v)
                       (-submit-failure tx))
-                    (u/-safe-put-kv dx ref k v)))))
+                    (let [m (ex/-get* dx ref)]
+                      (p/-put dx ref (u/-safe-put-v m k v)))))))
 
           (if (pos? cnt)
             (apply u/-safe-put-kvs dx ref (into [] (drop 2) tx))

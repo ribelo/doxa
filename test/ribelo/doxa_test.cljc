@@ -110,6 +110,8 @@
     (t/testing "testing merge"
       (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil" "Devil"]}}
                (dx/commit db [[:dx/merge {:db/id 1 :name "David" :aka "Devil"}]])))
+      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil" "Tupen"]}}
+               (dx/commit db [[:dx/merge [:db/id 1] :aka ["Tupen"]]])))
       (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil" "Devil"]}}
                (dx/commit db [[:dx/merge {:db/id 1 :name "David" :aka ["Devil"]}]])))
       (t/is (= {[:db/id 1] {:db/id 1 :name ["David" "Petr"], :aka ["Devil"]}}
