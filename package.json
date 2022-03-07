@@ -1,0 +1,8 @@
+{
+  "name": "doxa",
+  "author": "Rafał Krzyważnia <r.krzyważnia@gmail.com>",
+  "dependencies": {},
+  "devDependencies": {
+    "shadow-cljs": "^2.17.8"
+  }
+}
