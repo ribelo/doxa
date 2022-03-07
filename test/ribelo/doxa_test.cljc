@@ -21,14 +21,6 @@
            (dx/denormalize {[:db/id 1] {:db/id 1 :name "Petr" :friend [:db/id 2]}
                             [:db/id 2] {:db/id 2 :name "Ivan"}}))))
 
-(t/deftest search-in-map
-  (t/is (= [:b :c]
-           (u/-search-in-map {:a 1 :b 2 :c [1 2]} 2)))
-  (t/is (= :b
-           (u/-search-in-map {:a 1 :b 2 :c [1 2]} :b 2)))
-  (t/is (= :c
-           (u/-search-in-map {:a 1 :b 2 :c [1 2]} :c 2))))
-
 (t/deftest eid-search
   (t/is (= [[:db/id 1]]
            (u/-eid-search {[:db/id 1] {:db/id 1 :name "Petr" :friend [:db/id 2]}
@@ -1185,7 +1177,7 @@
              (dx/pull db [:name {:car [:autombile/id :name]}] [:person/id "10"])))))
 
 (t/deftest gh-24 []
-  (let [db1 (dxm/empty-db {:cache (dxc/doxa-cache)})
+  (let [db1 (with-meta {} {::dx/cache (atom (dxc/doxa-cache))})
         people (fn [db]
                  (dxq/-mq '[:find [?name ...]
                             :where
@@ -1196,8 +1188,7 @@
                    :name "Chris"
                    :age  15}]
                  (vector :dx/put)
-                 (dx/commit db1)
-                 )
+                 (dx/commit db1))
         r2 (people db2)
         r3 (people db2)]
     (t/is (= [] r1))

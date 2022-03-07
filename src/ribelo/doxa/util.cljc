@@ -353,6 +353,12 @@
 (defn -safe-put-kvs [dx ref & kvs]
   (ex/-reduce-kvs (fn [acc k v] (-safe-put-kv acc ref k v)) dx kvs))
 
+(defn -safe-merge-entity [e1 e2]
+  (ex/-reduce-kv
+   (fn [acc k v] (-safe-merge acc k v))
+   e1
+   e2))
+
 (defn -safe-dissoc
   ([dx ref k]
    (let [m (ex/-get* dx ref {})]
