@@ -46,7 +46,7 @@
                              [:db/id 2]))))
 
 (comment
-  (def db (dx/create-dx {} [{:db/id 1 :name "Petr" :aka ["Devil"]}])))
+  (def db (dx/create-dx {} [{:db/id 1 :name "Petr"}])))
 
 (t/deftest commit
   (let [db (dx/create-dx {} [{:db/id 1 :name "Petr" :aka ["Devil"]}])]
@@ -124,7 +124,13 @@
                 [:db/id 2] {:db/id 2, :name "Ivan"},
                 [:db/id 3] {:db/id 3, :name "Petr", :_friend [:db/id 1]}}
                (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Petr"}]]
-                              [:dx/delete [:db/id 2] :_friend]]))))
+                              [:dx/delete [:db/id 2] :_friend]])))
+      (t/is (= {[:db/id 1] {:db/id 1, :name "Petr", :aka ["Devil"]},
+                [:db/id 2] {:db/id 2, :name "Ivan"},
+                [:db/id 3] {:db/id 3, :name "Petr"}}
+               (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Petr"}]]
+                              [:dx/delete [:db/id 2] :_friend]
+                              [:dx/delete [:db/id 3] :_friend]]))))
 
     (t/testing "testing update"
       (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka "Tupen"}}

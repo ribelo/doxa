@@ -246,7 +246,7 @@
                          (conj! r [v {(ex/-first v) (ex/-second v) (-key->rvd k) id}])
                          id)
 
-                       (and (not (-rvd->key k)) (and (coll? v) (ex/-every? -ref-lookup? v)))
+                       (and (not (-rvd->key k)) (and (coll? v) (ex/-not-empty v) (ex/-every? -ref-lookup? v)))
                        (recur
                          (ex/-assoc!* m k (ordered-set v))
                          (ex/-reduce
@@ -256,8 +256,11 @@
                            v)
                          id)
 
+                       (or (and (coll? v) (ex/-not-empty v)) (some? v))
+                       (recur (ex/-assoc!* m k v) r id)
+
                        :else
-                       (recur (ex/-assoc!* m k v) r id)))))))))))))
+                       (recur m r id)))))))))))))
 
 (defn -denormalize
   ([data] (-denormalize data data 12 0))
@@ -362,20 +365,32 @@
 (defn -safe-dissoc
   ([dx ref k]
    (let [m (ex/-get* dx ref {})]
-     (p/-put dx ref (ex/-dissoc* m k))))
+     (if-let [m' (ex/-not-empty (ex/-dissoc* m k))]
+       (p/-put dx ref m')
+       (p/-del dx ref))))
   ([dx ref k v]
    (let [m (ex/-get* dx ref)
          x (ex/-get* m k)]
      (if x
        (cond
          (-ref-lookups? x)
-         (p/-put dx ref (ex/-assoc* m k (disj x v)))
+         (if-let [xs (ex/-not-empty (disj x v))]
+           (p/-put dx ref (ex/-assoc* m k xs))
+           (if-let [m' (ex/-not-empty (ex/-dissoc* m k))]
+             (p/-put dx ref m')
+             (p/-del dx ref)))
 
          (and (not (-ref-lookup? x)) (vector? x))
-         (p/-put dx ref (ex/-assoc* m k (ex/-remove (partial = v) x)))
+         (if-let [v (ex/-not-empty (ex/-remove (partial = v) x))]
+           (p/-put dx ref (ex/-assoc* m k v))
+           (if-let [m' (ex/-not-empty (ex/-dissoc* m k))]
+             (p/-put dx ref m')
+             (p/-del dx ref)))
 
          (= x v)
-         (p/-put dx ref (ex/-dissoc* m k))
+         (if-let [m' (ex/-not-empty (ex/-dissoc* m k))]
+           (p/-put dx ref m')
+           (p/-del dx ref))
 
          :else
          (throw (ex-info "unexpected!" {})))
