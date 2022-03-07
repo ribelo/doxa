@@ -143,6 +143,9 @@
      IMeta
      (-meta [_] meta)
 
+     ISeqable
+     (-seq [_] (-seq (ex/-remove (partial identical? ex/-sentinel) xs)))
+
      IEquiv
      (-equiv [this ^js o]
        (and
