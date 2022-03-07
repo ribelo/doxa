@@ -423,6 +423,14 @@
         (ex/-get* dx ref))
        (p/-del ref))))
 
+(defn -delete-table
+  [dx table]
+  (if-let [xs (some-> dx p/-index (ex/-get table))]
+    (ex/-loop [x xs :let [acc dx]]
+      (recur (p/-del acc x))
+      acc)
+    dx))
+
 (deftype CachedResult [delay datoms])
 
 (defn -update-index [index changes]

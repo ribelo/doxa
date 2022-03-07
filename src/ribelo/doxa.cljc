@@ -155,14 +155,17 @@
   [dx tx]
   (let [cnt (count tx)]
     (case cnt
-      2 (let [x (nth tx 1)
-              ref (u/-entity-ref x)]
+      2 (let [x (nth tx 1)]
           (cond
-            (some? ref)
-            (u/-delete-entity dx ref)
+            (map? x)
+            (u/-delete-entity dx (u/-entity-ref x))
 
             (u/-ref-lookup? x)
-            (u/-delete-entity dx x)))
+            (u/-delete-entity dx x)
+
+            (keyword? x)
+            (u/-delete-table dx x)
+            ))
 
       3 (let [ref (nth tx 1)
               k (nth tx 2)]
