@@ -189,7 +189,7 @@
           (let [k k-or-f
                 f (nth tx 3)
                 x (ex/-get-in dx [ref k])]
-            (p/-put dx ref (ex/-assoc* (ex/-get* dx ref) k (apply f x (drop 4 tx)))))
+            (p/-put dx ref (ex/-assoc (ex/-get* dx ref {}) k (apply f x (drop 4 tx)))))
 
           (fn? k-or-f)
           (let [f k-or-f
