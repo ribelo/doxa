@@ -322,8 +322,11 @@
          (and (-ref-lookups? x) (-ref-lookup? v))
          (ex/-assoc* m k (conj x v))
 
-         (and (-ref-lookup? x) (-ref-lookup? v))
+         (and (-ref-lookup? x) (-ref-lookup? v) (not= x v))
          (ex/-assoc* m k (ordered-set [x v]))
+
+         (and (-ref-lookup? x) (-ref-lookup? v) (not= x v))
+         m
 
          (and (-ref-lookup? x) (-ref-lookups? v))
          (ex/-assoc* m k (into [x] v))
