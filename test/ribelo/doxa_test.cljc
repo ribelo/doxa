@@ -46,7 +46,7 @@
                              [:db/id 2]))))
 
 (comment
-  (def db (dx/create-dx {} [{:db/id 1 :name "Petr"}])))
+  (def db (dx/create-dx {} [{:db/id 1 :name "Petr" :aka ["Devil"]}])))
 
 (t/deftest commit
   (let [db (dx/create-dx {} [{:db/id 1 :name "Petr" :aka ["Devil"]}])]
@@ -90,8 +90,6 @@
     (t/testing "testing merge"
       (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil" "Devil"]}}
                (dx/commit db [[:dx/merge {:db/id 1 :name "David" :aka "Devil"}]])))
-      (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka ["Devil" "Tupen"]}}
-               (dx/commit db [[:dx/merge [:db/id 1] :aka ["Tupen"]]])))
       (t/is (= {[:db/id 1] {:db/id 1 :name "David", :aka ["Devil" "Devil"]}}
                (dx/commit db [[:dx/merge {:db/id 1 :name "David" :aka ["Devil"]}]])))
       (t/is (= {[:db/id 1] {:db/id 1 :name ["David" "Petr"], :aka ["Devil"]}}
@@ -114,23 +112,7 @@
                               [:dx/delete [:db/id 1]]])))
       (t/is (= {[:db/id 2] {:db/id 2, :name "Ivan"}, [:db/id 3] {:db/id 3, :name "Petr"}}
                (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Petr"}]]
-                              [:dx/delete [:db/id 1]]])))
-      (t/is (= {[:db/id 1] {:db/id 1, :name "Petr", :aka ["Devil"]},
-                [:db/id 2] {:db/id 2, :name "Ivan"},
-                [:db/id 3] {:db/id 3, :name "Petr"}}
-               (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Petr"}]]
-                              [:dx/delete [:db/id 1] :friend]])))
-      (t/is (= {[:db/id 1] {:db/id 1, :name "Petr", :aka ["Devil"], :friend #{[:db/id 3]}},
-                [:db/id 2] {:db/id 2, :name "Ivan"},
-                [:db/id 3] {:db/id 3, :name "Petr", :_friend [:db/id 1]}}
-               (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Petr"}]]
-                              [:dx/delete [:db/id 2] :_friend]])))
-      (t/is (= {[:db/id 1] {:db/id 1, :name "Petr", :aka ["Devil"]},
-                [:db/id 2] {:db/id 2, :name "Ivan"},
-                [:db/id 3] {:db/id 3, :name "Petr"}}
-               (dx/commit db [[:dx/put [:db/id 1] :friend [{:db/id 2 :name "Ivan"} {:db/id 3 :name "Petr"}]]
-                              [:dx/delete [:db/id 2] :_friend]
-                              [:dx/delete [:db/id 3] :_friend]]))))
+                              [:dx/delete [:db/id 1]]]))))
 
     (t/testing "testing update"
       (t/is (= {[:db/id 1] {:db/id 1 :name "Petr", :aka "Tupen"}}
@@ -154,7 +136,6 @@
                               [:dx/put    [:db/id 1] :age 15]
                               [:dx/match  [:db/id 1] :name "Petr"]
                               [:dx/put    [:db/id 1] :sex :male]]))))))
-;; => #'ribelo.doxa-test/commit
 
 (def people-docs
   [{:db/id 1, :name "Petr", :aka ["Devil" "Tupen"] :child [[:db/id 2] [:db/id 3]]}
@@ -1183,7 +1164,7 @@
              (dx/pull db [:name {:car [:autombile/id :name]}] [:person/id "10"])))))
 
 (t/deftest gh-24 []
-  (let [db1 (with-meta {} {::dx/cache (atom (dxc/doxa-cache))})
+  (let [db1 (dxm/empty-db {:cache (dxc/doxa-cache)})
         people (fn [db]
                  (dxq/-mq '[:find [?name ...]
                             :where
@@ -1210,3 +1191,12 @@
     (t/is (= {[:db/id 2] {:_sports [:db/id 1], :db/id 2, :name "Boardercross"}
               [:db/id 1] {:db/id 1, :name "Olympics", :sports #{[:db/id 2]}}}
              (dx/commit db [[:dx/delete [:db/id 3]]])))))
+
+(t/deftest gh-34 []
+  (let [db1 (->> {:id   "10"
+                  :name "Enzo"
+                  :cars  [] }
+                 (vector :dx/merge)
+                 (dx/commit (dx/create-dx)))]
+    (t/is (= {:name "Enzo"}
+             (dx/pull db1 [:name {:cars [:id :name]}] [:id "10"])))))
