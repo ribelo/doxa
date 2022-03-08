@@ -256,7 +256,7 @@
                            v)
                          id)
 
-                       (or (and (coll? v) (ex/-not-empty v)) (some? v))
+                       (or (and (coll? v) (ex/-not-empty v)) (and (not (coll? v)) (some? v)))
                        (recur (ex/-assoc!* m k v) r id)
 
                        :else
