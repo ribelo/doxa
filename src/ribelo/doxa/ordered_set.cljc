@@ -249,7 +249,7 @@
    (deftype TransientOrderedSet [meta m xs]
      ITransientSet
      (-disjoin! [this v]
-       (if-let [i (.get m v)]
+       (if-let [i (m v)]
          (TransientOrderedSet.
            meta
            (-dissoc! m v)
@@ -261,13 +261,13 @@
 
      ILookup
      (-lookup [_ v]
-       (if (.get m v)
+       (if (m v)
          v
          nil))
 
      ITransientCollection
      (-conj! [this v]
-       (if (.get m v)
+       (if (m v)
          this
          (TransientOrderedSet.
            meta

@@ -1214,3 +1214,17 @@
                  (dx/commit db1))]
     (t/is (= (:car (dx/pull db1 [:name {:car [:id :model]}] [:id "10"]))
              (:car (dx/pull db2 [:name {:car [:id :model]}] [:id "10"]))))))
+
+(t/deftest gh-37
+  (let [db1 (dx/create-dx {} [{:id      1
+                               :name    "Steve"
+                               :hobbies [{:id   2
+                                          :name "Tennis"}]}])
+        db2 (dx/commit db1 [:dx/merge {:id      1
+                                       :name    "Steve"
+                                       :hobbies [{:id   3
+                                                  :name "Onewheel"}]}])]
+    (t/is (= {[:id 2] {:_hobbies [:id 1] , :id 2, :name "Tennis"}
+              [:id 1] {:id 1, :name "Steve" , :hobbies #{[:id 2] [:id 3]}} ,
+              [:id 3] {:_hobbies [:id 1] , :id 3, :name "Onewheel"}}
+             db2))))

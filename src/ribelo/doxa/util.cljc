@@ -331,13 +331,13 @@
          (and (-ref-lookup? x) (-ref-lookups? v))
          (ex/-assoc* m k (into [x] v))
 
-         (and (not (-ref-lookup? x)) (vector? x) (not (vector? v)))
+         (and (not (-key-id? k)) (not (-ref-lookup? x)) (vector? x) (not (vector? v)))
          (ex/-assoc* m k (conj x v))
 
-         (and (not (-ref-lookup? x)) (vector? x) (vector? v))
+         (and (not (-key-id? k)) (not (-ref-lookup? x)) (vector? x) (vector? v))
          (ex/-assoc* m k (into x v))
 
-         (and (not (-ref-lookup? x)) (not (vector? x)) (vector? v))
+         (and (not (-key-id? k)) (not (-ref-lookup? x)) (not (vector? x)) (vector? v))
          (ex/-assoc* m k (into v [x]))
 
          :else
