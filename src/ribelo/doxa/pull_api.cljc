@@ -19,18 +19,18 @@
    (let [recur-pull (if lazy? -pull --pull)]
      (cond
        (ex/-every? u/-ref-lookup? parent)
-       (ex/-mapv #(recur-pull db query %) parent)
+       (mapv #(recur-pull db query %) parent)
 
        (= [:*] query)
-       (when-let [m (ex/-get db parent)]
+       (when-let [m (db parent)]
          (persistent!
-           (ex/-reduce-kv
-             (fn [acc k v] (if (not (u/-rvd->key k)) (ex/-assoc!* acc k v) acc))
+           (reduce-kv
+             (fn [acc k v] (if (not (u/-rvd->key k)) (assoc! acc k v) acc))
              (transient {})
              m)))
 
        (not (u/-ref-lookup? parent))
-       (ex/-mapv #(recur-pull db query %) (u/-eid-search db parent))
+       (mapv #(recur-pull db query %) (u/-eid-search db parent))
 
        :else
        (let [qit (ex/-iter query)]
@@ -42,19 +42,19 @@
                  (recur (recur-pull (ex/-first-val elem) (ex/-first-key elem) nil opts) ref)
 
                  (and ref (#{:*} elem))
-                 (recur (u/-flatten-map (ex/-get* db ref)) ref)
+                 (recur (u/-flatten-map (db ref)) ref)
 
                  :else
                  (let [k (u/-rvd->key elem)]
                    (cond
                      (some? k)
-                     (let [x (ex/-get-in db [ref elem])]
+                     (let [x (get-in db [ref elem])]
                        (if (or (u/-ref-lookup? x) (u/-ref-lookups? x))
-                         (recur (ex/-assoc* r elem x) ref)
+                         (recur (assoc r elem x) ref)
                          (recur r ref)))
 
                      (and ref (keyword? elem) (not k))
-                     (let [v (ex/-get-in db [ref elem])
+                     (let [v (get-in db [ref elem])
                            one? (some-> (meta v) ::one?)
                            v' (if one? (nth v 0) v)]
                        (recur (ex/-assoc-some r elem v') ref))
@@ -63,8 +63,8 @@
                      (let [k (ex/-first-key elem)
                            ?rk (u/-rvd->key k)
                            ref' (if-not ?rk
-                                  (ex/-get-in db [parent k])
-                                  (ex/-get-in db [ref k]))
+                                  (get-in db [parent k])
+                                  (get-in db [ref k]))
                            one? (some-> (meta ref') ::one?)
                            ref' (if one? (nth ref' 0) ref')]
                        (cond
@@ -75,15 +75,15 @@
                          (recur
                           (ex/-assoc-some
                            r (ex/-first-key elem)
-                           (ex/-not-empty
+                           (seq
                             (persistent!
-                             (ex/-reduce
+                             (reduce
                               (fn [acc x]
                                 (let [k (nth x 0)
                                       v (ex/-first-val elem)]
                                   (cond
                                     (map? v)
-                                    (if-let [q (ex/-get* v k)]
+                                    (if-let [q (get v k)]
                                       (conj! acc (recur-pull db q x opts))
                                       acc)
 
@@ -96,17 +96,17 @@
                           ref)
 
                          (and ref (u/-ref-lookups? ref') ?rk)
-                         (let [xs (ex/-mapv (fn [ref] (recur-pull db (ex/-first-val elem) ref opts)) ref')
-                               n (ex/-count* xs)]
+                         (let [xs (mapv (fn [ref] (recur-pull db (ex/-first-val elem) ref opts)) ref')
+                               n (count xs)]
                            (recur
                             (ex/-assoc-some
                              r (ex/-first-key elem)
                              (cond
                                (> n 1)
-                               (ex/-filter ex/-not-empty xs)
+                               (ex/-filter seq xs)
 
                                (= n 1)
-                               (ex/-not-empty (nth xs 0))))
+                               (seq (nth xs 0))))
                             ref))
 
                          ref
@@ -125,7 +125,7 @@
           (reify
             clojure.lang.ILookup
             (valAt [_ k]
-              (ex/-get* @cache_ k))
+              (get @cache_ k))
 
             clojure.lang.IDeref
             (deref [_]
@@ -150,9 +150,9 @@
        (ex/-loop [q query :let [acc acc]]
          (cond
            (map-entry? q)
-           (recur (-pull->datalog (conj! acc [id (ex/-k* q) '_]) id (ex/-v* q)))
+           (recur (-pull->datalog (conj! acc [id (ex/-k q) '_]) id (ex/-v q)))
            (vector? q)
-           (recur (ex/-mapv (partial -pull->datalog acc id) q))
+           (recur (mapv (partial -pull->datalog acc id) q))
            (keyword? q)
            (recur (conj! acc [id q '_]))
            (map? q)
@@ -165,7 +165,7 @@
         where (-pull->datalog query parent)]
     (if (p/-has? @cache_ k)
       (let [cache' (p/-hit @cache_ k)
-            item (ex/-get* cache' k)]
+            item (get cache' k)]
         (p/-set-cache! db cache')
         @(.-delay ^CachedResult item))
       (let [d (delay (-pull db query parent))

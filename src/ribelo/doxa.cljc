@@ -70,7 +70,7 @@
                   (u/-put-entity dx m)
                   (-submit-failure tx))
                 (if (map? m)
-                  (u/-put-entity dx (ex/-assoc* m tid eid))
+                  (u/-put-entity dx (assoc m tid eid))
                   (-submit-failure tx))))
 
           4 (let [k (nth tx 2)
@@ -81,10 +81,10 @@
 
                 (if-let [ids (u/-entities-refs v)]
                   (-> (u/-safe-put-kv dx ref k ids)
-                      (u/-put-entities (ex/-mapv (fn [m] (ex/-assoc* m (u/-key->rvd k) ref)) v)))
+                      (u/-put-entities (mapv (fn [m] (assoc m (u/-key->rvd k) ref)) v)))
 
                   (if (u/-ref-lookup? v)
-                    (if (ex/-get* dx v)
+                    (if (dx v)
                       (u/-safe-put-kv dx ref k v)
                       (-submit-failure tx))
                     (u/-safe-put-kv dx ref k v)))))
@@ -122,7 +122,7 @@
                   (u/-merge-entity dx m)
                   (-submit-failure tx))
                 (if (map? m)
-                  (u/-merge-entity dx (ex/-assoc* m tid eid))
+                  (u/-merge-entity dx (assoc m tid eid))
                   (-submit-failure tx))))
 
           4 (let [k (nth tx 2)
@@ -136,7 +136,7 @@
                       (u/-merge-entities v))
 
                   (if (u/-ref-lookup? v)
-                    (if (ex/-get* dx v)
+                    (if (dx v)
                       (u/-safe-put-kv dx ref k v)
                       (-submit-failure tx))
                     (u/-safe-merge-kv dx ref k v)))))
@@ -191,12 +191,12 @@
           (keyword? k-or-f)
           (let [k k-or-f
                 f (nth tx 3)
-                x (ex/-get-in dx [ref k])]
-            (p/-put dx ref (ex/-assoc (ex/-get* dx ref {}) k (apply f x (drop 4 tx)))))
+                x (get-in dx [ref k])]
+            (p/-put dx ref (assoc (dx ref {}) k (apply f x (drop 4 tx)))))
 
           (fn? k-or-f)
           (let [f k-or-f
-                m (ex/-get* dx ref)]
+                m (dx ref)]
             (p/-put dx ref (apply f m (drop 3 tx))))
 
           :else
@@ -210,17 +210,17 @@
     (case cnt
       2 (if (map? ref-or-map)
           (if-let [ref (u/-entity-ref ref-or-map)]
-            (let [e (ex/-get* dx ref)]
+            (let [e (dx ref)]
               (reduce-kv
                 (fn [_ k v]
-                  (if (= v (ex/-get e k)) true (reduced false)))
+                  (if (= v (get e k)) true (reduced false)))
                 false
-                (ex/-get dx ref)))
+                (dx ref)))
             (-submit-failure tx))
           (-submit-failure tx))
 
       (let [x (nth tx 2)
-            e (ex/-get* dx ref-or-map)]
+            e (dx ref-or-map)]
         (case cnt
           3 (cond
               (fn? x)
@@ -229,15 +229,15 @@
               (map? x)
               (reduce-kv
                 (fn [_ k v]
-                  (if (= v (ex/-get e k)) true (reduced false)))
+                  (if (= v (get e k)) true (reduced false)))
                 false
                 x))
 
           4 (let [v (nth tx 3)]
               (if (fn? v)
-                (v (ex/-get e x))
+                (v (get e x))
                 (if-not (fn? x)
-                  (let [v' (ex/-get e x)]
+                  (let [v' (get e x)]
                     (or (= v v')
                         (when (coll? v') (ex/-some #{v} v'))))
                   (-submit-failure tx "function should be the 3rd element")))))))))
@@ -245,7 +245,7 @@
 (defn commit
   ([dx txs] (commit dx txs nil))
   ([dx txs meta']
-   (let [txs (if (and (vector? txs) (vector? (ex/-first txs))) txs [txs])
+   (let [txs (if (and (vector? txs) (vector? (first txs))) txs [txs])
          dx'
          (ex/-loop [tx txs :let [acc (p/-clear-tx dx) match? true]]
            (let [kind (nth tx 0)]
@@ -268,7 +268,7 @@
 (defn dx-with
   ([data] (dx-with {} data))
   ([dx data]
-   (commit dx (ex/-mapv (fn [m] [:dx/merge m]) data))))
+   (commit dx (mapv (fn [m] [:dx/merge m]) data))))
 
 (defn create-dx
   ([] (create-dx {}))
@@ -302,21 +302,21 @@
     (throw (ex-info "cannot remove the listener, the atom does not exist" {:meta (meta dx)}))))
 
 (defn -entity-lookup [dx ref k denormalize?]
-  (let [e (ex/-get* dx ref)]
+  (let [e (dx ref)]
     (if denormalize?
-      (when-let [x (ex/-get e k)]
+      (when-let [x (get e k)]
         (if (u/-ref-lookup? x)
           (entity dx ref {:denormalize? denormalize?})
           (if (u/-ref-lookups? x)
             (into (empty x) (fn [ref] (entity dx ref {:denormalize? denormalize?})) x)
             x)))
-      (ex/-get e k))))
+      (get e k))))
 
 (defn entity
   ([dx ref] (entity dx ref {}))
   ([dx ref {:keys [denormalize?]}]
    {:pre [(u/-probably-dx? dx)]}
-   (when (ex/-get* dx ref)
+   (when (dx ref)
      #?(:clj
         (reify
           clojure.lang.ILookup
@@ -329,7 +329,7 @@
 
           clojure.lang.IDeref
           (deref [this]
-            (when-let [e (ex/-get* dx ref)]
+            (when-let [e (dx ref)]
               (if denormalize?
                 (denormalize dx e)
                 e))))
@@ -352,13 +352,13 @@
 
           IDeref
           (-deref [this]
-            (when-let [e (ex/-get* dx ref)]
+            (when-let [e (dx ref)]
               (if denormalize?
                 (denormalize dx e)
                 e))))))))
 
 (defn table [dx table]
-  (if-let [xs (some-> dx p/-index (ex/-get table))]
+  (if-let [xs (some-> dx p/-index (get table))]
     (ex/-select-keys dx xs)
     (empty dx)))
 

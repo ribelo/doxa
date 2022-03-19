@@ -9,15 +9,15 @@
       [clojure.lang.IPersistentMap
        (p/-put
          ([this e m]
-          (let [ndb (ex/-assoc* this e m)
-                oe (ex/-get this e {})
-                ne (ex/-get ndb e {})
+          (let [ndb (assoc this e m)
+                oe (this e {})
+                ne (ndb e {})
                 diff (u/-diff-entity oe ne)]
             (vary-meta ndb update :ribelo.doxa/tx into diff))))
        (p/-del
          ([this e]
-          (let [ndb (ex/-dissoc* this e)
-                oe (ex/-get this e {})
+          (let [ndb (dissoc this e)
+                oe (this e {})
                 diff (u/-diff-entity oe {})]
             (vary-meta ndb update :ribelo.doxa/tx into diff))))
 
@@ -25,7 +25,7 @@
        (p/-clear-tx [this] (vary-meta this assoc :ribelo.doxa/tx []))
        (p/-cache [this] (some-> this meta :ribelo.doxa/cache))
        (p/-set-cache! [this cache] (let [cache_ (some-> this meta :ribelo.doxa/cache)] (when cache_ (reset! cache_ cache)) this))
-       (p/-index [this] (ex/-get (meta this) :ribelo.doxa/index {}))
+       (p/-index [this] (get (meta this) :ribelo.doxa/index {}))
        (p/-reindex [this] (vary-meta this assoc :ribelo.doxa/index (u/-update-index (p/-index this) (p/-tx this))))
        (p/-connect [this] (atom this))]
 
@@ -33,15 +33,15 @@
       [PersistentArrayMap
        (p/-put
          ([this e m]
-          (let [ndb (ex/-assoc* this e m)
-                oe (ex/-get this e {})
-                ne (ex/-get ndb e {})
+          (let [ndb (assoc this e m)
+                oe (this e {})
+                ne (ndb e {})
                 diff (u/-diff-entity oe ne)]
             (vary-meta ndb update :ribelo.doxa/tx into diff))))
        (p/-del
          ([this e]
-          (let [ndb (ex/-dissoc* this e)
-                oe (ex/-get this e {})
+          (let [ndb (dissoc this e)
+                oe (get this e {})
                 diff (u/-diff-entity oe {})]
             (vary-meta ndb update :ribelo.doxa/tx into diff))))
 
@@ -49,22 +49,22 @@
        (p/-clear-tx [this] (vary-meta this assoc :ribelo.doxa/tx []))
        (p/-cache [this] (some-> this meta :ribelo.doxa/cache))
        (p/-set-cache! [this cache] (let [cache_ (some-> this meta :ribelo.doxa/cache)] (when cache_ (reset! cache_ cache)) this))
-       (p/-index [this] (ex/-get (meta this) :ribelo.doxa/index {}))
+       (p/-index [this] (get (meta this) :ribelo.doxa/index {}))
        (p/-reindex [this] (vary-meta this assoc :ribelo.doxa/index (u/-update-index (p/-index this) (p/-tx this))))
        (p/-connect [this] (atom this))
 
        PersistentHashMap
        (p/-put
          ([this e m]
-          (let [ndb (ex/-assoc* this e m)
-                oe (ex/-get this e {})
-                ne (ex/-get ndb e {})
+          (let [ndb (assoc this e m)
+                oe (this e {})
+                ne (ndb e {})
                 diff (u/-diff-entity oe ne)]
             (vary-meta ndb update :ribelo.doxa/tx into diff))))
        (p/-del
          ([this e]
-          (let [ndb (ex/-dissoc* this e)
-                oe (ex/-get this e {})
+          (let [ndb (dissoc this e)
+                oe (get this e {})
                 diff (u/-diff-entity oe {})]
             (vary-meta ndb update :ribelo.doxa/tx into diff))))
 
@@ -72,7 +72,7 @@
        (p/-clear-tx [this] (vary-meta this assoc :ribelo.doxa/tx []))
        (p/-cache [this] (some-> this meta :ribelo.doxa/cache))
        (p/-set-cache! [this cache] (let [cache_ (some-> this meta :ribelo.doxa/cache)] (when cache_ (reset! cache_ cache)) this))
-       (p/-index [this] (ex/-get (meta this) :ribelo.doxa/index {}))
+       (p/-index [this] (get (meta this) :ribelo.doxa/index {}))
        (p/-reindex [this] (vary-meta this assoc :ribelo.doxa/index (u/-update-index (p/-index this) (p/-tx this))))
        (p/-connect [this] (atom this))]))
 

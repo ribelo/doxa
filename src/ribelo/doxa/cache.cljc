@@ -14,20 +14,20 @@
 (deftype DoxaCache [m ^long tick ^long cache-size ^long ttl-ms]
   #?@(:clj
       [clojure.lang.ILookup
-       (valAt [_ k] (.-item ^TickedCacheEntry (ex/-get m k)))
+       (valAt [_ k] (.-item ^TickedCacheEntry (get m k)))
 
        clojure.lang.IFn
-       (invoke [_ k] (.-item ^TickedCacheEntry (ex/-get m k)))
+       (invoke [_ k] (.-item ^TickedCacheEntry (get m k)))
 
        clojure.lang.IPersistentCollection
        (empty [_] (DoxaCache. {} 0 cache-size ttl-ms))]
 
       :cljs
       [ILookup
-       (-lookup [_ k] (.-item (ex/-get* m k)))
+       (-lookup [_ k] (.-item (get m k)))
 
        IFn
-       (-invoke [_ k] (.-item (ex/-get* m k)))
+       (-invoke [_ k] (.-item (get m k)))
 
        IEmptyableCollection
        (-empty [_] (DoxaCache. {} 0 cache-size ttl-ms))])
@@ -35,26 +35,26 @@
   p/IDoxaCache
   (p/-has? [this k]
     (let [instant (ex/-now-udt)]
-      (when-let [^TickedCacheEntry ?e (ex/-get m k)]
+      (when-let [^TickedCacheEntry ?e (get m k)]
         (if (or (zero? ttl-ms) (< (- instant (.-udt ?e)) ttl-ms))
           true
           (not (boolean (p/-evict this k)))))))
 
   (p/-hit [_ args]
-    (let [^TickedCacheEntry ?e (ex/-get m args)
+    (let [^TickedCacheEntry ?e (get m args)
           tick' (inc tick)
-          m' (ex/-assoc* m args (TickedCacheEntry. (.-item ?e) (.-udt ?e) (.-tick-lru ?e) (inc (.-tick-lfu ?e))))]
+          m' (assoc m args (TickedCacheEntry. (.-item ?e) (.-udt ?e) (.-tick-lru ?e) (inc (.-tick-lfu ?e))))]
       (DoxaCache. m' tick' cache-size ttl-ms)))
 
   (p/-evict [this args]
     (p/-run-gc this)
-    (DoxaCache. (ex/-dissoc* m args) tick cache-size ttl-ms))
+    (DoxaCache. (dissoc m args) tick cache-size ttl-ms))
 
   (p/-miss [this k result]
     (let [this' (p/-run-gc this)
           tick' (inc tick)
           instant (ex/-now-udt)
-          m' (ex/-assoc* (.-m ^DoxaCache this') k (TickedCacheEntry. result instant tick' 1))]
+          m' (assoc (.-m ^DoxaCache this') k (TickedCacheEntry. result instant tick' 1))]
       (DoxaCache. m' tick' cache-size ttl-ms)))
 
   (p/-gc-now? [_]
@@ -65,7 +65,7 @@
     (if (p/-gc-now? this)
       (let [instant (ex/-now-udt)
             m' (persistent!
-                 (ex/-reduce-kv
+                 (reduce-kv
                    (fn [acc k ^TickedCacheEntry e]
                      (if (and (pos? ttl-ms) (> (- instant (.-udt e)) ttl-ms))
                        (ex/-dissoc!* acc k)
@@ -80,8 +80,8 @@
 
 (defn -refresh-cache [m tick cache-size ttl-ms changes]
   (let [m' (ex/-loop [me m :let [acc (transient m)]]
-               (let [k (ex/-k* me)
-                     ^TickedCacheEntry e (ex/-v* me)
+               (let [k (ex/-k me)
+                     ^TickedCacheEntry e (ex/-v me)
                      datoms (.-datoms ^CachedResult (.-item e))]
                  (if (u/-datoms-match-changes? datoms changes)
                    (recur (ex/-dissoc!* acc k))

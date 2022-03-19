@@ -58,14 +58,14 @@
      p/IDoxa
      (p/-put [_ e m]
        (let [ndb (assoc db e m)
-             oe (ex/-get db e {})
-             ne (ex/-get ndb e {})
+             oe (get db e {})
+             ne (get ndb e {})
              diff (u/-diff-entity oe ne)]
          (Doxa. ndb cache_ index (into tx diff) listeners_)))
 
      (p/-del [_ e]
        (let [ndb (dissoc db e e)
-             oe (ex/-get db e {})
+             oe (get db e {})
              diff (u/-diff-entity oe {})]
          (Doxa. ndb cache_ index (into tx diff) listeners_)))
 
@@ -172,14 +172,14 @@
      p/IDoxa
      (p/-put [_ e m]
        (let [ndb (assoc db e m)
-             oe (ex/-get db e {})
-             ne (ex/-get ndb e {})
+             oe (get db e {})
+             ne (get ndb e {})
              diff (u/-diff-entity oe ne)]
          (Doxa. ndb cache_ index (into tx diff) listeners_)))
 
      (p/-del [_ e]
        (let [ndb (dissoc db e e)
-             oe (ex/-get db e {})
+             oe (get db e {})
              diff (u/-diff-entity oe {})]
          (Doxa. ndb cache_ index (into tx diff) listeners_)))
 

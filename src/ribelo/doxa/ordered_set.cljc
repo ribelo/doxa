@@ -202,7 +202,7 @@
    (defn ordered-set
      ([] (ordered-set []))
      ([xs]
-      (ex/-reduce
+      (reduce
         (fn [acc x] (conj acc x))
         (OrderedSet. {} {} [])
         xs)))
