@@ -1,8 +1,8 @@
 #+TITLE: Benchmark
 
-* COMMENT random data
+* random data
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
 (require '[ribelo.extropy  :as  ex])
 (require '[datascript.core :as   d])
@@ -10,7 +10,7 @@
 
 #+end_src
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
 (let [next-eid (volatile! 0)]
 
@@ -64,13 +64,29 @@
 
 (def data100k (ex/-into-all [] fruit20k vegetable20k  animal20k cat20k dog20k))
 
+(def ds100k
+  (persistent!
+   (reduce
+    (fn [acc m]
+      (conj!
+       acc
+       (reduce-kv
+        (fn [m k v]
+          (if (= "id" (name k))
+            (assoc m :db/id v)
+            (assoc m k v)))
+        {}
+        m)))
+    (transient [])
+    data100k)))
+
 #+end_src
 
 * transactions
 
 ** adding data one transaction at a time
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
 (defn datascript-add-1 [data]
   (ex/-qb 1
@@ -78,10 +94,10 @@
      (fn [db p]
        (-> db
            (d/db-with [[:db/add (:db/id p) :name      (:name p)]])
-           (d/db-with [[:db/add (:db/id p) :last-name (:last-name p)]])
-           (d/db-with [[:db/add (:db/id p) :age       (:age p)]])
-           (d/db-with [[:db/add (:db/id p) :salary    (:salary p)]])))
-     (d/empty-db schema)
+           (d/db-with [[:db/add (:db/id p) :weight    (:weight p)]])
+           (d/db-with [[:db/add (:db/id p) :size      (:size p)]])
+           (d/db-with [[:db/add (:db/id p) :price     (:price p)]])))
+     (d/empty-db)
      data)))
 
 (defn doxa-add-1 [data]
@@ -93,50 +109,37 @@
      data)))
 
 ;; result in ms
-[(datascript-add-1 people50k) (doxa-add-1 people50k)]
-;; => [1020.39 334.32]
+(let [ds (take 1e4 ds100k)
+      dx (take 1e4 data100k)]
+  [(datascript-add-1 ds) (doxa-add-1 dx)])
+;; => [548 230]
 #+end_src
 
 ** add all data in single transaction
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
-(defn datascript-add-all []
+(defn datascript-add-all [data]
   (ex/-qb 1
-    (d/db-with (d/empty-db schema) people50k)))
+    (d/db-with (d/empty-db) data)))
 
-(defn doxa-add-all []
+(defn doxa-add-all [data]
   (ex/-qb 1
-    (->> (into []
-               (map (fn [p] [:dx/put p]))
-               people50k)
-         (dx/commit {}))))
+    (dx/commit {} [:dx/put data])))
 
-(defn doxa-add-all []
-  (ex/-qb 1
-    (dx/commit {} [:dx/put people50k])))
-
-[(datascript-add-all) (doxa-add-all)]
-;; => [2817.18 274.18]
+(let [ds (take 1e4 ds100k)
+      dx (take 1e4 data100k)]
+  [(datascript-add-all ds) (doxa-add-all dx)])
+;; => [532 223]
 
 #+end_src
 
 * query
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
 (def ds100k
-  (d/db-with (d/empty-db)
-             (mapv
-               (fn [m]
-                 (reduce-kv
-                   (fn [acc k v]
-                     (if (= :id (name k))
-                       (assoc acc :db/id v)
-                       (assoc acc k v)))
-                   {}
-                   m))
-               data100k)))
+  (d/db-with (d/empty-db) ds100k))
 
 (def dx100k (dx/create-dx {} data100k))
 
@@ -147,7 +150,7 @@
 
 ** one condition
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
 (defn datascript-q1 []
   (ex/-qb 1e1
@@ -170,7 +173,7 @@
 (defn dx-mq1 []
   (ex/-qb 1e1
     (dx/mq '[:find  ?e
-            :where [?e :name "Apple"]]
+             :where [?e :name "Apple"]]
       mdx100k)))
 
 (defn transduce-q1 []
@@ -178,7 +181,7 @@
     (into []
       (comp
         (filter (fn [m] (= "Apple" (m :name))))
-        (map :db/id))
+        (map :fruit/id))
       (vals dx100k))))
 
 (defn transduce-q1-table []
@@ -186,23 +189,21 @@
     (into []
       (comp
         (filter (fn [m] (= "Apple" (m :name))))
-        (map :db/id))
+        (map :fruit/id))
       (vals (dx/table dx100k :fruit/id)))))
 
 (def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
-
 (zipmap ks [(datascript-q1) (dx-q1) (dx-mq1) (dx-q1-table) (transduce-q1)])
-;; => {:datascript 33.01,
-;;     :doxa 127.04,
-;;     :memoized-doxa 0.04,
-;;     :doxa-with-table 119.83,
-;;     :transduce 85.87}
-
+;; => {:datascript 251,
+;;     :doxa 530,
+;;     :memoized-doxa 0,
+;;     :doxa-with-table 452,
+;;     :transduce 636}
 #+end_src
 
-** two conditions
+** COMMENT two conditions
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
 (defn datascript-q2 []
   (ex/-qb 1e1
@@ -254,17 +255,16 @@
 
 (def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
 (zipmap ks [(datascript-q2) (dx-q2) (dx-mq2) (dx-q2-table) (transduce-q2)])
-;; => {:datascript 123.66,
-;;     :doxa 147.0,
-;;     :memoized-doxa 0.04,
-;;     :doxa-with-table 130.35,
-;;     :transduce 91.19}
-
+;; => {:datascript 766,
+;;     :doxa 631,
+;;     :memoized-doxa 0,
+;;     :doxa-with-table 525,
+;;     :transduce 662}
 #+end_src
 
 ** three conditions
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
 (defn datascript-q3 []
   (ex/-qb 1e1
@@ -313,17 +313,16 @@
 
 (def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
 (zipmap ks [(datascript-q3) (dx-q3) (dx-mq3) (dx-q3-table) (transduce-q3)])
-;; => {:datascript 159.36,
-;;     :doxa 146.08,
-;;     :memoized-doxa 0.04,
-;;     :doxa-with-table 111.84,
-;;     :transduce 88.09}
-
+;; => {:datascript 1092,
+;;     :doxa 566,
+;;     :memoized-doxa 0,
+;;     :doxa-with-table 478,
+;;     :transduce 689}
 #+end_src
 
 ** four conditions
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
 (defn datascript-q4 []
   (ex/-qb 1e1
@@ -376,17 +375,17 @@
 
 (def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
 (zipmap ks [(datascript-q4) (dx-q4) (dx-mq4) (dx-q4-table) (transduce-q4)])
-;; => {:datascript 203.11,
-;;     :doxa 152.02,
-;;     :memoized-doxa 0.04,
-;;     :doxa-with-table 109.87,
-;;     :transduce 85.63}
+;; => {:datascript 1428,
+;;     :doxa 585,
+;;     :memoized-doxa 0,
+;;     :doxa-with-table 485,
+;;     :transduce 693}
 
 #+end_src
 
 ** one pred
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
 (defn datascript-qpred1 []
   (ex/-qb 1e1
@@ -435,17 +434,16 @@
 
 (def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
 (zipmap ks [(datascript-qpred1) (dx-qpred1) (dx-mqpred1) (dx-qpred1-table) (transduce-qpred1)])
-;; => {:datascript 128.0,
-;;     :doxa 159.31,
-;;     :memoized-doxa 0.04,
-;;     :doxa-with-table 109.35,
-;;     :transduce 89.37}
-
+;; => {:datascript 761,
+;;     :doxa 636,
+;;     :memoized-doxa 0,
+;;     :doxa-with-table 470,
+;;     :transduce 667}
 #+end_src
 
 ** two preds
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
 (defn datascript-qpred2 []
   (ex/-qb 1e1
@@ -513,17 +511,16 @@
 
 (def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
 (zipmap ks [(datascript-qpred2) (dx-qpred2) (dx-mqpred2) (dx-qpred2-table) (transduce-qpred2)])
-;; => {:datascript 207.46,
-;;     :doxa 172.97,
-;;     :memoized-doxa 0.04,
-;;     :doxa-with-table 136.76,
-;;     :transduce 88.25}
-
+;; => {:datascript 1247,
+;;     :doxa 651,
+;;     :memoized-doxa 0,
+;;     :doxa-with-table 546,
+;;     :transduce 637}
 #+end_src
 
 ** three preds
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
 (defn datascript-qpred3 []
   (ex/-qb 1e1
@@ -601,17 +598,17 @@
 
 (def ks [:datascript :doxa :memoized-doxa :doxa-with-table :transduce])
 (zipmap ks [(datascript-qpred3) (dx-qpred3) (dx-mqpred3) (dx-qpred3-table) (transduce-qpred3)])
-;; => {:datascript 280.67,
-;;     :doxa 195.71,
-;;     :memoized-doxa 0.04,
-;;     :doxa-with-table 142.62,
-;;     :transduce 88.63}
+;; => {:datascript 1697,
+;;     :doxa 703,
+;;     :memoized-doxa 1,
+;;     :doxa-with-table 549,
+;;     :transduce 629}
 
 #+end_src
 
 * pull
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 (defn people
   ([n] (people n 1))
   ([n i]
@@ -635,7 +632,7 @@
 
 #+end_src
 
-#+begin_src clojure :results silent :exports code
+#+begin_src clojurescript :results silent :exports code
 
 (defn make-query
   ([n] [(make-query n 1)])
@@ -663,9 +660,9 @@
 
 (def ks [:datascript :doxa :materialised-doxa])
 (zipmap ks [(datascript-pull1) (dx-pull1) (dx-mpull1)])
-;; => {:datascript 6.16,
-;;     :doxa 2.2,
-;;     :materialised-doxa 1.62}
+;; => {:datascript 3,
+;;     :doxa 5,
+;;     :memoized-doxa 2}
 
 (defn datascript-pull10 []
   (ex/-qb 1e3 (d/pull db1k q10 1)))
@@ -677,9 +674,9 @@
   (ex/-qb 1e3 (dx/mpull mdx1k q10 [:db/id 1])))
 
 (zipmap ks [(datascript-pull10) (dx-pull10) (dx-mpull10)])
-;; => {:datascript 7.82,
-;;     :doxa 6.51,
-;;     :materialised-doxa 3.18}
+;; => {:datascript 22,
+;;     :doxa 26,
+;;     :materialised-doxa 6}
 
 (defn datascript-pull100 []
   (ex/-qb 1e3 (d/pull db1k q100 1)))
@@ -691,9 +688,9 @@
   (ex/-qb 1e3 (dx/mpull mdx1k q100 [:db/id 1])))
 
 (zipmap ks [(datascript-pull100) (dx-pull100) (dx-mpull100)])
-;; => {:datascript 68.56,
-;;     :doxa 56.78,
-;;     :materialised-doxa 18.04}
+;; => {:datascript 168,
+;;     :doxa 197,
+;;     :materialised-doxa 13}
 
 (defn datascript-pull999 []
   (ex/-qb 1e3 (d/pull db1k q999 1)))
@@ -704,9 +701,9 @@
 (defn dx-mpull999 []
   (ex/-qb 1e3 (dx/mpull mdx1k q999 [:db/id 1])))
 
-(zipmap ks [#_(datascript-pull999) (dx-pull999) (dx-mpull999)])
-;; => {:datascript java.lang.StackOverflowError
-;;     :doxa 581.97,
-;;     :materialised-doxa 170.57}
+(zipmap ks [#_(datascript-pull999) (dx-pull999) #_(dx-mpull999)])
+;; => {:datascript Maximum call stack size exceeded
+;;     :doxa 2018,
+;;     :materialised-doxa Maximum call stack size exceeded}
 
 #+end_src
