@@ -23,7 +23,7 @@
 
        (vector? query)
        (ex/-conj-some! acc
-         (seq
+         (not-empty
            (ex/-ensure-persisten!
              (reduce
                (fn [acc' q]
@@ -33,7 +33,7 @@
                      (assoc! acc' q v)
                      (reduced nil))
                    (map? q)
-                   (if-let [m (seq (-pick db q ref))]
+                   (if-let [m (not-empty (-pick db q ref))]
                      (ex/-merge! acc' m)
                      (reduced nil))))
                (transient {})

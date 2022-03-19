@@ -240,17 +240,17 @@
         (let [xs (-group-datoms (next d))]
           (case (count xs)
             1 (recur r (conj! acc d) e)
-            (recur (ex/-conj-some! r (seq (persistent! acc))) (transient [d]) e)))
+            (recur (ex/-conj-some! r (not-empty (persistent! acc))) (transient [d]) e)))
 
         (ex/-kw-identical? :and pd)
         (let [xs (-group-datoms (next d))]
           (case (count xs)
             1 (recur r (conj! acc d) e)
-            (recur (ex/-conj-some! r (seq (persistent! acc))) (transient [d]) e)))
+            (recur (ex/-conj-some! r (not-empty (persistent! acc))) (transient [d]) e)))
 
         :else
         (recur r (conj! acc d) e)))
-    (persistent! (ex/-conj-some! r (seq (persistent! acc))))))
+    (persistent! (ex/-conj-some! r (not-empty (persistent! acc))))))
 
 ;; TODO cartesian product
 (defn -parse-input

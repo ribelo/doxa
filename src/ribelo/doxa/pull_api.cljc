@@ -75,7 +75,7 @@
                          (recur
                           (ex/-assoc-some
                            r (ex/-first-key elem)
-                           (seq
+                           (not-empty
                             (persistent!
                              (reduce
                               (fn [acc x]
@@ -106,7 +106,7 @@
                                (ex/-filter seq xs)
 
                                (= n 1)
-                               (seq (nth xs 0))))
+                               (not-empty (nth xs 0))))
                             ref))
 
                          ref

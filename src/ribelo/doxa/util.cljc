@@ -48,7 +48,7 @@
 
 (defn -entities-refs [xs]
   (when (coll? xs)
-    (seq (ordered-set (ex/-keep -entity-ref xs)))))
+    (not-empty (ordered-set (ex/-keep -entity-ref xs)))))
 
 (defn -key->rvd [k]
   (keyword (namespace k) (str "_" (name k))))
@@ -368,7 +368,7 @@
 (defn -safe-dissoc
   ([dx ref k]
    (let [m (dx ref {})]
-     (if-let [m' (seq (dissoc m k))]
+     (if-let [m' (not-empty (dissoc m k))]
        (p/-put dx ref m')
        (p/-del dx ref))))
   ([dx ref k v]
@@ -377,21 +377,21 @@
      (if x
        (cond
          (-ref-lookups? x)
-         (if-let [xs (seq (disj x v))]
+         (if-let [xs (not-empty (disj x v))]
            (p/-put dx ref (assoc m k xs))
-           (if-let [m' (seq (dissoc m k))]
+           (if-let [m' (not-empty (dissoc m k))]
              (p/-put dx ref m')
              (p/-del dx ref)))
 
          (and (not (-ref-lookup? x)) (vector? x))
-         (if-let [v (seq (ex/-remove (partial = v) x))]
+         (if-let [v (not-empty (ex/-remove (partial = v) x))]
            (p/-put dx ref (assoc m k v))
-           (if-let [m' (seq (dissoc m k))]
+           (if-let [m' (not-empty (dissoc m k))]
              (p/-put dx ref m')
              (p/-del dx ref)))
 
          (= x v)
-         (if-let [m' (seq (dissoc m k))]
+         (if-let [m' (not-empty (dissoc m k))]
            (p/-put dx ref m')
            (p/-del dx ref))
 
@@ -467,7 +467,7 @@
             (-delete-backref dx ref k v)
 
             (coll? x)
-            (if-let [xs (seq (ex/-remove (partial = v) x))]
+            (if-let [xs (not-empty (ex/-remove (partial = v) x))]
               (p/-put dx ref (assoc m k xs))
               (p/-put dx ref (dissoc m k)))
 
