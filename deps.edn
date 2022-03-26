@@ -1,5 +1,5 @@
 {:paths ["src/main" "resources"]
- :deps  {com.github.ribelo/extropy {:mvn/version "0.0.12"}}
+ :deps  {com.github.ribelo/extropy {:mvn/version "0.0.13"}}
  :aliases
  {:test  {:extra-paths ["test"]}
   :run-tests
