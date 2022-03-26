@@ -14,7 +14,7 @@
    :extra-deps  {io.github.clojure/tools.build {:git/tag "v0.1.9" :git/sha "6736c83"}
                  meander/epsilon               {:mvn/version "0.0.650"}
                  slipset/deps-deploy           {:mvn/version "RELEASE"}}
-   :exec-fn     build/jar}
+   :exec-fn     build/uber}
   :deploy
   {:extra-paths ["build"]
    :extra-deps  {io.github.clojure/tools.build {:git/tag "v0.1.9" :git/sha "6736c83"}
