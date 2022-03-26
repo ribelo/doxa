@@ -47,9 +47,9 @@
 (def basis (b/create-basis {:project "deps.edn"}))
 (def version (format "0.1.%s" (git-branch-commit-count)))
 (def class-dir "target/classes")
-(def uber-file (format "target/%s-%s.jar" (git-branch-name) version))
+(def jar-file (format "target/%s-%s.jar" (git-branch-name) version))
 
-(defn uber [_]
+(defn jar [_]
   (b/delete {:path "target"})
   (b/write-pom {:class-dir class-dir
                 :lib lib
@@ -62,14 +62,13 @@
                       :url scm-url}})
   (b/copy-dir {:src-dirs   ["src/main"]
                :target-dir class-dir})
-  (b/uber {:class-dir class-dir
-           :uber-file uber-file
-           :basis basis}))
+  (b/jar {:class-dir class-dir
+          :jar-file  jar-file}))
 
 (defn deploy [args]
   (-> args
-      (assoc :artifact uber-file
-             :pom-file (str class-dir "/META-INF/maven/" (namespace lib) "/" (name lib) "/pom.xml"))
+      (assoc  :artifact jar-file
+              :pom-file (str class-dir "/META-INF/maven/" (namespace lib) "/" (name lib) "/pom.xml"))
       (d/deploy)))
 
 (defn clojars [args]
