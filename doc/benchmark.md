@@ -77,7 +77,7 @@
 (def cat20k           (shuffle (take 20000 cat)))
 (def dog20k           (shuffle (take 20000 dog)))
 
-(def data100k (ex/-into-all [] fruit20k vegetable20k  animal20k cat20k dog20k))
+(def data100k (ex/into-all [] fruit20k vegetable20k  animal20k cat20k dog20k))
 
 (def ds100k
   (persistent!
@@ -110,7 +110,7 @@
 ```clojurescript
 
 (defn datascript-add-1 [data]
-  (ex/-qb 1
+  (ex/qb 1
     (reduce
      (fn [db p]
        (-> db
@@ -122,7 +122,7 @@
      data)))
 
 (defn doxa-add-1 [data]
-  (ex/-qb 1
+  (ex/qb 1
     (reduce
      (fn [db p]
        (dx/commit db [[:dx/put p]]))
@@ -144,11 +144,11 @@
 ```clojurescript
 
 (defn datascript-add-all [data]
-  (ex/-qb 1
+  (ex/qb 1
     (d/db-with (d/empty-db) data)))
 
 (defn doxa-add-all [data]
-  (ex/-qb 1
+  (ex/qb 1
     (dx/commit {} [:dx/put data])))
 
 (let [ds (take 1e4 ds100k)
@@ -183,31 +183,31 @@
 ```clojurescript
 
 (defn datascript-q1 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (d/q '[:find ?e
            :where [?e :name "Apple"]]
       ds100k)))
 
 (defn dx-q1 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/q '[:find  ?e
             :where [?e :name "Apple"]]
       dx100k)))
 
 (defn dx-q1-table []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/q '[:find  ?e
             :where [?e :name "Apple"]]
       (dx/table dx100k :fruit/id))))
 
 (defn dx-mq1 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/mq '[:find  ?e
              :where [?e :name "Apple"]]
       mdx100k)))
 
 (defn transduce-q1 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (into []
       (comp
         (filter (fn [m] (= "Apple" (m :name))))
@@ -215,7 +215,7 @@
       (vals dx100k))))
 
 (defn transduce-q1-table []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (into []
       (comp
         (filter (fn [m] (= "Apple" (m :name))))
@@ -239,7 +239,7 @@
 ```clojurescript
 
 (defn datascript-q3 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (d/q '[:find ?e ?p
            :where
            [?e :name "Apple"]
@@ -248,7 +248,7 @@
       ds100k)))
 
 (defn dx-q3 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/q '[:find ?e ?p
             :where
             [?e :name "Apple"]
@@ -257,7 +257,7 @@
       dx100k)))
 
 (defn dx-mq3 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/mq '[:find ?e ?p
              :where
              [?e :name "Apple"]
@@ -266,7 +266,7 @@
       mdx100k)))
 
 (defn dx-q3-table []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/q '[:find ?e ?p
             :where
             [?e :name "Apple"]
@@ -275,7 +275,7 @@
       (dx/table dx100k :fruit/id))))
 
 (defn transduce-q3 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (into []
       (comp
         (filter (fn [m] (and (= "Apple" (m :name))
@@ -300,7 +300,7 @@
 ```clojurescript
 
 (defn datascript-q4 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (d/q '[:find ?e ?p
            :where
            [?e :name "Apple"]
@@ -310,7 +310,7 @@
       ds100k)))
 
 (defn dx-q4 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/q '[:find ?e ?p
             :where
             [?e :name "Apple"]
@@ -320,7 +320,7 @@
       dx100k)))
 
 (defn dx-mq4 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/mq '[:find ?e ?p
              :where
              [?e :name "Apple"]
@@ -330,7 +330,7 @@
       mdx100k)))
 
 (defn dx-q4-table []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/q '[:find ?e ?p
             :where
             [?e :name "Apple"]
@@ -339,7 +339,7 @@
       (dx/table dx100k :fruit/id))))
 
 (defn transduce-q4 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (into []
       (comp
         (filter (fn [m] (and (= "Apple" (m :name))
@@ -366,7 +366,7 @@
 ```clojurescript
 
 (defn datascript-qpred1 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (d/q '[:find ?e ?p
            :where
            [?e :name "Apple"]
@@ -375,7 +375,7 @@
       ds100k)))
 
 (defn dx-qpred1 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/q '[:find ?e ?p
             :where
             [?e :name "Apple"]
@@ -384,7 +384,7 @@
       dx100k)))
 
 (defn dx-mqpred1 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/mq '[:find ?e ?p
              :where
              [?e :name "Apple"]
@@ -393,7 +393,7 @@
       mdx100k)))
 
 (defn dx-qpred1-table []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/q '[:find ?e ?p
             :where
             [?e :name "Apple"]
@@ -402,7 +402,7 @@
       (dx/table dx100k :fruit/id))))
 
 (defn transduce-qpred1 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (into []
       (comp
         (filter (fn [m] (and (= "Apple" (m :name))
@@ -427,7 +427,7 @@
 ```clojurescript
 
 (defn datascript-qpred2 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (d/q '[:find ?e ?p
            :where
            [?e :name "Apple"]
@@ -438,7 +438,7 @@
       ds100k)))
 
 (defn dx-qpred2 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/q '[:find ?e ?p
             :where
             [?e :name "Apple"]
@@ -449,7 +449,7 @@
       dx100k)))
 
 (defn dx-mqpred2 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/mq '[:find ?e ?p
              :where
              [?e :name "Apple"]
@@ -460,7 +460,7 @@
       mdx100k)))
 
 (defn dx-qpred2-table []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/q '[:find ?e ?p
             :where
             [?e :name "Apple"]
@@ -471,7 +471,7 @@
       (dx/table dx100k :fruit/id))))
 
 (defn transduce-qpred2 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (into []
       (comp
         (filter (fn [m] (and (= "Apple" (m :name))
@@ -481,7 +481,7 @@
       (vals dx100k))))
 
 (defn transduce-qpred2-table []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (into []
       (comp
         (filter (fn [m] (and (= "Apple" (m :name))
@@ -507,7 +507,7 @@
 ```clojurescript
 
 (defn datascript-qpred3 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (d/q '[:find ?e ?p
            :where
            [?e :name "Apple"]
@@ -520,7 +520,7 @@
       ds100k)))
 
 (defn dx-qpred3 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/q '[:find ?e ?p
             :where
             [?e :name "Apple"]
@@ -533,7 +533,7 @@
       dx100k)))
 
 (defn dx-mqpred3 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/mq '[:find ?e ?p
              :where
              [?e :name "Apple"]
@@ -546,7 +546,7 @@
       mdx100k)))
 
 (defn dx-qpred3-table []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (dx/q '[:find ?e ?p
             :where
             [?e :name "Apple"]
@@ -559,7 +559,7 @@
       (dx/table dx100k :fruit/id))))
 
 (defn transduce-qpred3 []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (into []
       (comp
         (filter (fn [m] (and (= "Apple" (m :name))
@@ -570,7 +570,7 @@
       (vals dx100k))))
 
 (defn transduce-qpred3-table []
-  (ex/-qb 1e1
+  (ex/qb 1e1
     (into []
       (comp
         (filter (fn [m] (and (= "Apple" (m :name))
@@ -637,13 +637,13 @@
 (def q999 (make-query 999))
 
 (defn datascript-pull1 []
-  (ex/-qb 1e3 (d/pull db1k q1 1)))
+  (ex/qb 1e3 (d/pull db1k q1 1)))
 
 (defn dx-pull1 []
-  (ex/-qb 1e3 (dx/pull dx1k q1 [:db/id 1])))
+  (ex/qb 1e3 (dx/pull dx1k q1 [:db/id 1])))
 
 (defn dx-mpull1 []
-  (ex/-qb 1e3 (dx/mpull mdx1k q1 [:db/id 1])))
+  (ex/qb 1e3 (dx/mpull mdx1k q1 [:db/id 1])))
 
 (def ks [:datascript :doxa :materialised-doxa])
 (zipmap ks [(datascript-pull1) (dx-pull1) (dx-mpull1)])
@@ -652,13 +652,13 @@
 ;;     :memoized-doxa 2}
 
 (defn datascript-pull10 []
-  (ex/-qb 1e3 (d/pull db1k q10 1)))
+  (ex/qb 1e3 (d/pull db1k q10 1)))
 
 (defn dx-pull10 []
-  (ex/-qb 1e3 (dx/pull dx1k q10 [:db/id 1])))
+  (ex/qb 1e3 (dx/pull dx1k q10 [:db/id 1])))
 
 (defn dx-mpull10 []
-  (ex/-qb 1e3 (dx/mpull mdx1k q10 [:db/id 1])))
+  (ex/qb 1e3 (dx/mpull mdx1k q10 [:db/id 1])))
 
 (zipmap ks [(datascript-pull10) (dx-pull10) (dx-mpull10)])
 ;; => {:datascript 22,
@@ -666,13 +666,13 @@
 ;;     :materialised-doxa 6}
 
 (defn datascript-pull100 []
-  (ex/-qb 1e3 (d/pull db1k q100 1)))
+  (ex/qb 1e3 (d/pull db1k q100 1)))
 
 (defn dx-pull100 []
-  (ex/-qb 1e3 (dx/pull dx1k q100 [:db/id 1])))
+  (ex/qb 1e3 (dx/pull dx1k q100 [:db/id 1])))
 
 (defn dx-mpull100 []
-  (ex/-qb 1e3 (dx/mpull mdx1k q100 [:db/id 1])))
+  (ex/qb 1e3 (dx/mpull mdx1k q100 [:db/id 1])))
 
 (zipmap ks [(datascript-pull100) (dx-pull100) (dx-mpull100)])
 ;; => {:datascript 168,
@@ -680,13 +680,13 @@
 ;;     :materialised-doxa 13}
 
 (defn datascript-pull999 []
-  (ex/-qb 1e3 (d/pull db1k q999 1)))
+  (ex/qb 1e3 (d/pull db1k q999 1)))
 
 (defn dx-pull999 []
-  (ex/-qb 1e3 (dx/pull dx1k q999 [:db/id 1])))
+  (ex/qb 1e3 (dx/pull dx1k q999 [:db/id 1])))
 
 (defn dx-mpull999 []
-  (ex/-qb 1e3 (dx/mpull mdx1k q999 [:db/id 1])))
+  (ex/qb 1e3 (dx/mpull mdx1k q999 [:db/id 1])))
 
 (zipmap ks [#_(datascript-pull999) (dx-pull999) #_(dx-mpull999)])
 ;; => {:datascript Maximum call stack size exceeded

@@ -12,7 +12,7 @@
          (require '[criterium.core :as cc]))
 
 (defn -key-id? [k]
-  (or (ex/-kw-identical? :id k) (when (keyword? k) (and (namespace k) (= (name k) "id")))))
+  (or (ex/kw-identical? :id k) (when (keyword? k) (and (namespace k) (= (name k) "id")))))
 
 (defn -ref-lookup? [xs]
   (and (vector? xs) (= 2 (count xs))
@@ -26,7 +26,7 @@
       (and (map? m) (reduce-kv (fn [_ k _] (if (-key-id? k) (reduced true) false)) false m))))
 
 (defn -entities? [xs]
-  (and (coll? xs) (ex/-every? -entity? xs)))
+  (and (coll? xs) (ex/every? -entity? xs)))
 
 (defn -dx? [dx]
   (satisfies? p/IDoxa dx))
@@ -48,7 +48,7 @@
 
 (defn -entities-refs [xs]
   (when (coll? xs)
-    (not-empty (ordered-set (ex/-keep -entity-ref xs)))))
+    (not-empty (ordered-set (ex/keep -entity-ref xs)))))
 
 (defn -key->rvd [k]
   (keyword (namespace k) (str "_" (name k))))
@@ -56,7 +56,7 @@
 (defn -rvd->key [k]
   (when (keyword? k)
     (let [s (name k)]
-      (when (and (not (ex/-str-starts-with? s "__")) (ex/-str-starts-with? s "_"))
+      (when (and (not (ex/str-starts-with? s "__")) (ex/str-starts-with? s "_"))
         (keyword (namespace k) (.substring s 1))))))
 
 (defn -flatten-map [m]
@@ -85,7 +85,7 @@
      {"dx/dbc" (fn [[e kind a v udt]] (DoxaDBChange. e kind a v udt))}))
 
 (defn -diff-entity
-  ([e1 e2] (-diff-entity e1 e2 (ex/-now-udt)))
+  ([e1 e2] (-diff-entity e1 e2 (ex/now-udt)))
   ([e1 e2 udt]
    (let [ref1 (-entity-ref e1)
          ref2 (-entity-ref e2)]
@@ -171,8 +171,8 @@
        (or (-variable? v) (-underscore? v) (= v (.-v change)) (nil? v))))))
 
 (defn -datoms-match-changes? [datoms changes]
-  (ex/-loop [datom datoms :let [acc false]]
-    (if (true? (ex/-loop [change changes :let [acc acc]]
+  (ex/loop-it [datom datoms :let [acc false]]
+    (if (true? (ex/loop-it [change changes :let [acc acc]]
                  (if (true? (-datom-match-change? datom change))
                    true
                    (recur acc))
@@ -183,9 +183,9 @@
 
 (defn -search-attr-in-map
   ([m x]
-   (ex/-loop [me m :let [acc (transient #{})]]
-     (if (= x (ex/-v me))
-       (recur (conj! acc (ex/-k me)))
+   (ex/loop-it [[k v] m :let [acc (transient #{})]]
+     (if (= x v)
+       (recur (conj! acc k))
        (recur acc))
      (persistent! acc))))
 
@@ -193,7 +193,7 @@
   (persistent!
     (reduce-kv
       (fn [acc [tid eid'] _]
-        (if (ex/-kw-identical? eid' eid)
+        (if (ex/kw-identical? eid' eid)
           (conj! acc [tid eid])
           acc))
       (transient [])
@@ -202,78 +202,74 @@
 (declare -safe-merge-entity)
 
 (defn -merge-normalized-data [data]
-  (ex/-loop [me (ex/-group-by first data) :let [acc (transient [])]]
-    (recur (conj! acc [(ex/-k me) (reduce (fn [acc [_ m]] (-safe-merge-entity acc m)) {} (ex/-v me))]))
+  (ex/loop-it [[k v] (ex/group-by first data) :let [acc (transient [])]]
+    (recur (conj! acc [k (reduce (fn [acc [_ m]] (-safe-merge-entity acc m)) {} v)]))
     (persistent! acc)))
 
 (defn -normalize
   "turns a nested map into a flat collection with references."
   ([data] (-normalize data {}))
   ([data m]
-   (let [it (ex/-iter data)]
+   (let [it (ex/iter data)]
      (-merge-normalized-data
-       (persistent!
-         (loop [m (transient m) r (transient []) id nil]
-           (cond
-             (and (not (.hasNext it)) (nil? id))
-             nil
+      (persistent!
+       (loop [m (transient m) r (transient []) id nil]
+         (cond
+           (and (not (.hasNext it)) (nil? id))
+           nil
 
-             (and (not (.hasNext it)) id)
-             (conj! r [id (persistent! m)])
+           (and (not (.hasNext it)) id)
+           (conj! r [id (persistent! m)])
 
-             :else
-             (let [me (.next it)
-                   k (ex/-k me)
-                   v (ex/-v me)]
+           :else
+           (let [[k v] (.next it)]
 
-               (if (-key-id? k)
-                 (recur (assoc! m k v) r [k v])
+             (if (-key-id? k)
+               (recur (assoc! m k v) r [k v])
 
-                 (if-let [eid (-entity-ref v)]
+               (if-let [eid (-entity-ref v)]
+                 (recur
+                  (assoc! m k eid)
+                  (reduce conj! r (-normalize v {(-key->rvd k) (-entity-ref data)})) id)
+
+                 (if-let [eids (-entities-refs v)]
                    (recur
-                     (assoc! m k eid)
-                     (reduce conj! r (-normalize v {(-key->rvd k) (-entity-ref data)})) id)
+                    (assoc! m k eids)
+                    (reduce (fn [acc m'] (reduce conj! acc (-normalize m' {(-key->rvd k) (-entity-ref data)}))) r v) id)
 
-                   (if-let [eids (-entities-refs v)]
+                   (cond
+                     (and (not (-rvd->key k)) (-ref-lookup? v))
                      (recur
-                       (assoc! m k eids)
-                       (reduce (fn [acc m'] (reduce conj! acc (-normalize m' {(-key->rvd k) (-entity-ref data)}))) r v) id)
+                      (assoc! m k v)
+                      (conj! r [v {(first v) (second v) (-key->rvd k) id}])
+                      id)
 
-                     (cond
-                       (and (not (-rvd->key k)) (-ref-lookup? v))
-                       (recur
-                         (assoc! m k v)
-                         (conj! r [v {(first v) (second v) (-key->rvd k) id}])
-                         id)
+                     (and (not (-rvd->key k)) (and (coll? v) (seq v) (ex/every? -ref-lookup? v)))
+                     (recur
+                      (assoc! m k (ordered-set v))
+                      (reduce
+                       (fn [acc [tid eid :as ref']]
+                         (conj! acc [ref' {tid eid (-key->rvd k) id}]))
+                       r
+                       v)
+                      id)
 
-                       (and (not (-rvd->key k)) (and (coll? v) (seq v) (ex/-every? -ref-lookup? v)))
-                       (recur
-                         (assoc! m k (ordered-set v))
-                         (reduce
-                           (fn [acc [tid eid :as ref']]
-                             (conj! acc [ref' {tid eid (-key->rvd k) id}]))
-                           r
-                           v)
-                         id)
+                     (or (and (coll? v) (seq v)) (and (not (coll? v)) (some? v)))
+                     (recur (assoc! m k v) r id)
 
-                       (or (and (coll? v) (seq v)) (and (not (coll? v)) (some? v)))
-                       (recur (assoc! m k v) r id)
-
-                       :else
-                       (recur m r id)))))))))))))
+                     :else
+                     (recur m r id)))))))))))))
 
 (defn -denormalize
   ([data] (-denormalize data data 12 0))
   ([dx data] (-denormalize dx data 12 0))
   ([dx data max-level] (-denormalize dx data max-level 0))
   ([dx data max-level level]
-   (let [it (ex/-iter data)]
+   (let [it (ex/iter data)]
      (loop [m (transient {})]
        (if (or (not (.hasNext it)) (> level max-level))
          (persistent! m)
-         (let [me (.next it)
-               k (ex/-k me)
-               v (ex/-v me)]
+         (let [[k v] (.next it)]
            (cond
              (map? v)
              (recur (assoc! m k (-denormalize dx v max-level (inc level))))
@@ -357,7 +353,7 @@
     (p/-put dx ref {tid eid k v})))
 
 (defn -safe-put-kvs [dx ref & kvs]
-  (ex/-reduce-kvs (fn [acc k v] (-safe-put-kv acc ref k v)) dx kvs))
+  (ex/reduce-kvs (fn [acc k v] (-safe-put-kv acc ref k v)) dx kvs))
 
 (defn -safe-merge-entity [e1 e2]
   (reduce-kv
@@ -384,7 +380,7 @@
              (p/-del dx ref)))
 
          (and (not (-ref-lookup? x)) (vector? x))
-         (if-let [v (not-empty (ex/-remove (partial = v) x))]
+         (if-let [v (not-empty (ex/remove (partial = v) x))]
            (p/-put dx ref (assoc m k v))
            (if-let [m' (not-empty (dissoc m k))]
              (p/-put dx ref m')
@@ -412,7 +408,7 @@
        (-> (-safe-dissoc dx ref k) (-safe-dissoc xs fvd ref))
 
        (-ref-lookups? xs)
-       (ex/-loop [x xs :let [acc (-safe-dissoc dx ref k)]]
+       (ex/loop-it [x xs :let [acc (-safe-dissoc dx ref k)]]
          (recur (-safe-dissoc acc x fvd ref))
          acc))))
   ([dx ref k v]
@@ -430,7 +426,7 @@
        (-> (-safe-dissoc dx ref k) (-safe-dissoc xs rvd ref))
 
        (-ref-lookups? xs)
-       (ex/-loop [x xs :let [acc (-safe-dissoc dx ref k)]]
+       (ex/loop-it [x xs :let [acc (-safe-dissoc dx ref k)]]
          (recur (-safe-dissoc acc x rvd ref))
          acc))))
   ([dx ref k v]
@@ -467,7 +463,7 @@
             (-delete-backref dx ref k v)
 
             (coll? x)
-            (if-let [xs (not-empty (ex/-remove (partial = v) x))]
+            (if-let [xs (not-empty (ex/remove (partial = v) x))]
               (p/-put dx ref (assoc m k xs))
               (p/-put dx ref (dissoc m k)))
 
@@ -503,19 +499,25 @@
 (defn -delete-table
   [dx table]
   (if-let [xs (some-> dx p/-index (get table))]
-    (ex/-loop [x xs :let [acc dx]]
+    (ex/loop-it [x xs :let [acc dx]]
       (recur (p/-del acc x))
       acc)
     dx))
 
 (deftype CachedResult [delay datoms])
 
+(defn -make-index [db]
+  (ex/loop-it [[k _] db :let [acc {}]]
+    (let [[tid _ :as ref] k]
+      (recur (update acc tid ex/conjs ref)))
+    acc))
+
 (defn -update-index [index changes]
-  (ex/-loop [^DoxaDBChange change changes :let [acc index]]
+  (ex/loop-it [^DoxaDBChange change changes :let [acc index]]
     (let [[tid _ :as ref] (.-e change)]
-      (if (ex/-kw-identical? tid (.-a change))
+      (if (ex/kw-identical? tid (.-a change))
         (case (.-kind change)
-          :+ (recur (ex/-update acc tid ex/-conjs ref))
-          :- (recur (ex/-update acc tid disj ref)))
+          :+ (recur (update acc tid ex/conjs ref))
+          :- (recur (update acc tid disj ref)))
         (recur acc)))
     acc))

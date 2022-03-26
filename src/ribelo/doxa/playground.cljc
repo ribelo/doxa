@@ -40,7 +40,7 @@
 (def lmdb100k (lmdb/create-db {:path "playground_db10" :cache (cache/doxa-cache {:ttl-ms 0})}))
 (def lmdbconn_ (p/-connect lmdb100k))
 
-(ex/-loop [x (partition-all 100 people20k) :let [acc 0]]
+(ex/loop-it [x (partition-all 100 people20k) :let [acc 0]]
   (do (println :i acc)
       (dx/commit! lmdbconn_ [:dx/put x])
       (recur (inc acc)))
@@ -80,7 +80,7 @@
                   :where [?e :name "Ivan"]]
                  @lmdbconn_)))
 
-(ex/-loop [me @lmdbconn_ :let [acc []]]
+(ex/loop-it [me @lmdbconn_ :let [acc []]]
   (recur (conj acc me))
   acc)
 

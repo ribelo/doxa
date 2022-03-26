@@ -18,7 +18,7 @@
   ([db query parent {:keys [lazy?] :as opts}]
    (let [recur-pull (if lazy? -pull --pull)]
      (cond
-       (ex/-every? u/-ref-lookup? parent)
+       (ex/every? u/-ref-lookup? parent)
        (mapv #(recur-pull db query %) parent)
 
        (= [:*] query)
@@ -33,13 +33,13 @@
        (mapv #(recur-pull db query %) (u/-eid-search db parent))
 
        :else
-       (let [qit (ex/-iter query)]
+       (let [qit (ex/iter query)]
          (loop [r {} ref parent]
            (if (.hasNext qit)
              (let [elem (.next qit)]
                (cond
-                 (and (map? elem) (u/-ref-lookup? (ex/-first-key elem)))
-                 (recur (recur-pull (ex/-first-val elem) (ex/-first-key elem) nil opts) ref)
+                 (and (map? elem) (u/-ref-lookup? (ex/first-key elem)))
+                 (recur (recur-pull (ex/first-val elem) (ex/first-key elem) nil opts) ref)
 
                  (and ref (#{:*} elem))
                  (recur (u/-flatten-map (db ref)) ref)
@@ -57,10 +57,10 @@
                      (let [v (get-in db [ref elem])
                            one? (some-> (meta v) ::one?)
                            v' (if one? (nth v 0) v)]
-                       (recur (ex/-assoc-some r elem v') ref))
+                       (recur (ex/assoc-some r elem v') ref))
 
                      (and ref (map? elem))
-                     (let [k (ex/-first-key elem)
+                     (let [k (ex/first-key elem)
                            ?rk (u/-rvd->key k)
                            ref' (if-not ?rk
                                   (get-in db [parent k])
@@ -69,18 +69,18 @@
                            ref' (if one? (nth ref' 0) ref')]
                        (cond
                          (and ref (or one? (u/-ref-lookup? ref')))
-                         (recur (ex/-assoc-some r k (recur-pull db (ex/-first-val elem) ref' opts)) ref)
+                         (recur (ex/assoc-some r k (recur-pull db (ex/first-val elem) ref' opts)) ref)
 
                          (and ref (u/-ref-lookups? ref') (not ?rk))
                          (recur
-                          (ex/-assoc-some
-                           r (ex/-first-key elem)
+                          (ex/assoc-some
+                           r (ex/first-key elem)
                            (not-empty
                             (persistent!
                              (reduce
                               (fn [acc x]
                                 (let [k (nth x 0)
-                                      v (ex/-first-val elem)]
+                                      v (ex/first-val elem)]
                                   (cond
                                     (map? v)
                                     (if-let [q (get v k)]
@@ -96,14 +96,14 @@
                           ref)
 
                          (and ref (u/-ref-lookups? ref') ?rk)
-                         (let [xs (mapv (fn [ref] (recur-pull db (ex/-first-val elem) ref opts)) ref')
+                         (let [xs (mapv (fn [ref] (recur-pull db (ex/first-val elem) ref opts)) ref')
                                n (count xs)]
                            (recur
-                            (ex/-assoc-some
-                             r (ex/-first-key elem)
+                            (ex/assoc-some
+                             r (ex/first-key elem)
                              (cond
                                (> n 1)
-                               (ex/-filter seq xs)
+                               (ex/filter seq xs)
 
                                (= n 1)
                                (not-empty (nth xs 0))))
@@ -143,14 +143,14 @@
        @cache_))))
 
 (def -pull->datalog
-  (ex/-memoize
+  (ex/memoize
     (fn
       ([query id] (persistent! (-pull->datalog (transient #{}) id query)))
       ([acc id query]
-       (ex/-loop [q query :let [acc acc]]
+       (ex/loop-it [q query :let [acc acc]]
          (cond
            (map-entry? q)
-           (recur (-pull->datalog (conj! acc [id (ex/-k q) '_]) id (ex/-v q)))
+           (recur (-pull->datalog (conj! acc [id (first q) '_]) id (second q)))
            (vector? q)
            (recur (mapv (partial -pull->datalog acc id) q))
            (keyword? q)

@@ -1,5 +1,6 @@
 (ns ribelo.doxa.query
   (:require
+   [clojure.set :as set]
    [ribelo.extropy :as ex]
    [ribelo.doxa.protocols :as p]
    [ribelo.doxa.util :as u]
@@ -15,7 +16,7 @@
    '* *, '/ /, 'quot quot, 'rem rem, 'mod mod, 'inc inc, 'dec dec, 'max max, 'min min,
    'zero? zero?, 'pos? pos?, 'neg? neg?, 'even? even?, 'odd? odd?, 'compare compare,
    'rand rand, 'rand-int rand-int,
-   'true? true?, 'false? false?, 'nil? nil?, 'some? some?, 'some ex/-some 'not not, ;; 'and and-fn, 'or or-fn,
+   'true? true?, 'false? false?, 'nil? nil?, 'some? some?, 'some ex/some 'not not, ;; 'and and-fn, 'or or-fn,
    'complement complement, 'identical? identical?,
    'identity identity, 'keyword keyword, 'meta meta, 'name name, 'namespace namespace, 'type type,
    'vector vector, 'list list, 'set set, 'hash-map hash-map, 'array-map array-map,
@@ -24,25 +25,25 @@
    're-find re-find, 're-matches re-matches, 're-seq re-seq, 're-pattern re-pattern,
    'ground identity,
    'tuple vector, 'untuple identity
-   'intersect? ex/-intersect?})
+   'intersect? ex/intersect?})
 
 (defmulti -query-fn (fn [x] x))
 
 (defn- -find-pattern [xs]
   (cond
-    (ex/-every? u/-variable? xs)
+    (ex/every? u/-variable? xs)
     :rel
 
     (and (u/-variable? (first xs)) (u/-dot? (second xs)))
     :rel-first
 
-    (and (vector? (first xs)) (u/-variable? (ex/-ffirst xs)) (u/-dots? (-> xs first second)))
+    (and (vector? (first xs)) (u/-variable? (ffirst xs)) (u/-dots? (-> xs first second)))
     :rel-coll
 
-    (and (vector? (first xs)) (ex/-every? u/-variable? (first xs)))
+    (and (vector? (first xs)) (ex/every? u/-variable? (first xs)))
     :rel-tuple
 
-    (and (list? (first xs)) (= 'pull (ex/-ffirst xs)))
+    (and (list? (first xs)) (= 'pull (ffirst xs)))
     :pull
 
     :else (throw (ex-info "unrecognized input" {:xs xs}))))
@@ -67,7 +68,7 @@
 
 (defmethod -reducer :rel-coll
   [xs {:keys [limit]}]
-  (let [k (ex/-ffirst xs)]
+  (let [k (ffirst xs)]
     (fn
     ([stack acc _db]
      (let [acc' (conj! acc (stack k))]
@@ -97,17 +98,17 @@
   (ex-info "unrecognized pattern" {:xs xs}))
 
 (defn- -query->map [body]
-  (ex/-loop [elem body :let [acc {} flag nil]]
+  (ex/loop-it [elem body :let [acc {} flag nil]]
     (if (keyword? elem)
       (recur acc elem)
-      (recur (ex/-update acc flag ex/-conjv elem) flag))
+      (recur (update acc flag ex/conjv elem) flag))
     acc))
 
 (defmulti -filterer (fn [x] (u/-parse-datom x)))
 
 (defn -datoms-matcher
   ([datoms]
-   (apply ex/-comp (reverse (mapv -filterer datoms)))))
+   (apply ex/comp (reverse (mapv -filterer datoms)))))
 
 ;; [?e :name]
 (defmethod -filterer [:? :c nil]
@@ -227,30 +228,30 @@
     :pull (transient #{})))
 
 (defn -group-datoms [datoms]
-  (ex/-loop [d datoms :let [r (transient []) acc (transient []) e nil]]
+  (ex/loop-it [d datoms :let [r (transient []) acc (transient []) e nil]]
     (let [pd (u/-parse-datom d)]
       (cond
-        (and (vector? pd) (or (ex/-kw-identical? :? (first pd)) (ex/-kw-identical? :c (first pd))))
+        (and (vector? pd) (or (ex/kw-identical? :? (first pd)) (ex/kw-identical? :c (first pd))))
         (let [de (first d)]
           (if (and e (not= e (first d)))
             (recur (conj! r (persistent! acc)) (transient [d]) de)
             (recur r (conj! acc d) de)))
 
-        (ex/-kw-identical? :or pd)
+        (ex/kw-identical? :or pd)
         (let [xs (-group-datoms (next d))]
           (case (count xs)
             1 (recur r (conj! acc d) e)
-            (recur (ex/-conj-some! r (not-empty (persistent! acc))) (transient [d]) e)))
+            (recur (ex/conj-some! r (not-empty (persistent! acc))) (transient [d]) e)))
 
-        (ex/-kw-identical? :and pd)
+        (ex/kw-identical? :and pd)
         (let [xs (-group-datoms (next d))]
           (case (count xs)
             1 (recur r (conj! acc d) e)
-            (recur (ex/-conj-some! r (not-empty (persistent! acc))) (transient [d]) e)))
+            (recur (ex/conj-some! r (not-empty (persistent! acc))) (transient [d]) e)))
 
         :else
         (recur r (conj! acc d) e)))
-    (persistent! (ex/-conj-some! r (not-empty (persistent! acc))))))
+    (persistent! (ex/conj-some! r (not-empty (persistent! acc))))))
 
 ;; TODO cartesian product
 (defn -parse-input
@@ -274,7 +275,7 @@
      acc)))
 
 (defn -process-loop [dx [filterer & more] reducer acc stack prev]
-  (ex/-loop [me dx :let [acc acc stack (or prev stack)]]
+  (ex/loop-it [me dx :let [acc acc stack (or prev stack)]]
     (if-let [[_ stack] (filterer [me stack])]
       (if (seq more)
         (recur (-process-loop dx more reducer acc {} stack) (or prev stack))
@@ -291,12 +292,12 @@
   ([dx filterers reducer inputs acc stack]
    (if (map? inputs)
      (-process-loop dx filterers reducer acc stack inputs)
-     (ex/-loop [in inputs :let [acc acc]]
+     (ex/loop-it [in inputs :let [acc acc]]
        (recur (-process-loop dx filterers reducer acc stack in))
        acc))))
 
 (def -querer
-  (ex/-memoize
+  (ex/memoize
     (fn [query]
       (let [pq (-query->map query)
             grouped-datoms (-group-datoms (get pq :where))

@@ -13,7 +13,8 @@
   (-cache         [_        ])
   (-set-cache!    [_   cache])
   (-index         [_        ])
-  (-reindex       [_        ]))
+  (-reindex       [_        ])
+  (-make-index    [_        ]))
 
 (defprotocol IDoxaCache
   (-has? [_ k])

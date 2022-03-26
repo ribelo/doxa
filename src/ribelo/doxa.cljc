@@ -66,7 +66,7 @@
         (case cnt
           3 (let [m (nth tx 2)]
               (if-let [ref (u/-entity-ref m)]
-                (if (ex/-kw-identical? eid ref)
+                (if (ex/kw-identical? eid ref)
                   (u/-put-entity dx m)
                   (-submit-failure tx))
                 (if (map? m)
@@ -118,7 +118,7 @@
         (case cnt
           3 (let [m (nth tx 2)]
               (if-let [ref (u/-entity-ref m)]
-                (if (ex/-kw-identical? eid ref)
+                (if (ex/kw-identical? eid ref)
                   (u/-merge-entity dx m)
                   (-submit-failure tx))
                 (if (map? m)
@@ -170,7 +170,7 @@
       3 (let [ref (nth tx 1)
               k (nth tx 2)]
           (if (vector? k)
-            (ex/-loop [j k :let [acc dx]]
+            (ex/loop-it [j k :let [acc dx]]
               (recur (u/-delete-key acc ref j))
               acc)
 
@@ -239,7 +239,7 @@
                 (if-not (fn? x)
                   (let [v' (get e x)]
                     (or (= v v')
-                        (when (coll? v') (ex/-some #{v} v'))))
+                        (when (coll? v') (ex/some #{v} v'))))
                   (-submit-failure tx "function should be the 3rd element")))))))))
 
 (defn commit
@@ -247,9 +247,9 @@
   ([dx txs meta']
    (let [txs (if (and (vector? txs) (vector? (first txs))) txs [txs])
          dx'
-         (ex/-loop [tx txs :let [acc (p/-clear-tx dx) match? true]]
+         (ex/loop-it [tx txs :let [acc (p/-clear-tx dx) match? true]]
            (let [kind (nth tx 0)]
-             (if (ex/-kw-identical? :dx/match kind)
+             (if (ex/kw-identical? :dx/match kind)
                (recur acc (-submit-commit acc tx))
                (if match?
                  (if-let [db' (-submit-commit acc tx)]
@@ -259,7 +259,7 @@
            acc)
          dx' (-> (p/-set-cache! dx' (p/-refresh (some-> (p/-cache dx') deref) (p/-tx dx'))) (p/-reindex))]
      (when-let [listeners (some-> dx' meta ::listeners deref)]
-       (ex/-run! (fn [[_ f]] (f dx')) listeners))
+       (ex/run! (fn [[_ f]] (f dx')) listeners))
      dx')))
 
 (defn commit! [conn_ txs]
@@ -279,8 +279,8 @@
   ([empty-db data meta]
    (let [default-meta {::listeners (atom {})}]
      (if (not-empty data)
-       (vary-meta (dx-with empty-db data) ex/-merge default-meta meta)
-       (vary-meta empty-db ex/-merge default-meta meta)))))
+       (vary-meta (dx-with empty-db data) merge default-meta meta)
+       (vary-meta empty-db merge default-meta meta)))))
 
 (defn connect!
   ([dx]
@@ -359,7 +359,7 @@
 
 (defn table [dx table]
   (if-let [xs (some-> dx p/-index (get table))]
-    (ex/-select-keys dx xs)
+    (ex/select-keys dx xs)
     (empty dx)))
 
 ;; (defn- -filter [pred dx]

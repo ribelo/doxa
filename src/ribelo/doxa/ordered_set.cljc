@@ -9,18 +9,18 @@
 (deftype -skiping-iterator [#?(:clj ^java.util.Iterator it :cljs ^js it) ^:unsynchronized-mutable x]
   #?(:clj java.util.Iterator :cljs Object)
   (hasNext [_]
-    (if-not (identical? x ex/-sentinel)
+    (if-not (identical? x ex/sentinel)
       true
       (loop []
         (if (.hasNext it)
           (let [v (.next it)]
-            (if-not (identical? v ex/-sentinel)
+            (if-not (identical? v ex/sentinel)
               (do (set! x v) true)
               (recur)))
           false))))
   (next [this]
     (if (.hasNext this)
-      (let [v x] (set! x ex/-sentinel) v)
+      (let [v x] (set! x ex/sentinel) v)
       (throw (ex-info "No such element" {})))))
 
 #?(:clj
@@ -29,7 +29,7 @@
 
      Iterable
      (iterator [_]
-       (-skiping-iterator. (ex/-iter xs) ex/-sentinel))
+       (-skiping-iterator. (ex/iter xs) ex/sentinel))
 
      clojure.lang.IObj
      (withMeta [this new-meta]
@@ -38,7 +38,7 @@
          (OrderedSet. new-meta m xs)))
 
      clojure.lang.Seqable
-     (seq [_] (.seq ^clojure.lang.IPersistentVector (ex/-remove (partial identical? ex/-sentinel) xs)))
+     (seq [_] (.seq ^clojure.lang.IPersistentVector (ex/remove (partial identical? ex/sentinel) xs)))
 
      clojure.lang.IMeta
      (meta [_] meta)
@@ -51,18 +51,18 @@
 
      clojure.lang.IReduce
      (reduce [_ f]
-       (reduce f (ex/-remove (partial identical? ex/-sentinel) xs)))
+       (reduce f (ex/remove (partial identical? ex/sentinel) xs)))
 
      clojure.lang.IReduceInit
      (reduce [_ f v]
-       (reduce f v (ex/-remove (partial identical? ex/-sentinel) xs)))
+       (reduce f v (ex/remove (partial identical? ex/sentinel) xs)))
 
      clojure.lang.IPersistentSet
      (contains [_ k]
        (boolean (.valAt m k)))
      (disjoin [this v]
        (if-let [i (.valAt m v)]
-         (OrderedSet. meta (dissoc m v) (.assoc xs i ex/-sentinel))
+         (OrderedSet. meta (dissoc m v) (.assoc xs i ex/sentinel))
          this))
 
      clojure.lang.IPersistentCollection
@@ -70,7 +70,7 @@
        (and
          (instance? OrderedSet o)
          (== (count this) (count o))
-         (loop [xs (ex/-iter this) ys (ex/-iter o)]
+         (loop [xs (ex/iter this) ys (ex/iter o)]
            (if (.hasNext xs)
              (if (= (.next xs) (.next ys))
                (recur xs ys)
@@ -117,17 +117,17 @@
 
      IIterable
      (-iterator [_]
-       (-skiping-iterator. (ex/-iter xs) ex/-sentinel))
+       (-skiping-iterator. (ex/iter xs) ex/sentinel))
 
      IPrintWithWriter
      (-pr-writer [_ writer opts]
        (-write writer "#ordered/set ")
        (-write writer "#{")
-       (let [it (ex/-iter xs)]
+       (let [it (ex/iter xs)]
          (loop [begin? true]
            (when (.hasNext it)
              (let [x (.next it)]
-               (when-not (identical? x ex/-sentinel)
+               (when-not (identical? x ex/sentinel)
                  (when-not begin?
                    (-write writer \space))
                  (-write writer (pr-str x))))
@@ -144,7 +144,7 @@
      (-meta [_] meta)
 
      ISeqable
-     (-seq [_] (-seq (ex/-remove (partial identical? ex/-sentinel) xs)))
+     (-seq [_] (-seq (ex/remove (partial identical? ex/sentinel) xs)))
 
      IEquiv
      (-equiv [this ^js o]
@@ -152,7 +152,7 @@
          (instance? OrderedSet o)
          (== (-count m) (-count (.-m o)))
          ^boolean
-         (ex/-loop [x this y o :let [acc true]]
+         (ex/loop-it [x this y o :let [acc true]]
            (if (= x y)
              (recur true)
              false)
@@ -164,7 +164,7 @@
          (OrderedSet.
            meta
            (-dissoc m v)
-           (-assoc xs i ex/-sentinel))
+           (-assoc xs i ex/sentinel))
          this))
 
      ICollection
@@ -232,7 +232,7 @@
        (let [i (.valAt m k)]
          (when i
            (set! m (.without m k))
-           (set! xs (.assocN xs i ex/-sentinel))))
+           (set! xs (.assocN xs i ex/sentinel))))
        this)
      (conj [this k]
        (let [i (.valAt m k)]
@@ -253,7 +253,7 @@
          (TransientOrderedSet.
            meta
            (-dissoc! m v)
-           (-assoc! xs i ex/-sentinel))
+           (-assoc! xs i ex/sentinel))
          this))
 
      ICounted
@@ -284,11 +284,11 @@
      [x ^java.io.Writer writer]
      (.write writer "#ordered/set ")
      (.write writer "#{")
-     (let [it (ex/-iter x)]
+     (let [it (ex/iter x)]
        (loop [begin? true]
            (when (.hasNext it)
              (let [x (.next it)]
-               (when-not (identical? x ex/-sentinel)
+               (when-not (identical? x ex/sentinel)
                  (when-not begin?
                    (.write writer " "))
                  (.write writer (pr-str x))))
