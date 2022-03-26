@@ -2,16 +2,28 @@
   (:require
    [clojure.tools.build.api :as b]
    [clojure.java.shell :as shell]
-   [clojure.string :as string]
+   [clojure.string :as str]
    [meander.epsilon :as m]
    [deps-deploy.deps-deploy :as d]))
+
+(def scm-url "git@github.com:ribelo/doxa.git")
+
+(defn sha
+  [{:keys [dir path] :or {dir "."}}]
+  (-> {:command-args (cond-> ["git" "rev-parse" "HEAD"]
+                       path (conj "--" path))
+       :dir (.getPath (b/resolve-path dir))
+       :out :capture}
+      b/process
+      :out
+      str/trim))
 
 (defn git-branch-name
   "Attempts to get the current branch name via the shell."
   []
   (m/match (shell/sh "git" "rev-parse" "--abbrev-ref" "HEAD")
     {:exit 0, :out ?out}
-    (string/trim ?out)
+    (str/trim ?out)
 
     ?result
     (throw (ex-info "Unable to compute branch name" ?result))))
@@ -26,7 +38,7 @@
   []
   (m/match (shell/sh "git" "rev-list" (str git-commit-count-start "...") "--count")
     {:exit 0, :out ?out}
-    (string/trim ?out)
+    (str/trim ?out)
 
     ?result
     (throw (ex-info "Unable to compute commit count" ?result))))
@@ -40,11 +52,15 @@
 (defn jar [_]
   (b/delete {:path "target"})
   (b/write-pom {:class-dir class-dir
-                :lib       lib
-                :version   version
-                :basis     basis
-                :src-dirs  ["src"]})
-  (b/copy-dir {:src-dirs   ["src"]
+                :lib lib
+                :version version
+                :basis basis
+                :src-dirs ["src/main"]
+                :scm {:tag (sha nil)
+                      :connection (str "scm:git:" scm-url)
+                      :developerConnection (str "scm:git:" scm-url)
+                      :url scm-url}})
+  (b/copy-dir {:src-dirs   ["src/main"]
                :target-dir class-dir})
   (b/jar {:class-dir class-dir
           :jar-file  jar-file}))
