@@ -1,7 +1,12 @@
 :PROPERTIES:
 :ID:       3b645804-2ba5-4389-a4db-18321ae846e7
 :END:
-#+TITLE: doxa
+
+
+#+begin_export html
+<a href="https://ribelo.github.io/doxa/"><h1 align="center">δόξα</h1></a>
+#+end_export
+
 
 [[https://clojars.org/com.github.ribelo/doxa][https://img.shields.io/clojars/v/com.github.ribelo/doxa.svg]]
 [[https://cljdoc.org/d/com.github.ribelo/doxa/CURRENT][https://cljdoc.org/badge/com.github.ribelo/doxa]]
