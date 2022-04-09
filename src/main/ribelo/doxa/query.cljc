@@ -131,11 +131,19 @@
   [[e a v]]
   (fn [[[ref m :as me] stack]]
     (when stack
-      (if-let [ov (stack v)]
-        (when (= ov (get m a))
-          [me (assoc stack e ref)])
-        (when-let [nv (get m a)]
-          [me (assoc stack e ref v nv)])))))
+      (if-let [oe (stack e)]
+        (when (or (= ref oe) (contains? oe ref))
+          (if-let [ov (stack v)]
+            (when (= ov (get m a))
+              [me (assoc stack e ref)])
+            (when-let [nv (get m a)]
+              [me (assoc stack e ref v nv)])))
+        ;;
+        (if-let [ov (stack v)]
+          (when (= ov (get m a))
+            [me (assoc stack e ref)])
+          (when-let [nv (get m a)]
+            [me (assoc stack e ref v nv)]))))))
 
 ;; [?e ?a ?v]
 (defmethod -filterer [:? :? :?]

@@ -1228,3 +1228,31 @@
               [:id 1] {:id 1, :name "Steve" , :hobbies #{[:id 2] [:id 3]}} ,
               [:id 3] {:_hobbies [:id 1] , :id 3, :name "Onewheel"}}
              db2))))
+
+(t/deftest gh-39
+  (let [db (dx/create-dx {} [{:id   1
+                              :name "Olympics"}
+                             {:id   2
+                              :name "Boardercross"
+                              :event [:id 1]}
+                             {:id   3
+                              :name "Curling"
+                              :event [:id 1]}])]
+    (t/is (= #{[[:id 1] [:id 2]] [[:id 1] [:id 3]]}
+             (dx/q '[:find ?event ?sport
+                     :where
+                     [?sport :event ?event]
+                     [?event :id ?id]]
+               db))))
+  (let [db (dx/create-dx {} [{:id     1
+                              :name   "Olympics"
+                              :sports [{:id   2
+                                        :name "Boardercross"}
+                                       {:id   3
+                                        :name "Curling"}]}])]
+    (t/is (= #{[[:id 1] [:id 2]] [[:id 1] [:id 3]]}
+             (dx/q '[:find ?event ?sport
+                     :where
+                     [?event :sports ?sport]
+                     [?sport :id ?id]]
+               db)))))
