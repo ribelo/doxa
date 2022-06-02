@@ -1,4 +1,4 @@
-<a href="https://ribelo.github.io/doxa/"><h1 align="center">δόξα</h1></a>
+<a href="https://ribelo.github.io/doxa/"><h1 align="center">δόξα/doxa</h1></a>
 
 [![img](https://img.shields.io/clojars/v/com.github.ribelo/doxa.svg)](https://clojars.org/com.github.ribelo/doxa) [![img](https://cljdoc.org/badge/com.github.ribelo/doxa)](https://cljdoc.org/d/com.github.ribelo/doxa/CURRENT)
 
