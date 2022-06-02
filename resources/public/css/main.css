@@ -525,18 +525,31 @@ Ensure the default browser behavior of the `hidden` attribute.
   margin-right: 1rem;
 }
 
-.my-2 {
-  margin-top: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
 .my-4 {
   margin-top: 1rem;
   margin-bottom: 1rem;
 }
 
+.my-2 {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.my-12 {
+  margin-top: 3rem;
+  margin-bottom: 3rem;
+}
+
 .mb-12 {
   margin-bottom: 3rem;
+}
+
+.mb-4 {
+  margin-bottom: 1rem;
+}
+
+.mt-24 {
+  margin-top: 6rem;
 }
 
 .block {
@@ -591,16 +604,24 @@ Ensure the default browser behavior of the `hidden` attribute.
   width: 1.5rem;
 }
 
+.w-32 {
+  width: 8rem;
+}
+
 .w-24 {
   width: 6rem;
+}
+
+.w-1\/3 {
+  width: 33.333333%;
 }
 
 .w-36 {
   width: 9rem;
 }
 
-.w-32 {
-  width: 8rem;
+.flex-auto {
+  flex: 1 1 auto;
 }
 
 .grow {
@@ -639,12 +660,20 @@ Ensure the default browser behavior of the `hidden` attribute.
   justify-content: center;
 }
 
+.justify-around {
+  justify-content: space-around;
+}
+
 .self-end {
   align-self: flex-end;
 }
 
 .self-center {
   align-self: center;
+}
+
+.overflow-auto {
+  overflow: auto;
 }
 
 .overflow-y-auto {
@@ -663,6 +692,11 @@ Ensure the default browser behavior of the `hidden` attribute.
 
 .border {
   border-width: 1px;
+}
+
+.border-nord-2 {
+  --tw-border-opacity: 1;
+  border-color: rgb(67 76 94 / var(--tw-border-opacity));
 }
 
 .bg-nord-3 {

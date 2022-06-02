@@ -6,9 +6,9 @@
    [re-frame.core :as rf]
    [ribelo.doxa :as dx]
    [ribelo.doxa-page.fx]
-   [ribelo.doxa-page.events :as dp.evt]
    [ribelo.doxa-page.subs :as sub]
    [ribelo.doxa-page.ui :as ui]
+   [ribelo.doxa-page.examples.worldcities :as worldcities]
    [ribelo.doxa-page.examples.binary-clock :as binary-clock]
    [ribelo.doxa-page.examples.transactions :as transactions]))
 
@@ -19,12 +19,14 @@
       [ui/sidebar]
       [:div {:class [:flex :w-full :h-full]}
        (case screen
-         (nil :binary-clock)
-         [binary-clock/view]
-
-         :transaction
+         (nil "transactions")
          [transactions/view]
 
+         "binary clock"
+         [binary-clock/view]
+
+         "world cities"
+         [worldcities/view]
          [:div "lost"])]]]))
 
 (defn mount-components []
