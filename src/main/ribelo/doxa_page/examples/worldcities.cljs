@@ -4,7 +4,6 @@
    [re-frame.core :as rf]
    [ribelo.extropy :as ex]
    [ribelo.doxa :as dx]
-   [goog.string :as gstr]
    [ribelo.doxa.cache :as dxc]))
 
 (rf/reg-event-fx
@@ -98,7 +97,7 @@
          [:div {:class [:flex-auto :overflow-auto]}
           (for [[id city country] data]
             ^{:key id}
-            [:div (gstr/format "%-6d - %s - %s" id city country)])]]))))
+            [:div (str id " - " city " - " country)])]]))))
 
 (defn view []
   [:div {:class [:flex :flex-col :grow :m-12]}
