@@ -16,7 +16,7 @@
 (defn sidebar []
   [:div {:class [:flex :flex-col :w-36 :h-full :bg-nord-1]}
    [:div {:class [:m-4 :text-nord-5]}
-    "expamples"]
+    "examples"]
    (for [elem [{:title "transactions"}
                {:title "world cities" :on-click #(rf/dispatch [::world/download-cities])}
                {:title "binary clock"}]]
